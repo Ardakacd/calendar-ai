@@ -27,7 +27,6 @@ class EventAdapter:
             title=event_model.title,
             datetime=event_model.datetime,  # Keep as datetime object for Pydantic validation
             duration=event_model.duration,
-            description=event_model.description,
             location=event_model.location,
             user_id=event_model.user_id,
             created_at=event_model.created_at.isoformat() if event_model.created_at else None
@@ -39,7 +38,6 @@ class EventAdapter:
             title=event_data.title,
             datetime=event_data.datetime,
             duration=event_data.duration,
-            description=event_data.description,
             location=event_data.location,
             user_id=event_data.user_id
         )
@@ -191,7 +189,7 @@ class EventAdapter:
             logger.error(f"Unexpected error retrieving events by date range: {e}")
             return []
     
-    async def update_event(self, event_id: str, user_id: str, event_data: EventUpdate) -> bool:
+    async def update_event(self, event_id: str, user_id: str, event_data: EventUpdate) -> Optional[Event]:
         """
         Update an existing event.
         
@@ -214,26 +212,27 @@ class EventAdapter:
             stmt = update(EventModel).where(
                 EventModel.id == event_id,
                 EventModel.user_id == user_id
-            ).values(**update_data)
+            ).values(**update_data).returning(EventModel)
             
             result = await self.db.execute(stmt)
             
-            if result.rowcount == 0:
-                logger.warning(f"Event {event_id} not found for update or user {user_id} not authorized")
-                return False
-            
             await self.db.commit()
             logger.info(f"Updated event: {event_id}")
-            return True
+
+            db_event = result.scalar_one_or_none()
+            
+            if db_event:
+                return self._convert_to_model(db_event)
+            return None
             
         except SQLAlchemyError as e:
             logger.error(f"Database error updating event {event_id}: {e}")
             await self.db.rollback()
-            return False
+            return None
         except Exception as e:
             logger.error(f"Unexpected error updating event {event_id}: {e}")
             await self.db.rollback()
-            return False
+            return None
     
     async def delete_event(self, event_id: str, user_id: str) -> bool:
         """
@@ -272,7 +271,7 @@ class EventAdapter:
     
     async def search_events(self, user_id: str, query: str) -> List[Event]:
         """
-        Search events by title or description for a specific user.
+        Search events by title for a specific user.
         
         Args:
             user_id: User ID to filter events
@@ -285,7 +284,7 @@ class EventAdapter:
             search_term = f"%{query}%"
             stmt = select(EventModel).where(
                 EventModel.user_id == user_id,
-                (EventModel.title.ilike(search_term) | EventModel.description.ilike(search_term))
+                (EventModel.title.ilike(search_term))
             ).order_by(EventModel.datetime.desc())
             
             result = await self.db.execute(stmt)
