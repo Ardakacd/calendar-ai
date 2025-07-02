@@ -1,5 +1,5 @@
 from fastapi import Depends, HTTPException, status
-from models import EventCreate, EventUpdate, Event
+from models import EventBase, EventUpdate, Event, EventCreate
 from adapter.event import EventAdapter
 from utils.jwt import get_user_id_from_token
 from typing import List, Optional
@@ -13,7 +13,7 @@ class EventService:
     def __init__(self, event_adapter: EventAdapter):
         self.event_adapter = event_adapter
 
-    async def create_event(self, token: str, event_data: EventCreate) -> Event:
+    async def create_event(self, token: str, event_data: EventBase) -> Event:
         """
         Create a new event for the authenticated user.
         
@@ -28,10 +28,15 @@ class EventService:
         try:
             user_id = get_user_id_from_token(token)
             
-            # Set the user_id from the token
-            event_data.user_id = user_id
-            
-            result = await self.event_adapter.create_event(event_data)
+            event = EventCreate(
+                user_id=user_id,
+                title=event_data.title,
+                datetime=event_data.datetime,
+                duration=event_data.duration,
+                location=event_data.location,
+            )
+
+            result = await self.event_adapter.create_event(event)
             if not result:
                 logger.error(f"EventService: Failed to create event: {event_data.title}")
                 raise HTTPException(
@@ -179,7 +184,9 @@ class EventService:
                 )
             
             logger.info(f"EventService: Event updated successfully: {event_id}")
-            return {"message": "Event updated successfully"}
+            print('look at here')
+            print(result)
+            return result
             
         except HTTPException:
             raise
@@ -227,7 +234,7 @@ class EventService:
 
     async def search_events(self, token: str, query: str) -> List[Event]:
         """
-        Search events by title or description for the authenticated user.
+        Search events by title for the authenticated user.
         
         Args:
             token: JWT token for authentication
