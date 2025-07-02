@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from models import EventCreate, EventUpdate, Event
+from models import EventBase, EventUpdate, Event
 from services.event import EventService, get_event_service
 from typing import List, Optional
 import logging
@@ -14,7 +14,7 @@ security = HTTPBearer()
 
 @router.post("", response_model=Event)
 async def create_event(
-    event_data: EventCreate, 
+    event_data: EventBase, 
     credentials: HTTPAuthorizationCredentials = Depends(security),
     event_service: EventService = Depends(get_event_service)
 ):
@@ -25,6 +25,7 @@ async def create_event(
     """
     logger.info(f"Creating event with title: {event_data.title}")
     try:
+        print(event_data)
         token = credentials.credentials
         result = await event_service.create_event(token, event_data)
         logger.info(f"Event created successfully: {result.id}")
@@ -191,12 +192,12 @@ async def delete_event(
 
 @router.get("/search/", response_model=List[Event])
 async def search_events(
-    query: str = Query(..., min_length=1, description="Search query for title or description"),
+    query: str = Query(..., min_length=1, description="Search query for title"),
     credentials: HTTPAuthorizationCredentials = Depends(security),
     event_service: EventService = Depends(get_event_service)
 ):
     """
-    Search events by title or description for the authenticated user.
+    Search events by title for the authenticated user.
     
     Returns a list of matching events.
     """
