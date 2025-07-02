@@ -14,7 +14,6 @@ class EventModel(Base):
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     datetime: Mapped[DateTime] = mapped_column(DateTime(timezone=True), nullable=False)  # Format: YYYY-MM-DDTHH:MM:SS±HH:MM
     duration: Mapped[Optional[int]] = mapped_column(Integer)  # Duration in minutes
-    description: Mapped[Optional[str]] = mapped_column(Text)
     location: Mapped[Optional[str]] = mapped_column(String(255))
     
     # Foreign key to user

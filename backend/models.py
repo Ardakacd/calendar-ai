@@ -1,6 +1,6 @@
 from pydantic import BaseModel, EmailStr, Field
 from typing import Optional, List
-from datetime import datetime
+from datetime import datetime as dt
 
 # User Models
 class UserBase(BaseModel):
@@ -26,7 +26,7 @@ class UserUpdate(BaseModel):
 class User(UserBase):
     id: str
     password: Optional[str] = None
-    created_at: str
+    created_at: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -35,14 +35,13 @@ class User(UserBase):
 # Event Models
 class EventBase(BaseModel):
     title: str
-    datetime: datetime  # Use proper datetime type with timezone support
+    datetime: dt  # Use proper datetime type with timezone support
     duration: Optional[int] = None  # Duration in minutes
-    description: Optional[str] = None
     location: Optional[str] = None
 
     class Config:
         json_encoders = {
-            datetime: lambda v: v.isoformat()
+            dt: lambda v: v.isoformat()
         }
 
 class EventCreate(EventBase):
@@ -50,14 +49,13 @@ class EventCreate(EventBase):
 
 class EventUpdate(BaseModel):
     title: Optional[str] = None
-    datetime: Optional[datetime] = None
+    datetime: Optional[dt] = None
     duration: Optional[int] = None
-    description: Optional[str] = None
     location: Optional[str] = None
 
     class Config:
         json_encoders = {
-            datetime: lambda v: v.isoformat()
+            dt: lambda v: v.isoformat()
         }
 
 class Event(EventBase):
@@ -69,7 +67,7 @@ class Event(EventBase):
         from_attributes = True
         arbitrary_types_allowed = True
         json_encoders = {
-            datetime: lambda v: v.isoformat()
+            dt: lambda v: v.isoformat()
         }
 
 # User with Events (for detailed user views)
