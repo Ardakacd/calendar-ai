@@ -202,7 +202,7 @@ class EventAdapter:
             True if updated successfully, False if failed or not found
         """
         try:
-            # Build update data
+            print(event_data)
             update_data = event_data.dict(exclude_unset=True)
             if not update_data:
                 logger.warning(f"No fields to update for event {event_id}")

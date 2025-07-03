@@ -12,7 +12,6 @@ class UserModel(Base):
     # 🔹 Internal primary key
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
 
-    # 🔸 Public-facing ID for APIs
     user_id: Mapped[str] = mapped_column(String(36), unique=True, nullable=False, default=lambda: str(uuid.uuid4()))
 
     name: Mapped[str] = mapped_column(String(255), nullable=False)

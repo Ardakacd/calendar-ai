@@ -11,14 +11,28 @@ import { useNavigation } from '@react-navigation/native';
 
 import MicButton from '../components/MicButton';
 import AssistantFeedback from '../components/AssistantFeedback';
+import ConfirmationModal from '../components/ConfirmationModal';
 import { useCalendarAPI } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
+
+interface EventConfirmationData {
+  title: string;
+  datetime: string;
+  duration?: number;
+  location?: string;
+}
 
 export default function HomeScreen() {
   const navigation = useNavigation();
   const [isProcessing, setIsProcessing] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
-  const { transcribeAudio } = useCalendarAPI();
+  const [showConfirmationModal, setShowConfirmationModal] = useState(false);
+  const [confirmationData, setConfirmationData] = useState<{
+    action: 'create' | 'update' | 'delete';
+    eventData: EventConfirmationData;
+  } | null>(null);
+  const [isConfirming, setIsConfirming] = useState(false);
+  const { transcribeAudio, confirmAction } = useCalendarAPI();
   const { user, logout } = useAuth();
 
   const handleVoiceCommand = async (audioUri: string) => {
@@ -26,14 +40,26 @@ export default function HomeScreen() {
     setFeedback(null);
     
     try {
-       const response = await transcribeAudio(audioUri);
+      const response = await transcribeAudio(audioUri);
+      console.log('response');  
+      console.log(response);
       setFeedback(response.message);
-      
-      // Navigate to calendar if events were modified
-      if (response.action === 'add' || response.action === 'delete' || response.action === 'update') {
-        setTimeout(() => {
-          navigation.navigate('Calendar' as never);
-        }, 2000);
+
+      // Check if confirmation is required
+      if (response.requires_confirmation && response.confirmation_data) {
+        setConfirmationData({
+          action: response.action as 'create' | 'update' | 'delete',
+          eventData: response.confirmation_data,
+        });
+        setShowConfirmationModal(true);
+        
+      } else {
+        // For queries or other actions that don't require confirmation
+        if (response.action === 'create' || response.action === 'delete' || response.action === 'update') {
+          setTimeout(() => {
+            navigation.navigate('Calendar' as never);
+          }, 2000);
+        }
       }
     } catch (error) {
       console.error('Error processing voice command:', error);
@@ -41,6 +67,40 @@ export default function HomeScreen() {
     } finally {
       setIsProcessing(false);
     }
+  };
+
+  const handleConfirmAction = async (eventData: EventConfirmationData) => {
+    if (!confirmationData) return;
+    
+    setIsConfirming(true);
+    try {
+      console.log('eventData');
+      console.log(eventData);
+      const result = await confirmAction({
+        action: confirmationData.action,
+        event_data: eventData,
+      });
+      
+      setFeedback(result.message);
+      setShowConfirmationModal(false);
+      setConfirmationData(null);
+      
+      // Navigate to calendar after successful action
+      setTimeout(() => {
+        navigation.navigate('Calendar' as never);
+      }, 2000);
+      
+    } catch (error) {
+      console.error('Error confirming action:', error);
+      Alert.alert('Error', 'Failed to confirm action. Please try again.');
+    } finally {
+      setIsConfirming(false);
+    }
+  };
+
+  const handleDismissModal = () => {
+    setShowConfirmationModal(false);
+    setConfirmationData(null);
   };
 
   const handleLogout = async () => {
@@ -132,6 +192,17 @@ export default function HomeScreen() {
           </Button>
         </View>
       </ScrollView>
+
+      {confirmationData && (
+        <ConfirmationModal
+          visible={showConfirmationModal}
+          onDismiss={handleDismissModal}
+          action={confirmationData.action}
+          eventData={confirmationData.eventData}
+          onConfirm={handleConfirmAction}
+          isLoading={isConfirming}
+        />
+      )}
     </LinearGradient>
   );
 }

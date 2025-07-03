@@ -94,6 +94,19 @@ class TranscribeRequest(BaseModel):
 
 class TranscribeResponse(BaseModel):
     message: str
-    action: str  # "add", "delete", "update", "query", "none"
-    event: Optional[Event] = None
-    event_id: Optional[str] = None 
+    action: str  # "create", "delete", "update", "query", "none"
+    requires_confirmation: bool = False
+    confirmation_data: Optional[dict] = None  # Contains the fields for confirmation modal
+    event_id: Optional[str] = None
+
+# Confirmation Models for the frontend
+class EventConfirmationData(BaseModel):
+    title: str
+    datetime: str  # ISO format string
+    duration: Optional[int] = None
+    location: Optional[str] = None
+    event_id: Optional[str] = None  # For update/delete operations
+
+class ConfirmationRequest(BaseModel):
+    action: str  # "create", "update", "delete"
+    event_data: EventConfirmationData 

@@ -5,7 +5,7 @@ def validate_datetime(datetime_str: str) -> bool:
     """Validate datetime format (ISO format with timezone only)."""
     try:
         # Only support ISO format with timezone
-        datetime.fromisoformat(datetime_str)
+        datetime.fromisoformat(datetime_str.replace("Z", "+00:00"))
         return True
     except ValueError:
         return False
@@ -21,6 +21,6 @@ def convert_datetime_string_to_datetime(datetime_str: str) -> datetime:
     """
     try:
         # Only support ISO format with timezone
-        return datetime.fromisoformat(datetime_str)
+        return datetime.fromisoformat(datetime_str.replace("Z", "+00:00"))
     except ValueError:
         raise ValueError(f"Invalid datetime format. Expected ISO format with timezone, got: {datetime_str}")

@@ -38,7 +38,7 @@ The app understands natural language commands like:
 
 ### Prerequisites
 - Node.js (v16 or higher)
-- Python (v3.8 or higher)
+- Python (v3.10 or higher)
 - Expo CLI
 - iOS Simulator or Android Emulator (for testing)
 

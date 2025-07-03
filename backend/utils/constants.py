@@ -64,7 +64,7 @@ The available functions are:
 <name>remove_event</name>
 <description>Deletes an existing event.</description>
 <required>
-- event_id (must match an ID from user_events)
+- event_id (must match an event_id from user_events)
 </required>
 <rules>
 - Match the event_id by comparing the user input with the current events in user_events.
@@ -82,7 +82,7 @@ The available functions are:
 <name>update_event</name>
 <description>Updates an existing event.</description>
 <required>
-- event_id (must match an ID from user_events)
+- event_id (must match an event_id from user_events)
 </required>
 <optional>
 - title, datetime(use the format YYYY-MM-DDTHH:MM:SS±HH:MM), duration(in minutes), location

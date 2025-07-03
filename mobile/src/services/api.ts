@@ -10,7 +10,15 @@ const REFRESH_TOKEN_KEY = 'refresh_token';
 
 interface TranscribeResponse {
   message: string;
-  action: 'add' | 'delete' | 'update' | 'query' | 'none';
+  action: 'create' | 'delete' | 'update' | 'query' | 'none';
+  requires_confirmation: boolean;
+  confirmation_data?: {
+    title: string;
+    datetime: string;
+    duration?: number;
+    location?: string;
+    event_id?: string;
+  };
   event?: {
     id: string;
     title: string;
@@ -49,6 +57,19 @@ interface TokenResponse {
   user_id: string;
   user_name: string;
   expires_in: number;
+}
+
+interface EventConfirmationData {
+  title: string;
+  datetime: string;
+  duration?: number;
+  location?: string;
+  event_id?: string;
+}
+
+interface ConfirmationRequest {
+  action: 'create' | 'update' | 'delete';
+  event_data: EventConfirmationData;
 }
 
 class CalendarAPI {
@@ -275,6 +296,16 @@ class CalendarAPI {
     }
   }
 
+  async confirmAction(confirmationRequest: ConfirmationRequest): Promise<{ message: string }> {
+    try {
+      const response = await this.api.post('/transcribe/confirm', confirmationRequest);
+      return response.data;
+    } catch (error) {
+      console.error('Error confirming action:', error);
+      throw new Error('Failed to confirm action');
+    }
+  }
+
   private isTokenExpiredError(error: any): boolean {
     // Check if the error response indicates token expiration
     if (error.response?.data?.detail) {
@@ -315,5 +346,6 @@ export const useCalendarAPI = () => {
     addEvent: calendarAPI.addEvent.bind(calendarAPI),
     updateEvent: calendarAPI.updateEvent.bind(calendarAPI),
     deleteEvent: calendarAPI.deleteEvent.bind(calendarAPI),
+    confirmAction: calendarAPI.confirmAction.bind(calendarAPI),
   };
 }; 
