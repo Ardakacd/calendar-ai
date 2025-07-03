@@ -11,16 +11,12 @@ class UserCreate(UserBase):
     user_id: str
     password: str = Field(..., min_length=6, description="Password must be at least 6 characters long")
 
-class UserLogin(BaseModel):
-    email: EmailStr
-    password: str = Field(..., min_length=6, description="Password must be at least 6 characters long")
-
 class UserRegister(UserBase):
     password: str = Field(..., min_length=6, description="Password must be at least 6 characters long")
 
 class UserUpdate(BaseModel):
     name: Optional[str] = None
-    email: Optional[str] = EmailStr
+    email: Optional[EmailStr] = None
     password: Optional[str] = Field(None, min_length=6, description="Password must be at least 6 characters long")
 
 class User(UserBase):

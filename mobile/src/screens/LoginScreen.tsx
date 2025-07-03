@@ -18,8 +18,8 @@ import { useAuth } from '../contexts/AuthContext';
 import { useNavigation } from '@react-navigation/native';
 
 const LoginScreen: React.FC = () => {
-  const [email, setEmail] = useState('kabadayi_arda@hotmail.com');
-  const [password, setPassword] = useState('arda1602');
+  const [email, setEmail] = useState<string>('');
+  const [password, setPassword] = useState<string>('');
   const [isLoading, setIsLoading] = useState(false);
 
   const { login } = useAuth();
@@ -57,7 +57,7 @@ const LoginScreen: React.FC = () => {
         <Card style={styles.card}>
           <Card.Content>
             <TextInput
-              label="Email"
+              label="E-Mail"
               value={email}
               onChangeText={setEmail}
               mode="outlined"

@@ -4,10 +4,11 @@ from config import settings
 from fastapi import HTTPException, status
 from models import TokenData
 import logging
+from typing import Optional
 
 logger = logging.getLogger(__name__)
 
-def create_access_token(data: dict, expires_delta: timedelta | None = None):
+def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     to_encode = data.copy()
     if expires_delta:
         expire = datetime.now(timezone.utc) + expires_delta
@@ -17,7 +18,7 @@ def create_access_token(data: dict, expires_delta: timedelta | None = None):
     encoded_jwt = jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
     return encoded_jwt
 
-def create_refresh_token(data: dict, expires_delta: timedelta | None = None):
+def create_refresh_token(data: dict, expires_delta: Optional[timedelta] = None):
     to_encode = data.copy()
     if expires_delta:
         expire = datetime.now(timezone.utc) + expires_delta
@@ -84,7 +85,7 @@ def verify_refresh_token(token: str):
             headers={"WWW-Authenticate": "Bearer"},
         )
     
-def get_user_id_from_token(token: str) -> str:
+def get_user_id_from_token(token: str) -> Optional[int]:
         """Extract user ID from JWT token."""
         try:
             token_data = verify_token(token)
