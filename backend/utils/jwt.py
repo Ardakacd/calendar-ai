@@ -9,15 +9,12 @@ logger = logging.getLogger(__name__)
 
 def create_access_token(data: dict, expires_delta: timedelta | None = None):
     to_encode = data.copy()
-    #if expires_delta:
-    #    expire = datetime.now(timezone.utc) + expires_delta
-    #else:
-    #    expire = datetime.now(timezone.utc) + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
-    expire = datetime.now(timezone.utc) + timedelta(seconds=30)
+    if expires_delta:
+        expire = datetime.now(timezone.utc) + expires_delta
+    else:
+        expire = datetime.now(timezone.utc) + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     to_encode.update({"exp": expire, "type": "access"})
     encoded_jwt = jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
-    print('encoded')
-    print(encoded_jwt)
     return encoded_jwt
 
 def create_refresh_token(data: dict, expires_delta: timedelta | None = None):
@@ -28,15 +25,13 @@ def create_refresh_token(data: dict, expires_delta: timedelta | None = None):
         expire = datetime.now(timezone.utc) + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
     
     to_encode.update({"exp": expire, "type": "refresh"})
-    print('encoding')
-    print(to_encode)
     encoded_jwt = jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
     return encoded_jwt
 
 def verify_token(token: str):
     try:
         payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
-        user_id: str = payload.get("user_id")
+        user_id: int = payload.get("user_id")
         token_type: str = payload.get("type", "access")
         
         if token_type != "access":
@@ -64,7 +59,7 @@ def verify_token(token: str):
 def verify_refresh_token(token: str):
     try:
         payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
-        user_id: str = payload.get("user_id")
+        user_id: int = payload.get("user_id")
         token_type: str = payload.get("type", "refresh")
         
         if token_type != "refresh":

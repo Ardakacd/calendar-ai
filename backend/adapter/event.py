@@ -23,7 +23,7 @@ class EventAdapter:
     def _convert_to_model(self, event_model: EventModel) -> Event:
         """Convert EventModel to Event Pydantic model."""
         return Event(
-            id=event_model.id,
+            id=event_model.event_id,  # Use event_id (UUID) for API exposure
             title=event_model.title,
             datetime=event_model.datetime,  # Keep as datetime object for Pydantic validation
             duration=event_model.duration,
@@ -57,7 +57,7 @@ class EventAdapter:
             self.db.add(db_event)
             await self.db.commit()
             
-            logger.info(f"Created event: {db_event.id}")
+            logger.info(f"Created event: {db_event.event_id}")
             return self._convert_to_model(db_event)
             
         except SQLAlchemyError as e:
@@ -71,16 +71,16 @@ class EventAdapter:
     
     async def get_event_by_event_id(self, event_id: str) -> Optional[Event]:
         """
-        Get event by ID.
+        Get event by event_id (UUID).
         
         Args:
-            event_id: Event ID to retrieve
+            event_id: Event ID (UUID) to retrieve
             
         Returns:
             Event or None if not found
         """
         try:
-            stmt = select(EventModel).where(EventModel.id == event_id)
+            stmt = select(EventModel).where(EventModel.event_id == event_id)
             result = await self.db.execute(stmt)
             db_event = result.scalar_one_or_none()
             
@@ -95,7 +95,7 @@ class EventAdapter:
             logger.error(f"Unexpected error retrieving event {event_id}: {e}")
             return None
          
-    async def get_events_by_user_id(self, user_id: str, limit: Optional[int] = None, offset: Optional[int] = None) -> List[Event]:
+    async def get_events_by_user_id(self, user_id: int, limit: Optional[int] = None, offset: Optional[int] = None) -> List[Event]:
         """
         Get all events for a specific user with optional pagination.
         
@@ -158,7 +158,7 @@ class EventAdapter:
             logger.error(f"Unexpected error retrieving events: {e}")
             return []
     
-    async def get_events_by_date_range(self, user_id: str, start_date: str, end_date: str) -> List[Event]:
+    async def get_events_by_date_range(self, user_id: int, start_date: str, end_date: str) -> List[Event]:
         """
         Get events within a date range for a specific user.
         
@@ -189,12 +189,12 @@ class EventAdapter:
             logger.error(f"Unexpected error retrieving events by date range: {e}")
             return []
     
-    async def update_event(self, event_id: str, user_id: str, event_data: EventUpdate) -> Optional[Event]:
+    async def update_event(self, event_id: str, user_id: int, event_data: EventUpdate) -> Optional[Event]:
         """
         Update an existing event.
         
         Args:
-            event_id: Event ID to update
+            event_id: Event ID (UUID) to update
             user_id: User ID to verify ownership
             event_data: Updated event data
             
@@ -210,7 +210,7 @@ class EventAdapter:
             
             # Direct update operation with user ownership check
             stmt = update(EventModel).where(
-                EventModel.id == event_id,
+                EventModel.event_id == event_id,
                 EventModel.user_id == user_id
             ).values(**update_data).returning(EventModel)
             
@@ -234,12 +234,12 @@ class EventAdapter:
             await self.db.rollback()
             return None
     
-    async def delete_event(self, event_id: str, user_id: str) -> bool:
+    async def delete_event(self, event_id: str, user_id: int) -> bool:
         """
         Delete an event.
         
         Args:
-            event_id: Event ID to delete
+            event_id: Event ID (UUID) to delete
             user_id: User ID to verify ownership
             
         Returns:
@@ -247,7 +247,7 @@ class EventAdapter:
         """
         try:
             stmt = delete(EventModel).where(
-                EventModel.id == event_id,
+                EventModel.event_id == event_id,
                 EventModel.user_id == user_id
             )
             result = await self.db.execute(stmt)
@@ -269,7 +269,7 @@ class EventAdapter:
             await self.db.rollback()
             return False
     
-    async def search_events(self, user_id: str, query: str) -> List[Event]:
+    async def search_events(self, user_id: int, query: str) -> List[Event]:
         """
         Search events by title for a specific user.
         
@@ -299,7 +299,7 @@ class EventAdapter:
             logger.error(f"Unexpected error searching events: {e}")
             return []
     
-    async def get_events_count(self, user_id: str) -> int:
+    async def get_events_count(self, user_id: int) -> int:
         """
         Get total number of events for a user.
         

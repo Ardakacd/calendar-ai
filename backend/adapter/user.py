@@ -27,23 +27,22 @@ class UserAdapter:
         logger.debug(f"UserAdapter: Converting UserModel to User: {user_model.id}")
         return User(
             id=user_model.id,
+            user_id=user_model.user_id,
             name=user_model.name,
-            email=user_model.email
+            email=user_model.email,
+            password=user_model.password
         )
     
     def _convert_to_db_model(self, user_data: UserCreate) -> UserModel:
         """Convert UserCreate Pydantic model to UserModel."""
         logger.debug(f"UserAdapter: Converting UserCreate to UserModel: {user_data.name}")
-        db_user = UserModel(
+        return UserModel(
+            user_id=user_data.user_id,
             name=user_data.name,
             email=user_data.email,
             password=user_data.password
         )
-        
-        if hasattr(user_data, 'id') and user_data.id:
-            db_user.id = user_data.id
-        return db_user
-     
+       
     def _handle_integrity_error(self, e: IntegrityError, operation: str) -> None:
         """
         Handle integrity errors with specific error messages.
@@ -108,12 +107,12 @@ class UserAdapter:
             await self.db.rollback()
             return None
     
-    async def get_user_by_id(self, user_id: str) -> Optional[User]:
+    async def get_user_by_id(self, user_id: int) -> Optional[User]:
         """
-        Get user by ID.
+        Get user by internal ID.
         
         Args:
-            user_id: User ID to retrieve
+            user_id: Internal user ID to retrieve
             
         Returns:
             User or None if not found
@@ -133,8 +132,8 @@ class UserAdapter:
         except Exception as e:
             logger.error(f"Unexpected error retrieving user {user_id}: {e}")
             return None
-    
-    async def get_user_by_email(self, email: str) -> Optional[UserCreate]:
+       
+    async def get_user_by_email(self, email: str) -> Optional[User]:
         """
         Get user by email.
         
@@ -142,7 +141,7 @@ class UserAdapter:
             email: Email to search for
             
         Returns:
-            User tuple (id, name, email, password) or None if not found
+            User or None if not found
         """
         logger.info(f"UserAdapter: Looking up user by email: {email}")
         try:
@@ -151,12 +150,7 @@ class UserAdapter:
             db_user = result.scalar_one_or_none()
             
             if db_user:
-                return UserCreate(
-                    id=db_user.id,
-                    name=db_user.name,
-                    email=db_user.email,
-                    password=db_user.password
-                )
+                return self._convert_to_model(db_user)
             else:
                 logger.warning(f"UserAdapter: No user found for email: {email}")
                 return None
@@ -168,12 +162,12 @@ class UserAdapter:
             logger.error(f"UserAdapter: Unexpected error retrieving user by email {email}: {e}", exc_info=True)
             return None
     
-    async def update_user(self, user_id: str, user_data: UserUpdate) -> Optional[User]:
+    async def update_user(self, user_id: int, user_data: UserUpdate) -> Optional[User]:
         """
         Update an existing user efficiently.
         
         Args:
-            user_id: User ID to update
+            user_id: Internal user ID to update
             user_data: Updated user data
             
         Returns:
@@ -201,10 +195,10 @@ class UserAdapter:
             await self.db.commit()
             logger.info(f"Updated user: {user_id}")
             
-            # Return updated user
             return await self.get_user_by_id(user_id)
             
-        except ValueError:
+        except ValueError as e:
+            logger.error(f"Validation error updating user {user_id}: {e}")
             raise
         except IntegrityError as e:
             logger.error(f"Integrity error updating user {user_id}: {e}")
@@ -219,18 +213,17 @@ class UserAdapter:
             await self.db.rollback()
             return None
     
-    async def delete_user(self, user_id: str) -> bool:
+    async def delete_user(self, user_id: int) -> bool:
         """
-        Delete a user efficiently.
+        Delete a user.
         
         Args:
-            user_id: User ID to delete
+            user_id: Internal user ID to delete
             
         Returns:
             True if deleted, False if failed or not found
         """
         try:
-            # Direct delete operation
             stmt = delete(UserModel).where(UserModel.id == user_id)
             result = await self.db.execute(stmt)
             

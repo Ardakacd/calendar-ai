@@ -8,7 +8,7 @@ class UserBase(BaseModel):
     email: EmailStr
 
 class UserCreate(UserBase):
-    id: str
+    user_id: str
     password: str = Field(..., min_length=6, description="Password must be at least 6 characters long")
 
 class UserLogin(BaseModel):
@@ -24,7 +24,8 @@ class UserUpdate(BaseModel):
     password: Optional[str] = Field(None, min_length=6, description="Password must be at least 6 characters long")
 
 class User(UserBase):
-    id: str
+    id: int  # Internal DB ID
+    user_id: str  # Public-facing UUID for API
     password: Optional[str] = None
     created_at: Optional[str] = None
 
@@ -45,7 +46,7 @@ class EventBase(BaseModel):
         }
 
 class EventCreate(EventBase):
-    user_id: str  # Required user ID for the relationship
+    user_id: int  # References internal user.id
 
 class EventUpdate(BaseModel):
     title: Optional[str] = None
@@ -59,8 +60,8 @@ class EventUpdate(BaseModel):
         }
 
 class Event(EventBase):
-    id: str
-    user_id: str
+    id: str  # This is the event_id (UUID) for API exposure
+    user_id: int  # References internal user.id
     created_at: str
 
     class Config:
@@ -82,13 +83,11 @@ class UserLogin(BaseModel):
 class Token(BaseModel):
     access_token: str
     refresh_token: str
-    token_type: str
-    user_id: str
     user_name: str
-    expires_in: int  # Access token expiration time in seconds
+    
 
 class TokenData(BaseModel):
-    user_id: Optional[str] = None
+    user_id: Optional[int] = None
 
 class RefreshTokenRequest(BaseModel):
     refresh_token: str

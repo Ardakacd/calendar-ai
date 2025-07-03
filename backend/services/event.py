@@ -2,7 +2,7 @@ from fastapi import Depends, HTTPException, status
 from models import EventBase, EventUpdate, Event, EventCreate
 from adapter.event import EventAdapter
 from utils.jwt import get_user_id_from_token
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 import logging
 from database.config import get_async_db
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -18,33 +18,39 @@ class EventService:
         Create a new event for the authenticated user.
         
         Args:
-            token: JWT token for authentication
+            token: JWT token for user authentication
             event_data: Event data to create
             
         Returns:
             Created event
+            
+        Raises:
+            HTTPException: If user not authenticated or creation fails
         """
-        logger.info(f"EventService: Creating event with title: {event_data.title}")
         try:
+            # Extract user_id from token
             user_id = get_user_id_from_token(token)
             
-            event = EventCreate(
-                user_id=user_id,
+            # Create event with user_id
+            event_create = EventCreate(
                 title=event_data.title,
                 datetime=event_data.datetime,
                 duration=event_data.duration,
                 location=event_data.location,
+                user_id=user_id,
             )
-
-            result = await self.event_adapter.create_event(event)
+            
+            logger.info(f"EventService: Creating event for user {user_id}")
+            result = await self.event_adapter.create_event(event_create)
+            
             if not result:
-                logger.error(f"EventService: Failed to create event: {event_data.title}")
+                logger.error(f"EventService: Failed to create event for user {user_id}")
                 raise HTTPException(
                     status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                     detail="Failed to create event"
                 )
             
-            logger.info(f"EventService: Event created successfully: {result.id}")
+            logger.info(f"EventService: Event created successfully for user {user_id}")
             return result
             
         except HTTPException:
@@ -55,23 +61,30 @@ class EventService:
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Internal server error"
             )
-
+    
     async def get_event(self, token: str, event_id: str) -> Event:
         """
-        Get a specific event by ID for the authenticated user.
+        Get a specific event by ID.
         
         Args:
-            token: JWT token for authentication
+            token: JWT token for user authentication
             event_id: Event ID to retrieve
             
         Returns:
-            Event details
+            Event data
+            
+        Raises:
+            HTTPException: If user not authenticated, event not found, or not authorized
         """
-        logger.info(f"EventService: Getting event: {event_id}")
         try:
+            # Extract user_id from token
             user_id = get_user_id_from_token(token)
             
+            logger.info(f"EventService: Getting event: {event_id}")
+            
+            # Get event by event_id
             result = await self.event_adapter.get_event_by_event_id(event_id)
+            
             if not result:
                 logger.warning(f"EventService: Event not found: {event_id}")
                 raise HTTPException(
@@ -79,7 +92,7 @@ class EventService:
                     detail="Event not found"
                 )
             
-            # Verify the event belongs to the user
+            # Check if user owns the event
             if result.user_id != user_id:
                 logger.warning(f"EventService: User {user_id} not authorized to access event {event_id}")
                 raise HTTPException(
@@ -104,16 +117,21 @@ class EventService:
         Get all events for the authenticated user.
         
         Args:
-            token: JWT token for authentication
+            token: JWT token for user authentication
             limit: Maximum number of events to return
             offset: Number of events to skip
             
         Returns:
-            List of user's events
+            List of events
+            
+        Raises:
+            HTTPException: If user not authenticated
         """
-        logger.info(f"EventService: Getting events for user with pagination: limit={limit}, offset={offset}")
         try:
+            # Extract user_id from token
             user_id = get_user_id_from_token(token)
+            
+            logger.info(f"EventService: Getting events for user {user_id}")
             
             result = await self.event_adapter.get_events_by_user_id(user_id, limit=limit, offset=offset)
             
@@ -123,27 +141,32 @@ class EventService:
         except HTTPException:
             raise
         except Exception as e:
-            logger.error(f"EventService: Unexpected error getting user events: {str(e)}", exc_info=True)
+            logger.error(f"EventService: Unexpected error getting events: {str(e)}", exc_info=True)
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Internal server error"
             )
-
+    
     async def get_events_by_date_range(self, token: str, start_date: str, end_date: str) -> List[Event]:
         """
         Get events within a date range for the authenticated user.
         
         Args:
-            token: JWT token for authentication
+            token: JWT token for user authentication
             start_date: Start date (YYYY-MM-DD HH:MM:SS)
             end_date: End date (YYYY-MM-DD HH:MM:SS)
             
         Returns:
             List of events in date range
+            
+        Raises:
+            HTTPException: If user not authenticated
         """
-        logger.info(f"EventService: Getting events by date range: {start_date} to {end_date}")
         try:
+            # Extract user_id from token
             user_id = get_user_id_from_token(token)
+            
+            logger.info(f"EventService: Getting events in date range for user {user_id}")
             
             result = await self.event_adapter.get_events_by_date_range(user_id, start_date, end_date)
             
@@ -158,24 +181,30 @@ class EventService:
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Internal server error"
             )
-
-    async def update_event(self, token: str, event_id: str, event_data: EventUpdate) -> dict:
+    
+    async def update_event(self, token: str, event_id: str, event_data: EventUpdate) -> Dict[str, Any]:
         """
-        Update an existing event for the authenticated user.
+        Update an existing event.
         
         Args:
-            token: JWT token for authentication
+            token: JWT token for user authentication
             event_id: Event ID to update
             event_data: Updated event data
             
         Returns:
             Success message
+            
+        Raises:
+            HTTPException: If user not authenticated, event not found, or not authorized
         """
-        logger.info(f"EventService: Updating event: {event_id}")
         try:
+            # Extract user_id from token
             user_id = get_user_id_from_token(token)
             
+            logger.info(f"EventService: Updating event: {event_id}")
+            
             result = await self.event_adapter.update_event(event_id, user_id, event_data)
+            
             if not result:
                 logger.warning(f"EventService: Event not found or not authorized for update: {event_id}")
                 raise HTTPException(
@@ -184,9 +213,7 @@ class EventService:
                 )
             
             logger.info(f"EventService: Event updated successfully: {event_id}")
-            print('look at here')
-            print(result)
-            return result
+            return {"message": "Event updated successfully", "event": result}
             
         except HTTPException:
             raise
@@ -196,23 +223,29 @@ class EventService:
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Internal server error"
             )
-
-    async def delete_event(self, token: str, event_id: str) -> dict:
+    
+    async def delete_event(self, token: str, event_id: str) -> Dict[str, Any]:
         """
-        Delete an event for the authenticated user.
+        Delete an event.
         
         Args:
-            token: JWT token for authentication
+            token: JWT token for user authentication
             event_id: Event ID to delete
             
         Returns:
             Success message
+            
+        Raises:
+            HTTPException: If user not authenticated, event not found, or not authorized
         """
-        logger.info(f"EventService: Deleting event: {event_id}")
         try:
+            # Extract user_id from token
             user_id = get_user_id_from_token(token)
             
+            logger.info(f"EventService: Deleting event: {event_id}")
+            
             result = await self.event_adapter.delete_event(event_id, user_id)
+            
             if not result:
                 logger.warning(f"EventService: Event not found or not authorized for deletion: {event_id}")
                 raise HTTPException(
@@ -231,21 +264,26 @@ class EventService:
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Internal server error"
             )
-
+    
     async def search_events(self, token: str, query: str) -> List[Event]:
         """
         Search events by title for the authenticated user.
         
         Args:
-            token: JWT token for authentication
+            token: JWT token for user authentication
             query: Search query
             
         Returns:
             List of matching events
+            
+        Raises:
+            HTTPException: If user not authenticated
         """
-        logger.info(f"EventService: Searching events with query: {query}")
         try:
+            # Extract user_id from token
             user_id = get_user_id_from_token(token)
+            
+            logger.info(f"EventService: Searching events for user {user_id}")
             
             result = await self.event_adapter.search_events(user_id, query)
             
@@ -260,20 +298,25 @@ class EventService:
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Internal server error"
             )
-
-    async def get_events_count(self, token: str) -> dict:
+    
+    async def get_events_count(self, token: str) -> Dict[str, Any]:
         """
         Get total number of events for the authenticated user.
         
         Args:
-            token: JWT token for authentication
+            token: JWT token for user authentication
             
         Returns:
             Event count
+            
+        Raises:
+            HTTPException: If user not authenticated
         """
-        logger.info("EventService: Getting events count")
         try:
+            # Extract user_id from token
             user_id = get_user_id_from_token(token)
+            
+            logger.info(f"EventService: Getting event count for user {user_id}")
             
             count = await self.event_adapter.get_events_count(user_id)
             
@@ -283,12 +326,12 @@ class EventService:
         except HTTPException:
             raise
         except Exception as e:
-            logger.error(f"EventService: Unexpected error getting events count: {str(e)}", exc_info=True)
+            logger.error(f"EventService: Unexpected error getting event count: {str(e)}", exc_info=True)
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Internal server error"
             )
-        
+
 def get_event_service(
     db: AsyncSession = Depends(get_async_db),
 ) -> EventService:

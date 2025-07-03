@@ -1,10 +1,9 @@
 from fastapi import Depends, HTTPException, status
-from models import User, RefreshTokenRequest, UserRegister, UserLogin
-from adapter.user import UserAdapter
-from utils.jwt import create_access_token, create_refresh_token, verify_token, verify_refresh_token
+from models import User, RefreshTokenRequest, UserRegister, UserLogin, UserUpdate, UserCreate
+from adapter.user import UserAdapter    
+from utils.jwt import create_access_token, create_refresh_token, verify_token, verify_refresh_token, get_user_id_from_token
 from utils.password import verify_password, get_password_hash
-from config import settings
-import uuid
+import uuid 
 import logging
 from database.config import get_async_db
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -46,10 +45,8 @@ class UserService:
             return {
                 "access_token": access_token,
                 "refresh_token": refresh_token,
-                "token_type": "bearer",
-                "user_id": db_user.id,
                 "user_name": db_user.name,
-                "expires_in": settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60  # Convert to seconds
+                
             }
         except HTTPException:
             raise
@@ -69,34 +66,39 @@ class UserService:
             user_id = str(uuid.uuid4())
             logger.debug(f"UserService: Generated user ID: {user_id}")
             
-            user_data = User(
-                id=user_id,
+            user_data = UserCreate(
+                user_id=user_id,
                 name=user.name,
                 email=user.email,
                 password=hashed_password
             )
             
             logger.debug(f"UserService: User object created: {user_data}")
-            await self.user_adapter.create_user(user_data)
-            logger.info(f"UserService: User created successfully in database: {user_id}")
+            db_user = await self.user_adapter.create_user(user_data)
+            
+            if not db_user:
+                logger.error(f"UserService: Failed to create user in database: {user.email}")
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="Failed to create user"
+                )
+            
+            logger.info(f"UserService: User created successfully in database: {db_user.id}")
             
             access_token = create_access_token(
-                data={"user_id": user_id}
+                data={"user_id": db_user.id}  
             )
             
             refresh_token = create_refresh_token(
-                data={"user_id": user_id}
+                data={"user_id": db_user.id}  
             )
             
-            logger.info(f"UserService: Registration successful for user: {user_id}")
+            logger.info(f"UserService: Registration successful for user: {db_user.id}")
             
             return {
                 "access_token": access_token,
                 "refresh_token": refresh_token,
-                "token_type": "bearer",
-                "user_id": user_id,
                 "user_name": user.name,
-                "expires_in": settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60  # Convert to seconds
             }
         except HTTPException:
             raise
@@ -110,42 +112,30 @@ class UserService:
     async def refresh_token(self, refresh_request: RefreshTokenRequest):
         try:
             # Verify the refresh token
-            print(refresh_request.refresh_token)
             token_data = verify_refresh_token(refresh_request.refresh_token)
             user_id = token_data.user_id
             
-            # Check if user still exists
+            # Check if user still exists using public user_id
             user = await self.user_adapter.get_user_by_id(user_id)
             if not user:
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,
                     detail="User not found"
                 )
-            print(user_id)
-            
-            # Create new access token
+                # Create new access token
             access_token = create_access_token(
                 data={"user_id": user_id}
             )
-            print('geldi')
             
             # Create new refresh token (optional - you can reuse the old one)
             new_refresh_token = create_refresh_token(
                 data={"user_id": user_id}
             )
-            print(access_token)
-            print(new_refresh_token)
-            print(user_id)
-            print(user.name)
-            print(settings.ACCESS_TOKEN_EXPIRE_MINUTES)
             
             return {
                 "access_token": access_token,
                 "refresh_token": new_refresh_token,
-                "token_type": "bearer",
-                "user_id": user_id,
                 "user_name": user.name,
-                "expires_in": settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60  # Convert to seconds
             }
         except HTTPException:
             raise
@@ -169,8 +159,7 @@ class UserService:
 
     async def get_user(self, token: str):
         try:
-            token_data = verify_token(token)
-            user_id = token_data.user_id
+            user_id = get_user_id_from_token(token)
             
             user = await self.user_adapter.get_user_by_id(user_id)
             if not user:
@@ -180,7 +169,7 @@ class UserService:
                 )
             
             return {
-                "id": user.id,
+                "user_id": user.user_id,  # Public UUID
                 "name": user.name,
                 "email": user.email
             }
@@ -194,9 +183,7 @@ class UserService:
 
     async def update_user(self, token: str, user: User):
         try:
-            token_data = verify_token(token)
-            user_id = token_data.user_id
-            
+            user_id = get_user_id_from_token(token)
             
             existing_user = await self.user_adapter.get_user_by_id(user_id)
             if not existing_user:
@@ -208,15 +195,15 @@ class UserService:
             
             hashed_password = get_password_hash(user.password) if user.password else existing_user.password
             
-            
-            user_data = User(
-                id=user_id,
-                name=existing_user.name,
-                email=existing_user.email,
+            # Create update data
+            user_data = UserUpdate(
+                name=user.name if user.name else existing_user.name,
+                email=user.email if user.email else existing_user.email,
                 password=hashed_password
             )
             
-            await self.user_adapter.update_user(user_id, user_data)
+            # Update user using internal ID
+            await self.user_adapter.update_user(existing_user.id, user_data)
             
             return {"message": "User updated successfully"}
         except HTTPException:
@@ -229,17 +216,9 @@ class UserService:
 
     async def delete_user(self, token: str):
         try:
+            user_id = get_user_id_from_token(token)
             
-            token_data = verify_token(token)
-            user_id = token_data.user_id
-            
-            existing_user = await self.user_adapter.get_user_by_id(user_id)
-            if not existing_user:
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail="User not found"
-                )
-            
+            # Delete user using internal ID
             await self.user_adapter.delete_user(user_id)
             
             return {"message": "User deleted successfully"}
