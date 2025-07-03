@@ -2,7 +2,6 @@ import React, { createContext, useContext, useState, useEffect, ReactNode } from
 import { calendarAPI } from '../services/api';
 
 interface User {
-  id?: string;
   name: string;
 }
 
@@ -75,7 +74,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       const response = await calendarAPI.login({ email, password });
       // Use user data from login response instead of making another API call
       setUser({
-        id: response.user_id,
         name: response.user_name,
       });
     } catch (error) {
@@ -92,7 +90,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       const response = await calendarAPI.register({ name, email, password });
       // Use user data from register response instead of making another API call
       setUser({
-        id: response.user_id,
         name: response.user_name,
       });
     } catch (error) {

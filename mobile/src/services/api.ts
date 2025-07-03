@@ -7,7 +7,6 @@ const API_BASE_URL = 'http://localhost:8000';
 // Token storage keys
 const ACCESS_TOKEN_KEY = 'access_token';
 const REFRESH_TOKEN_KEY = 'refresh_token';
-const USER_ID_KEY = 'user_id';
 
 interface TranscribeResponse {
   message: string;
@@ -137,7 +136,6 @@ class CalendarAPI {
 
   async register(userData: RegisterData): Promise<TokenResponse> {
     try {
-      console.log(userData)
       const response = await this.api.post('/auth/register', userData);
       const tokenData = response.data;
       
@@ -185,13 +183,11 @@ class CalendarAPI {
   private async storeTokens(tokenData: TokenResponse): Promise<void> {
     await AsyncStorage.setItem(ACCESS_TOKEN_KEY, tokenData.access_token);
     await AsyncStorage.setItem(REFRESH_TOKEN_KEY, tokenData.refresh_token);
-    await AsyncStorage.setItem(USER_ID_KEY, tokenData.user_id);
   }
 
   private async clearTokens(): Promise<void> {
     await AsyncStorage.removeItem(ACCESS_TOKEN_KEY);
     await AsyncStorage.removeItem(REFRESH_TOKEN_KEY);
-    await AsyncStorage.removeItem(USER_ID_KEY);
   }
 
   async isAuthenticated(): Promise<boolean> {
@@ -199,12 +195,11 @@ class CalendarAPI {
     return !!token;
   }
 
-  async getStoredTokens(): Promise<{ accessToken: string | null; refreshToken: string | null; userId: string | null }> {
+  async getStoredTokens(): Promise<{ accessToken: string | null; refreshToken: string | null; }> {
     const accessToken = await AsyncStorage.getItem(ACCESS_TOKEN_KEY);
     const refreshToken = await AsyncStorage.getItem(REFRESH_TOKEN_KEY);
-    const userId = await AsyncStorage.getItem(USER_ID_KEY);
     
-    return { accessToken, refreshToken, userId };
+    return { accessToken, refreshToken };
   }
 
   // Calendar methods
@@ -253,7 +248,6 @@ class CalendarAPI {
 
   async addEvent(event: Omit<Event, 'id'>): Promise<Event> {
     try {
-      console.log('Adding event:', event);
       const response = await this.api.post('/events', event);
       return response.data;
     } catch (error) {

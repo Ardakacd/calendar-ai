@@ -34,7 +34,6 @@ const SignupScreen: React.FC = () => {
     try {
       await register(name, email, password);
     } catch (error: any) {
-      console.log(error);
       Alert.alert('Error', error.message || 'Registration failed');
     } finally {
       setIsLoading(false);

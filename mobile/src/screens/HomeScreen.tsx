@@ -24,11 +24,9 @@ export default function HomeScreen() {
   const handleVoiceCommand = async (audioUri: string) => {
     setIsProcessing(true);
     setFeedback(null);
-    console.log(audioUri)
-    console.log('this is the file')
     
     try {
-      const response = await transcribeAudio(audioUri);
+       const response = await transcribeAudio(audioUri);
       setFeedback(response.message);
       
       // Navigate to calendar if events were modified
@@ -44,8 +42,6 @@ export default function HomeScreen() {
       setIsProcessing(false);
     }
   };
-
-  console.log(user)
 
   const handleLogout = async () => {
     Alert.alert(

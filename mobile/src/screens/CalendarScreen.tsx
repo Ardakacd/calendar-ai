@@ -54,11 +54,9 @@ export default function CalendarScreen() {
     try {
       setLoading(true);
       const fetchedEvents = await getEvents();
-      console.log('Fetched events:', fetchedEvents);
       setEvents(fetchedEvents);
       updateMarkedDates(fetchedEvents, selectedDate);
     } catch (error) {
-      console.error('Error loading events:', error);
       Alert.alert('Error', 'Failed to load events');
     } finally {
       setLoading(false);
@@ -105,17 +103,13 @@ export default function CalendarScreen() {
   };
 
   const getEventsForDate = (date: string) => {
-    console.log('Looking for events on date:', date);
-    console.log('All events:', events);
     const filteredEvents = events.filter(event => event.datetime.split('T')[0] === date);
-    console.log('Filtered events for date:', filteredEvents);
     
     // Sort events by datetime in ascending order
     const sortedEvents = filteredEvents.sort((a, b) => {
       return new Date(a.datetime).getTime() - new Date(b.datetime).getTime();
     });
     
-    console.log('Sorted events for date:', sortedEvents);
     return sortedEvents;
   };
 
@@ -141,8 +135,6 @@ export default function CalendarScreen() {
         duration: updatedEvent.duration ? parseInt(updatedEvent.duration as any) : undefined
       };
 
-      console.log('Updating event:', apiEvent);
-      
       const updatedEventData = await updateEvent(eventId, apiEvent);
       
       // Update the events list with the updated event
@@ -195,7 +187,6 @@ export default function CalendarScreen() {
 
   const handleAddEvent = async (newEvent: Omit<Event, 'id'>) => {
     try {
-      console.log('Adding event:', newEvent);
       const addedEvent = await addEvent(newEvent);
       
       // Add to local state
