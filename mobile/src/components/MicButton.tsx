@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   StyleSheet,
@@ -15,12 +15,19 @@ interface MicButtonProps {
   isProcessing?: boolean;
 }
 
-export default function MicButton({ onRecordingComplete, isProcessing = false }: MicButtonProps) {
+export default function MicButton({ 
+  onRecordingComplete, 
+  isProcessing = false, 
+}: MicButtonProps) {
   const [recording, setRecording] = useState<Audio.Recording | null>(null);
   const [isRecording, setIsRecording] = useState(false);
   const [hasPermission, setHasPermission] = useState(false);
+  const [recordingTime, setRecordingTime] = useState(0);
   const scaleAnim = useState(new Animated.Value(1))[0];
   const pulseAnim = useState(new Animated.Value(1))[0];
+  const recordingTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  const maxRecordingTime = 30;
 
   useEffect(() => {
     (async () => {
@@ -50,8 +57,27 @@ export default function MicButton({ onRecordingComplete, isProcessing = false }:
           }),
         ])
       ).start();
+
+      // Start recording timer
+      recordingTimerRef.current = setInterval(() => {
+        setRecordingTime(prev => {
+          const newTime = prev + 1;
+          if (newTime >= maxRecordingTime) {
+            // Auto-stop recording when max duration is reached
+            stopRecording();
+            return 0;
+          }
+          return newTime;
+        });
+      }, 1000);
     } else {
       pulseAnim.setValue(1);
+      // Clear timer when not recording
+      if (recordingTimerRef.current) {
+        clearInterval(recordingTimerRef.current);
+        recordingTimerRef.current = null;
+      }
+      setRecordingTime(0);
     }
   }, [isRecording, pulseAnim]);
 
@@ -73,6 +99,7 @@ export default function MicButton({ onRecordingComplete, isProcessing = false }:
       
       setRecording(recording);
       setIsRecording(true);
+      setRecordingTime(0);
       
       // Scale animation on press
       Animated.spring(scaleAnim, {
@@ -84,7 +111,7 @@ export default function MicButton({ onRecordingComplete, isProcessing = false }:
       Alert.alert('Error', 'Failed to start recording. Please try again.');
     }
   };
-
+  
   const stopRecording = async () => {
     if (!recording) return;
 
@@ -119,6 +146,12 @@ export default function MicButton({ onRecordingComplete, isProcessing = false }:
     if (isRecording) {
       stopRecording();
     }
+  };
+
+  const formatTime = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
   return (
@@ -158,6 +191,12 @@ export default function MicButton({ onRecordingComplete, isProcessing = false }:
           </Animated.View>
         </TouchableOpacity>
       </Animated.View>
+      
+      {isRecording && (
+        <Text style={styles.timerText}>
+          {formatTime(recordingTime)} / {formatTime(maxRecordingTime)}
+        </Text>
+      )}
       
       <Text style={styles.instructionText}>
         {isProcessing
@@ -205,6 +244,13 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   instructionText: {
+    marginTop: 15,
+    fontSize: 16,
+    color: 'white',
+    fontWeight: '500',
+    textAlign: 'center',
+  },
+  timerText: {
     marginTop: 15,
     fontSize: 16,
     color: 'white',
