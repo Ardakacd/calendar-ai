@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View,
   StyleSheet,
@@ -28,6 +28,22 @@ export default function MicButton({
   const recordingTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   const maxRecordingTime = 30;
+
+  const updateTimer = useCallback(() => {
+    setRecordingTime(prev => {
+      const newTime = prev + 1;
+      if (newTime >= maxRecordingTime) {
+        // Auto-stop recording when max duration is reached
+        setTimeout(() => {
+          if (recording) {
+            stopRecording();
+          }
+        }, 0);
+        return 0;
+      }
+      return newTime;
+    });
+  }, [maxRecordingTime, recording]);
 
   useEffect(() => {
     (async () => {
@@ -59,17 +75,7 @@ export default function MicButton({
       ).start();
 
       // Start recording timer
-      recordingTimerRef.current = setInterval(() => {
-        setRecordingTime(prev => {
-          const newTime = prev + 1;
-          if (newTime >= maxRecordingTime) {
-            // Auto-stop recording when max duration is reached
-            stopRecording();
-            return 0;
-          }
-          return newTime;
-        });
-      }, 1000);
+      recordingTimerRef.current = setInterval(updateTimer, 1000);
     } else {
       pulseAnim.setValue(1);
       // Clear timer when not recording
@@ -79,7 +85,7 @@ export default function MicButton({
       }
       setRecordingTime(0);
     }
-  }, [isRecording, pulseAnim]);
+  }, [isRecording, pulseAnim, updateTimer]);
 
   const startRecording = async () => {
     if (!hasPermission) {
@@ -158,7 +164,6 @@ export default function MicButton({
     <View style={styles.container}>
       <Animated.View
         style={[
-          styles.pulseContainer,
           {
             transform: [{ scale: pulseAnim }],
           },
@@ -177,7 +182,6 @@ export default function MicButton({
         >
           <Animated.View
             style={[
-              styles.iconContainer,
               {
                 transform: [{ scale: scaleAnim }],
               },
@@ -185,7 +189,7 @@ export default function MicButton({
           >
             <MaterialIcons
               name={isRecording ? 'mic' : 'mic-none'}
-              size={40}
+              size={24}
               color={isRecording ? '#ff4444' : '#6200ee'}
             />
           </Animated.View>
@@ -197,14 +201,6 @@ export default function MicButton({
           {formatTime(recordingTime)} / {formatTime(maxRecordingTime)}
         </Text>
       )}
-      
-      <Text style={styles.instructionText}>
-        {isProcessing
-          ? 'Processing...'
-          : isRecording
-          ? 'Release to stop'
-          : 'Hold to speak'}
-      </Text>
     </View>
   );
 }
@@ -212,36 +208,30 @@ export default function MicButton({
 const styles = StyleSheet.create({
   container: {
     alignItems: 'center',
-  },
-  pulseContainer: {
-    alignItems: 'center',
+    height: 60,
     justifyContent: 'center',
   },
   micButton: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     backgroundColor: 'rgba(255, 255, 255, 0.9)',
     alignItems: 'center',
     justifyContent: 'center',
     shadowColor: '#000',
     shadowOffset: {
       width: 0,
-      height: 4,
+      height: 2,
     },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 8,
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 4,
   },
   recording: {
     backgroundColor: 'rgba(255, 68, 68, 0.9)',
   },
   processing: {
     backgroundColor: 'rgba(98, 0, 238, 0.6)',
-  },
-  iconContainer: {
-    alignItems: 'center',
-    justifyContent: 'center',
   },
   instructionText: {
     marginTop: 15,
@@ -251,10 +241,11 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   timerText: {
-    marginTop: 15,
-    fontSize: 16,
+    fontSize: 12,
     color: 'white',
     fontWeight: '500',
     textAlign: 'center',
+    minWidth:80,
+    marginTop:4
   },
 }); 
