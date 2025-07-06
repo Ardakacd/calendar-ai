@@ -61,7 +61,7 @@ const AppContent: React.FC = () => {
                         <Stack.Screen
                             name="Home"
                             component={HomeScreen}
-                            options={{title: 'Calen'}}
+                            options={{headerShown: false}}
                         />
                         <Stack.Screen
                             name="Calendar"
