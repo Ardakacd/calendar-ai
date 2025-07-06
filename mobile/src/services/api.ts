@@ -14,7 +14,7 @@ interface TranscribeResponse {
   requires_confirmation: boolean;
   confirmation_data?: {
     title: string;
-    datetime: string;
+    startDate: string;
     duration?: number;
     location?: string;
     event_id?: string;
@@ -30,8 +30,15 @@ interface TranscribeResponse {
 interface Event {
   id: string;
   title: string;
-  datetime: string;
+  startDate: string;
+  endDate?: string;
   duration?: number;
+  location?: string;
+}
+
+interface EventUpdateResponse {
+  message: string;
+  event: Event;
 }
 
 interface User {
@@ -61,7 +68,7 @@ interface TokenResponse {
 
 interface EventConfirmationData {
   title: string;
-  datetime: string;
+  startDate: string;
   duration?: number;
   location?: string;
   event_id?: string;
@@ -277,7 +284,7 @@ class CalendarAPI {
     }
   }
 
-  async updateEvent(id: string, event: Partial<Event>): Promise<Event> {
+  async updateEvent(id: string, event: Partial<Event>): Promise<EventUpdateResponse> {
     try {
       const response = await this.api.put(`/events/${id}`, event);
       return response.data;

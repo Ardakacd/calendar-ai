@@ -26,7 +26,7 @@ interface ChatMessage {
 
 interface EventConfirmationData {
   title: string;
-  datetime: string;
+  startDate: string;
   duration?: number;
   location?: string;
   event_id?: string;
@@ -75,29 +75,29 @@ export default function HomeScreen() {
 
   const handleSendMessage = async () => {
     if (!inputText.trim()) return;
-    
+
     const userMessage = inputText.trim();
     addMessage('user', userMessage);
     setInputText('');
     scrollToBottom();
-    
+
     // Maintain focus on the input
     setTimeout(() => {
       inputRef.current?.focus();
     }, 100);
-    
+
     // await processCommand(userMessage);
   };
 
   const handleVoiceCommand = async (audioUri: string) => {
     setIsProcessing(true);
-    
+
     try {
       // const response = await transcribeAudio(audioUri);
       // const userMessage = response.message || 'Voice command processed';
       //addMessage('user', userMessage);
       // scrollToBottom();
-      
+
       //await processCommand(userMessage);
     } catch (error) {
       console.error('Error processing voice command:', error);
@@ -111,7 +111,7 @@ export default function HomeScreen() {
   const processCommand = async (command: string) => {
     try {
       const response = await transcribeAudio(''); // This will need to be updated to handle text commands
-      
+
       if (response.requires_confirmation && response.confirmation_data) {
         addMessage('ai', 'Do you confirm an event with the following attributes:', response.confirmation_data);
         setConfirmationData({
@@ -122,7 +122,7 @@ export default function HomeScreen() {
       } else {
         addMessage('ai', response.message || 'Command processed successfully.');
       }
-      
+
       scrollToBottom();
     } catch (error) {
       console.error('Error processing command:', error);
@@ -133,23 +133,23 @@ export default function HomeScreen() {
 
   const handleConfirmAction = async (eventData: EventConfirmationData) => {
     if (!confirmationData) return;
-    
+
     setIsConfirming(true);
     try {
       const result = await confirmAction({
         action: confirmationData.action,
         event_data: eventData,
       });
-      
+
       addMessage('ai', result.message);
       setShowConfirmationModal(false);
       setConfirmationData(null);
       scrollToBottom();
-      
+
       setTimeout(() => {
         navigation.navigate('Calendar' as never);
       }, 2000);
-      
+
     } catch (error) {
       console.error('Error confirming action:', error);
       addMessage('ai', 'Failed to confirm action. Please try again.');
@@ -187,14 +187,14 @@ export default function HomeScreen() {
 
   const renderMessage = (message: ChatMessage) => {
     const isUser = message.type === 'user';
-    
+
     return (
       <View key={message.id} style={[styles.messageContainer, isUser ? styles.userMessage : styles.aiMessage]}>
         <View style={[styles.messageBubble, isUser ? styles.userBubble : styles.aiBubble]}>
           <Text style={[styles.messageText, isUser ? styles.userMessageText : styles.aiMessageText]}>
             {message.content}
           </Text>
-          
+
           {message.eventData && (
             <Card style={styles.eventCard}>
               <Card.Content>
@@ -222,9 +222,9 @@ export default function HomeScreen() {
     >
       <View style={styles.header}>
         <View style={styles.userInfo}>
-          <Avatar.Text 
-            size={40} 
-            label={user?.name?.charAt(0)?.toUpperCase() || 'U'} 
+          <Avatar.Text
+            size={40}
+            label={user?.name?.charAt(0)?.toUpperCase() || 'U'}
             style={styles.avatar}
           />
           <View style={styles.userText}>
@@ -240,7 +240,7 @@ export default function HomeScreen() {
         />
       </View>
 
-      <KeyboardAvoidingView 
+      <KeyboardAvoidingView
         style={styles.chatContainer}
       >
         <ScrollView
@@ -346,7 +346,7 @@ const styles = StyleSheet.create({
   messagesContent: {
     paddingHorizontal: 16,
     paddingBottom: 20,
-  },  
+  },
   inputContainer: {
     flexDirection: 'row',
     alignItems: 'center',

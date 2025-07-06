@@ -18,7 +18,8 @@ import AddEventModal from '../components/AddEventModal';
 interface Event {
   id: string;
   title: string;
-  datetime: string;
+  startDate: string;
+  endDate?: string;
   duration?: number;
   location?: string;
 }
@@ -68,7 +69,7 @@ export default function CalendarScreen() {
     
     // First, mark all dates with events
     eventList.forEach(event => {
-      const dateKey = event.datetime.split('T')[0];
+      const dateKey = event.startDate.split('T')[0];
       if (marked[dateKey]) {
         marked[dateKey].marked = true;
       } else {
@@ -103,23 +104,33 @@ export default function CalendarScreen() {
   };
 
   const getEventsForDate = (date: string) => {
-    const filteredEvents = events.filter(event => event.datetime.split('T')[0] === date);
+    console.log("EVENTS:" , events);
+    const filteredEvents = events.filter(event => {
+      return event.startDate.split('T')[0] === date
+    });
     
-    // Sort events by datetime in ascending order
+    // Sort events by startDate in ascending order
     const sortedEvents = filteredEvents.sort((a, b) => {
-      return new Date(a.datetime).getTime() - new Date(b.datetime).getTime();
+      return new Date(a.startDate).getTime() - new Date(b.startDate).getTime();
     });
     
     return sortedEvents;
   };
-
   const formatTime = (datetime: string) => {
-    const date = new Date(datetime);
-    return date.toLocaleTimeString(Localization.locale || 'en-US', {
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: true
-    });
+    try {
+      const date = new Date(datetime);
+      if (isNaN(date.getTime())) {
+        return 'Invalid time';
+      }
+      return date.toLocaleTimeString(Localization.locale || 'en-US', {
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: true
+      });
+    } catch (error) {
+      console.error('Error formatting time:', error, datetime);
+      return 'Invalid time';
+    }
   };
 
   const handleUpdateEvent = (event: Event) => {
@@ -129,13 +140,19 @@ export default function CalendarScreen() {
 
   const handleUpdateEventSubmit = async (eventId: string, updatedEvent: Partial<Event>) => {
     try {
-      // Convert duration from string to number if it exists
+      // Duration is already a number from UpdateEventModal, no need to parse again
       const apiEvent = {
         ...updatedEvent,
-        duration: updatedEvent.duration ? parseInt(updatedEvent.duration as any) : undefined
+        // Only include duration if it's provided and valid
+        ...(updatedEvent.duration !== undefined && { duration: updatedEvent.duration })
       };
 
-      const updatedEventData = await updateEvent(eventId, apiEvent);
+      const response = await updateEvent(eventId, apiEvent);
+      
+      console.log('Updated event response:', response);
+      
+      // Extract the actual event data from the response
+      const updatedEventData = response.event;
       
       // Update the events list with the updated event
       setEvents(prevEvents => 
@@ -144,8 +161,12 @@ export default function CalendarScreen() {
         )
       );
       
-      // Update marked dates
-      updateMarkedDates(events.map(event => event.id === eventId ? updatedEventData : event), selectedDate);
+      // Update marked dates with the new events list
+      const updatedEventsList = events.map(event =>
+        event.id === eventId ? updatedEventData : event
+      );
+      console.log("updatedEventsList: ", updatedEventsList);
+      updateMarkedDates(updatedEventsList, selectedDate);
       
     } catch (error) {
       console.error('Error updating event:', error);
@@ -259,7 +280,7 @@ export default function CalendarScreen() {
                     <Text style={styles.eventTitle}>{event.title}</Text>
                     <View style={styles.eventTimeContainer}>
                       <MaterialIcons name="access-time" size={16} color="#6200ee" />
-                      <Text style={styles.eventTime}>{formatTime(event.datetime)}</Text>
+                      <Text style={styles.eventTime}>{formatTime(event.startDate)}</Text>
                     </View>
                   </View>
                  

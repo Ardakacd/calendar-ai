@@ -1,11 +1,13 @@
+import logging
+
+import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-import uvicorn
-import logging
+
+from controller.event_controller import router as event_router
+from controller.transcribe_controller import router as transcribe_router
+from controller.user_controller import router as auth_router
 from database import init_db
-from controller.user import router as auth_router
-from controller.transcribe import router as transcribe_router
-from controller.event import router as event_router
 
 # Configure logging
 logging.basicConfig(
@@ -45,9 +47,9 @@ except Exception as e:
     logger.error(f"Failed to initialize database: {e}", exc_info=True)
     raise
 
-
 # Include transcribe routes
 app.include_router(transcribe_router)
+
 
 @app.get("/")
 async def root():
@@ -56,4 +58,4 @@ async def root():
 
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8000) 
+    uvicorn.run(app, host="0.0.0.0", port=8000)

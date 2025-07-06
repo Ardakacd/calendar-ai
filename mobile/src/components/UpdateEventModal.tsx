@@ -21,7 +21,8 @@ import NumericInput from './NumericInput';
 interface Event {
   id: string;
   title: string;
-  datetime: string;
+  startDate: string;
+  endDate?: string;
   duration?: number;
   location?: string;
 }
@@ -51,7 +52,7 @@ export default function UpdateEventModal({
       setTitle(event.title);
       setLocation(event.location || '');
       setDuration(event.duration?.toString() || '');
-      setDatetime(new Date(event.datetime));
+      setDatetime(new Date(event.startDate));
     }
   }, [event]);
 
@@ -85,7 +86,7 @@ export default function UpdateEventModal({
         title: title.trim(),
         location: location.trim() || undefined,
         duration: durationMinutes,
-        datetime: datetime.toISOString(),
+        startDate: datetime.toISOString(),
       });
       onDismiss();
       Alert.alert('Success', 'Event updated successfully');

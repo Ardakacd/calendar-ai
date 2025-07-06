@@ -1,10 +1,11 @@
 from typing import List, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy import select, delete, update
+from sqlalchemy import select, delete, update, func
 import logging
 from database import EventModel
 from models import EventCreate, EventUpdate, Event
+from datetime import datetime, timedelta
 
 logger = logging.getLogger(__name__)
 
@@ -22,22 +23,36 @@ class EventAdapter:
     
     def _convert_to_model(self, event_model: EventModel) -> Event:
         """Convert EventModel to Event Pydantic model."""
+        # Calculate duration from startDate and endDate
+        duration = None
+        if event_model.startDate and event_model.endDate:
+            delta = event_model.endDate - event_model.startDate
+            duration = int(delta.total_seconds() / 60)
+        
         return Event(
             id=event_model.event_id,  # Use event_id (UUID) for API exposure
             title=event_model.title,
-            datetime=event_model.datetime,  # Keep as datetime object for Pydantic validation
-            duration=event_model.duration,
+            startDate=event_model.startDate,
+            endDate=event_model.endDate,
+            duration=duration,  # Set the computed duration
             location=event_model.location,
             user_id=event_model.user_id,
-            created_at=event_model.created_at.isoformat() if event_model.created_at else None
+            created_at=event_model.created_at.isoformat() if event_model.created_at else ""
         )
     
     def _convert_to_db_model(self, event_data: EventCreate) -> EventModel:
         """Convert EventCreate Pydantic model to EventModel."""
+        # Calculate endDate from startDate + duration if duration is provided
+        end_date = None
+        if event_data.duration and event_data.duration > 0:
+            end_date = event_data.startDate + timedelta(minutes=event_data.duration)
+        elif event_data.endDate:
+            end_date = event_data.endDate
+            
         return EventModel(
             title=event_data.title,
-            datetime=event_data.datetime,
-            duration=event_data.duration,
+            startDate=event_data.startDate,
+            endDate=end_date,
             location=event_data.location,
             user_id=event_data.user_id
         )
@@ -108,7 +123,7 @@ class EventAdapter:
             List of events
         """
         try:
-            stmt = select(EventModel).where(EventModel.user_id == user_id).order_by(EventModel.datetime.desc())
+            stmt = select(EventModel).where(EventModel.user_id == user_id).order_by(EventModel.startDate.desc())
             
             if offset:
                 stmt = stmt.offset(offset)
@@ -139,7 +154,7 @@ class EventAdapter:
             List of events
         """
         try:
-            stmt = select(EventModel).order_by(EventModel.datetime.desc())
+            stmt = select(EventModel).order_by(EventModel.startDate.desc())
             
             if offset:
                 stmt = stmt.offset(offset)
@@ -173,9 +188,9 @@ class EventAdapter:
         try:
             stmt = select(EventModel).where(
                 EventModel.user_id == user_id,
-                EventModel.datetime >= start_date,
-                EventModel.datetime <= end_date
-            ).order_by(EventModel.datetime.asc())
+                EventModel.startDate >= start_date,
+                EventModel.startDate <= end_date
+            ).order_by(EventModel.startDate.asc())
             
             result = await self.db.execute(stmt)
             db_events = result.scalars().all()
@@ -199,31 +214,66 @@ class EventAdapter:
             event_data: Updated event data
             
         Returns:
-            True if updated successfully, False if failed or not found
+            Updated event or None if failed
         """
         try:
-            print(event_data)
-            update_data = event_data.dict(exclude_unset=True)
-            if not update_data:
-                logger.warning(f"No fields to update for event {event_id}")
-                return True  
-            
-            # Direct update operation with user ownership check
-            stmt = update(EventModel).where(
-                EventModel.event_id == event_id,
-                EventModel.user_id == user_id
-            ).values(**update_data).returning(EventModel)
-            
+            # First, get the existing event to verify ownership
+            stmt = select(EventModel).where(EventModel.event_id == event_id)
             result = await self.db.execute(stmt)
-            
-            await self.db.commit()
-            logger.info(f"Updated event: {event_id}")
-
             db_event = result.scalar_one_or_none()
             
-            if db_event:
-                return self._convert_to_model(db_event)
-            return None
+            if not db_event:
+                logger.warning(f"Event not found for update: {event_id}")
+                return None
+            
+            if db_event.user_id != user_id:
+                logger.warning(f"User {user_id} not authorized to update event {event_id}")
+                return None
+            
+            # Update fields
+            update_data = {}
+            logger.info(f"Processing update fields for event {event_id}")
+            logger.info(f"Title: {event_data.title}, StartDate: {event_data.startDate}, Location: {event_data.location}")
+            
+            if event_data.title is not None:
+                update_data['title'] = event_data.title
+            if event_data.startDate is not None:
+                update_data['startDate'] = event_data.startDate
+            if event_data.location is not None:
+                update_data['location'] = event_data.location
+            
+            # Handle endDate and duration logic
+            logger.info(f"Update event {event_id}: duration={event_data.duration}, startDate={event_data.startDate}, endDate={event_data.endDate}")
+            
+            if event_data.duration is not None:
+                if event_data.duration > 0:
+                    # If duration is provided and > 0, calculate endDate from startDate + duration
+                    # Use the new startDate if provided, otherwise use the existing one
+                    start_date = event_data.startDate if event_data.startDate is not None else db_event.startDate
+                    logger.info(f"Calculating endDate: start_date={start_date}, duration={event_data.duration}")
+                    update_data['endDate'] = start_date + timedelta(minutes=event_data.duration)
+                    logger.info(f"Calculated endDate: {update_data['endDate']}")
+                elif event_data.duration == 0:
+                    # If duration is explicitly set to 0, clear endDate
+                    update_data['endDate'] = None
+            elif event_data.endDate is not None:
+                # If endDate is provided directly, use it
+                update_data['endDate'] = event_data.endDate
+            
+            if update_data:
+                stmt = update(EventModel).where(EventModel.event_id == event_id).values(**update_data)
+                await self.db.execute(stmt)
+                await self.db.commit()
+                
+                # Get updated event
+                result = await self.db.execute(select(EventModel).where(EventModel.event_id == event_id))
+                updated_event = result.scalar_one_or_none()
+                
+                if updated_event:
+                    logger.info(f"Updated event: {event_id}")
+                    return self._convert_to_model(updated_event)
+            
+            return self._convert_to_model(db_event)
             
         except SQLAlchemyError as e:
             logger.error(f"Database error updating event {event_id}: {e}")
@@ -243,20 +293,27 @@ class EventAdapter:
             user_id: User ID to verify ownership
             
         Returns:
-            True if deleted, False if failed or not found
+            True if deleted, False otherwise
         """
         try:
-            stmt = delete(EventModel).where(
-                EventModel.event_id == event_id,
-                EventModel.user_id == user_id
-            )
+            # First, verify ownership
+            stmt = select(EventModel).where(EventModel.event_id == event_id)
             result = await self.db.execute(stmt)
+            db_event = result.scalar_one_or_none()
             
-            if result.rowcount == 0:
-                logger.warning(f"Event {event_id} not found for deletion or user {user_id} not authorized")
+            if not db_event:
+                logger.warning(f"Event not found for deletion: {event_id}")
                 return False
             
+            if db_event.user_id != user_id:
+                logger.warning(f"User {user_id} not authorized to delete event {event_id}")
+                return False
+            
+            # Delete the event
+            stmt = delete(EventModel).where(EventModel.event_id == event_id)
+            await self.db.execute(stmt)
             await self.db.commit()
+            
             logger.info(f"Deleted event: {event_id}")
             return True
             
@@ -271,7 +328,7 @@ class EventAdapter:
     
     async def search_events(self, user_id: int, query: str) -> List[Event]:
         """
-        Search events by title for a specific user.
+        Search events by title or location for a specific user.
         
         Args:
             user_id: User ID to filter events
@@ -284,8 +341,8 @@ class EventAdapter:
             search_term = f"%{query}%"
             stmt = select(EventModel).where(
                 EventModel.user_id == user_id,
-                (EventModel.title.ilike(search_term))
-            ).order_by(EventModel.datetime.desc())
+                (EventModel.title.ilike(search_term) | EventModel.location.ilike(search_term))
+            ).order_by(EventModel.startDate.desc())
             
             result = await self.db.execute(stmt)
             db_events = result.scalars().all()
@@ -301,19 +358,20 @@ class EventAdapter:
     
     async def get_events_count(self, user_id: int) -> int:
         """
-        Get total number of events for a user.
+        Get the count of events for a specific user.
         
         Args:
-            user_id: User ID to count events for
+            user_id: User ID to filter events
             
         Returns:
             Number of events
         """
         try:
-            from sqlalchemy import func
             stmt = select(func.count(EventModel.id)).where(EventModel.user_id == user_id)
             result = await self.db.execute(stmt)
-            return result.scalar() or 0
+            count = result.scalar()
+            
+            return count or 0
             
         except SQLAlchemyError as e:
             logger.error(f"Database error counting events: {e}")

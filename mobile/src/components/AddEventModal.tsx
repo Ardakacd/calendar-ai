@@ -21,7 +21,8 @@ import NumericInput from './NumericInput';
 interface Event {
   id: string;
   title: string;
-  datetime: string;
+  startDate: string;
+  endDate?: string;
   duration?: number;
   location?: string;
 }
@@ -66,7 +67,7 @@ export default function AddEventModal({
         title: title.trim(),
         location: location.trim() || undefined,
         duration: durationMinutes,
-        datetime: datetime.toISOString(),
+        startDate: datetime.toISOString(),
       });
       
       // Reset form

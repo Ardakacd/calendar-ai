@@ -20,7 +20,7 @@ import { format } from 'date-fns';
 
 interface EventConfirmationData {
   title: string;
-  datetime: string;
+  startDate: string;
   duration?: number;
   location?: string;
   event_id?: string;
@@ -89,7 +89,7 @@ export default function ConfirmationModal({
 
   const handleDateChange = (event: any, selectedDate?: Date) => {
     if (selectedDate) {
-      const currentDateTime = parseDateTime(editableData.datetime);
+      const currentDateTime = parseDateTime(editableData.startDate);
       const newDateTime = new Date(
         selectedDate.getFullYear(),
         selectedDate.getMonth(),
@@ -99,14 +99,14 @@ export default function ConfirmationModal({
       );
       setEditableData(prev => ({
         ...prev,
-        'datetime': newDateTime.toISOString(),
+        'startDate': newDateTime.toISOString(),
       }));
     }
   };
 
   const handleTimeChange = (event: any, selectedTime?: Date) => {
     if (selectedTime) {
-      const currentDateTime = parseDateTime(editableData.datetime);
+      const currentDateTime = parseDateTime(editableData.startDate);
       const newDateTime = new Date(
         currentDateTime.getFullYear(),
         currentDateTime.getMonth(),
@@ -117,7 +117,7 @@ export default function ConfirmationModal({
       
       setEditableData(prev => ({
         ...prev,
-        'datetime': newDateTime.toISOString(),
+        'startDate': newDateTime.toISOString(),
       }));
     }
   };
@@ -213,7 +213,7 @@ export default function ConfirmationModal({
           </View>
         ) : (
           <Text style={styles.fieldValue}>
-            {field === 'datetime' ? formatDateTime(String(value || '')) : String(value || 'Not set')}
+            {field === 'startDate' ? formatDateTime(String(value || '')) : String(value || 'Not set')}
           </Text>
         )}
       </View>
@@ -232,7 +232,7 @@ export default function ConfirmationModal({
             <IconButton
               icon="pencil"
               size={20}
-              onPress={() => handleEditField('datetime')}
+              onPress={() => handleEditField('startDate')}
               style={styles.editButton}
               iconColor="#667eea"
             />
@@ -244,13 +244,13 @@ export default function ConfirmationModal({
             <View style={styles.datetimeButtons}>
             
             <DateTimePicker
-              value={parseDateTime(editableData.datetime)}
+              value={parseDateTime(editableData.startDate)}
               mode="date"
               onChange={handleDateChange}
             />
         
             <DateTimePicker
-              value={parseDateTime(editableData.datetime)}
+              value={parseDateTime(editableData.startDate)}
               mode="time"
               onChange={handleTimeChange}
             />
@@ -260,7 +260,7 @@ export default function ConfirmationModal({
               <IconButton
                 icon="check"
                 size={20}
-                onPress={() => handleSaveField('datetime', editableData.datetime)}
+                onPress={() => handleSaveField('startDate', editableData.startDate)}
                 style={styles.saveButton}
                 iconColor="#ffffff"
               />
@@ -275,7 +275,7 @@ export default function ConfirmationModal({
           </View>
         ) : (
           <Text style={styles.fieldValue}>
-            {formatDateTime(editableData.datetime)}
+            {formatDateTime(editableData.startDate)}
           </Text>
         )}
       </View>
