@@ -17,14 +17,8 @@ import {
 } from 'react-native-paper';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { format } from 'date-fns';
+import { EventConfirmationData } from '../models/event';
 
-interface EventConfirmationData {
-  title: string;
-  startDate: string;
-  duration?: number;
-  location?: string;
-  event_id?: string;
-}
 
 interface ConfirmationModalProps {
   visible: boolean;

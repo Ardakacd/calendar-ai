@@ -49,7 +49,7 @@ const SignupScreen: React.FC = () => {
         <View style={styles.header}>
           <Title style={styles.title}>Create Account</Title>
           <Paragraph style={styles.subtitle}>
-            Join Calendar AI to manage your schedule
+            Join Calen to manage your schedule
           </Paragraph>
         </View>
 

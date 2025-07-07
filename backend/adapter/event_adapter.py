@@ -37,27 +37,24 @@ class EventAdapter:
             duration=duration,  # Set the computed duration
             location=event_model.location,
             user_id=event_model.user_id,
-            created_at=event_model.created_at.isoformat() if event_model.created_at else ""
         )
     
-    def _convert_to_db_model(self, event_data: EventCreate) -> EventModel:
+    def _convert_to_db_model(self, user_id: int, event_data: EventCreate) -> EventModel:
         """Convert EventCreate Pydantic model to EventModel."""
         # Calculate endDate from startDate + duration if duration is provided
         end_date = None
         if event_data.duration and event_data.duration > 0:
             end_date = event_data.startDate + timedelta(minutes=event_data.duration)
-        elif event_data.endDate:
-            end_date = event_data.endDate
             
         return EventModel(
             title=event_data.title,
             startDate=event_data.startDate,
             endDate=end_date,
             location=event_data.location,
-            user_id=event_data.user_id
+            user_id=user_id
         )
     
-    async def create_event(self, event_data: EventCreate) -> Optional[Event]:
+    async def create_event(self, user_id: int, event_data: EventCreate) -> Optional[Event]:
         """
         Create a new event.
         
@@ -68,7 +65,7 @@ class EventAdapter:
             Created event or None if failed
         """
         try:
-            db_event = self._convert_to_db_model(event_data)
+            db_event = self._convert_to_db_model(user_id, event_data)
             self.db.add(db_event)
             await self.db.commit()
             
@@ -189,7 +186,7 @@ class EventAdapter:
             stmt = select(EventModel).where(
                 EventModel.user_id == user_id,
                 EventModel.startDate >= start_date,
-                EventModel.startDate <= end_date
+                EventModel.endDate <= end_date
             ).order_by(EventModel.startDate.asc())
             
             result = await self.db.execute(stmt)
@@ -243,38 +240,26 @@ class EventAdapter:
                 update_data['location'] = event_data.location
             
             # Handle endDate and duration logic
-            logger.info(f"Update event {event_id}: duration={event_data.duration}, startDate={event_data.startDate}, endDate={event_data.endDate}")
+            logger.info(f"Update event {event_id}: duration={event_data.duration}, startDate={event_data.startDate}")
             
-            if event_data.duration is not None:
-                if event_data.duration > 0:
-                    # If duration is provided and > 0, calculate endDate from startDate + duration
-                    # Use the new startDate if provided, otherwise use the existing one
-                    start_date = event_data.startDate if event_data.startDate is not None else db_event.startDate
-                    logger.info(f"Calculating endDate: start_date={start_date}, duration={event_data.duration}")
-                    update_data['endDate'] = start_date + timedelta(minutes=event_data.duration)
-                    logger.info(f"Calculated endDate: {update_data['endDate']}")
-                elif event_data.duration == 0:
-                    # If duration is explicitly set to 0, clear endDate
+            if event_data.duration is not None or event_data.startDate is not None:
+                start_date = event_data.startDate if event_data.startDate is not None else db_event.startDate
+                duration = event_data.duration if event_data.duration is not None else db_event.duration
+
+                if duration == 0:
                     update_data['endDate'] = None
-            elif event_data.endDate is not None:
-                # If endDate is provided directly, use it
-                update_data['endDate'] = event_data.endDate
+                else:
+                    update_data['endDate'] = start_date + timedelta(minutes=duration)
             
             if update_data:
-                stmt = update(EventModel).where(EventModel.event_id == event_id).values(**update_data)
-                await self.db.execute(stmt)
+                stmt = update(EventModel).where(EventModel.event_id == event_id).values(**update_data).returning(EventModel)
+                result = await self.db.execute(stmt)
+                db_event = result.scalar_one_or_none()
                 await self.db.commit()
-                
-                # Get updated event
-                result = await self.db.execute(select(EventModel).where(EventModel.event_id == event_id))
-                updated_event = result.scalar_one_or_none()
-                
-                if updated_event:
-                    logger.info(f"Updated event: {event_id}")
-                    return self._convert_to_model(updated_event)
-            
-            return self._convert_to_model(db_event)
-            
+                logger.info(f"Updated event: {event_id}")
+                if db_event:
+                    return self._convert_to_model(db_event)
+            return None
         except SQLAlchemyError as e:
             logger.error(f"Database error updating event {event_id}: {e}")
             await self.db.rollback()

@@ -15,6 +15,7 @@ import MicButton from '../components/MicButton';
 import ConfirmationModal from '../components/ConfirmationModal';
 import { useCalendarAPI } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
+import { EventConfirmationData } from '../models/event';
 
 interface ChatMessage {
   id: string;
@@ -24,21 +25,13 @@ interface ChatMessage {
   eventData?: EventConfirmationData;
 }
 
-interface EventConfirmationData {
-  title: string;
-  startDate: string;
-  duration?: number;
-  location?: string;
-  event_id?: string;
-}
-
 export default function HomeScreen() {
   const navigation = useNavigation();
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       id: Date.now().toString(),
       type: 'ai',
-      content: 'Hello, how can I help you today?',
+      content: 'Hello, how can I help you today?  ',
       timestamp: new Date(),
       eventData: undefined,
     }
@@ -146,10 +139,6 @@ export default function HomeScreen() {
       setConfirmationData(null);
       scrollToBottom();
 
-      setTimeout(() => {
-        navigation.navigate('Calendar' as never);
-      }, 2000);
-
     } catch (error) {
       console.error('Error confirming action:', error);
       addMessage('ai', 'Failed to confirm action. Please try again.');
@@ -200,7 +189,7 @@ export default function HomeScreen() {
               <Card.Content>
                 <Text style={styles.eventTitle}>Event Details:</Text>
                 <Text style={styles.eventDetail}>Title: {message.eventData.title}</Text>
-                <Text style={styles.eventDetail}>Date: {new Date(message.eventData.datetime).toLocaleString()}</Text>
+                <Text style={styles.eventDetail}>Date: {new Date(message.eventData.startDate).toLocaleString()}</Text>
                 {message.eventData.duration && (
                   <Text style={styles.eventDetail}>Duration: {message.eventData.duration} minutes</Text>
                 )}
@@ -338,7 +327,8 @@ const styles = StyleSheet.create({
   chatContainer: {
     flex: 1,
     borderTopWidth:3,
-    borderTopColor:'rgba(255, 255, 255, 0.1)'
+    borderTopColor:'rgba(255, 255, 255, 0.1)',
+    paddingTop: 12
   },
   messagesContainer: {
     flex: 1,

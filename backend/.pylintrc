@@ -1,0 +1,23 @@
+[MASTER]
+# Add the current directory to the Python path
+init-hook='import sys; sys.path.append(".")'
+
+[REPORTS]
+# Set the output format
+output-format=text
+
+[MESSAGES CONTROL]
+# Disable specific warnings including docstring warnings and Pydantic model warnings
+disable=C0114
+
+[FORMAT]
+# Maximum number of characters on a single line
+max-line-length=120
+
+[BASIC]
+# Regular expression which should only match function or class names
+good-names=i,j,k,ex,Run,_,id
+
+[SIMILARITIES]
+# Minimum lines number of a similarity
+min-similarity-lines=4 

@@ -6,7 +6,7 @@ from config import settings
 from fastapi import UploadFile, HTTPException, Depends
 from langchain_core.prompts import PromptTemplate
 from langchain_openai import ChatOpenAI
-from models import EventBase, EventUpdate, TranscribeResponse, EventConfirmationData
+from models import EventCreate, EventUpdate, TranscribeResponse, EventConfirmationData
 from openai import OpenAI
 from openai import OpenAIError, RateLimitError
 from services.event_service import get_event_service, EventService
@@ -180,7 +180,7 @@ class TranscribeService:
                     'duration': event_data.duration,
                     'location': event_data.location
                 }
-                await self.event_service.create_event(token, EventBase(**event_args))
+                await self.event_service.create_event(token, EventCreate(**event_args))
                 return {"message": f"Event '{event_data.title}' created successfully."}
 
             elif action == 'delete':

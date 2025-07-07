@@ -50,7 +50,7 @@ const LoginScreen: React.FC = () => {
         <View style={styles.header}>
           <Title style={styles.title}>Welcome Back</Title>
           <Paragraph style={styles.subtitle}>
-            Sign in to your Calendar AI account
+            Sign in to your Calen account
           </Paragraph>
         </View>
 
