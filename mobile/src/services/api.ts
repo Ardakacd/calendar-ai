@@ -1,6 +1,7 @@
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getUserDateTime } from '../../utils/datetime/get_current_time';
+import { Event, EventConfirmationData } from '../models/event';
 
 const API_BASE_URL = 'http://localhost:8000';
 
@@ -27,20 +28,6 @@ interface TranscribeResponse {
   };
 }
 
-interface Event {
-  id: string;
-  title: string;
-  startDate: string;
-  endDate?: string;
-  duration?: number;
-  location?: string;
-}
-
-interface EventUpdateResponse {
-  message: string;
-  event: Event;
-}
-
 interface User {
   id?: string;
   name: string;
@@ -64,14 +51,6 @@ interface TokenResponse {
   user_id: string;
   user_name: string;
   expires_in: number;
-}
-
-interface EventConfirmationData {
-  title: string;
-  startDate: string;
-  duration?: number;
-  location?: string;
-  event_id?: string;
 }
 
 interface ConfirmationRequest {
@@ -284,9 +263,9 @@ class CalendarAPI {
     }
   }
 
-  async updateEvent(id: string, event: Partial<Event>): Promise<EventUpdateResponse> {
+  async updateEvent(id: string, event: Partial<Event>): Promise<Event | null> {
     try {
-      const response = await this.api.put(`/events/${id}`, event);
+      const response = await this.api.patch(`/events/${id}`, event);
       return response.data;
     } catch (error) {
       console.error('Error updating event:', error);

@@ -17,15 +17,7 @@ import {
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { MaterialIcons } from '@expo/vector-icons';
 import NumericInput from './NumericInput';
-
-interface Event {
-  id: string;
-  title: string;
-  startDate: string;
-  endDate?: string;
-  duration?: number;
-  location?: string;
-}
+import { Event } from '../models/event';
 
 interface UpdateEventModalProps {
   visible: boolean;
