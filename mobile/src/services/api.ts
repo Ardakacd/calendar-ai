@@ -9,6 +9,10 @@ const API_BASE_URL = 'http://localhost:8000';
 const ACCESS_TOKEN_KEY = 'access_token';
 const REFRESH_TOKEN_KEY = 'refresh_token';
 
+interface TranscribeMessage {
+  message: string;
+}
+
 interface TranscribeResponse {
   message: string;
   action: 'create' | 'delete' | 'update' | 'query' | 'none';
@@ -210,7 +214,7 @@ class CalendarAPI {
   }
 
   // Calendar methods
-  async transcribeAudio(audioUri: string): Promise<TranscribeResponse> {
+  async transcribeAudio(audioUri: string): Promise<TranscribeMessage> {
     try {
       // Create FormData for multipart upload
       const formData = new FormData();
@@ -219,15 +223,7 @@ class CalendarAPI {
         type: 'audio/m4a', // Adjust based on your audio format
         name: 'audio.m4a'
       } as any);
-      
-
-      const { currentDateTime, weekday, daysInMonth } = getUserDateTime()
-
-
-      formData.append('current_datetime', currentDateTime.toISO());   // e.g. "2025-06-28T13:45:00+03:00"
-      formData.append('weekday', weekday);
-      formData.append('days_in_month', String(daysInMonth));
-
+    
       const response = await this.api.post('/transcribe', formData, {
         headers: {
           'Content-Type': 'multipart/form-data',

@@ -56,15 +56,10 @@ class TranscribeService:
     def __init__(self, event_service: EventService):
         self.event_service = event_service
 
-    async def transcribe(self, audio_file: UploadFile, current_datetime: str, weekday: str, days_in_month: int,
-                         token: str):
-        try:
-            print(f"Current datetime: {current_datetime}, Weekday: {weekday}, Days in month: {days_in_month}")
-            # Verify token and extract user_id using existing function
-            logger.info("Verifying JWT token for transcribe request")
+    async def transcribe(self, token: str, audio_file: UploadFile) -> str:
+        try:            
             user_id = get_user_id_from_token(token)
-            logger.info(f"Token verified successfully for user: {user_id}")
-
+            
             # Create OpenAI client and transcribe
             client = OpenAI(api_key=settings.OPENAI_API_KEY)
             logger.info("Starting audio transcription")
@@ -83,8 +78,9 @@ class TranscribeService:
                 file=audio_bytes,
                 response_format="text"
             )
-
             logger.info(f"Transcription completed: '{transcription_text}...'")
+            return transcription_text
+            '''
 
             # Set up LLM
             llm = ChatOpenAI(model='gpt-3.5-turbo', temperature=0.2, api_key=settings.OPENAI_API_KEY)
@@ -192,7 +188,7 @@ class TranscribeService:
                 update_data = event_data.model_dump(exclude={"event_id"})
 
                 await self.event_service.update_event(token, event_id, EventUpdate(**update_data))
-                return {"message": f"Event '{event_data.title}' updated successfully."}
+                return {"message": f"Event '{event_data.title}' updated successfully."}'''
         except HTTPException as e:
             raise
         except Exception as e:

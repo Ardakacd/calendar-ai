@@ -53,7 +53,7 @@ export default function HomeScreen() {
     const newMessage: ChatMessage = {
       id: Date.now().toString(),
       type,
-      content,
+      content: content.trim(),
       timestamp: new Date(),
       eventData,
     };
@@ -86,10 +86,10 @@ export default function HomeScreen() {
     setIsProcessing(true);
 
     try {
-      // const response = await transcribeAudio(audioUri);
-      // const userMessage = response.message || 'Voice command processed';
-      //addMessage('user', userMessage);
-      // scrollToBottom();
+      const response = await transcribeAudio(audioUri);
+      const userMessage = response.message || 'Voice command processed';
+      addMessage('user', userMessage);
+      scrollToBottom();
 
       //await processCommand(userMessage);
     } catch (error) {
@@ -101,10 +101,8 @@ export default function HomeScreen() {
     }
   };
 
-  const processCommand = async (command: string) => {
+  /*const processCommand = async (command: string) => {
     try {
-      const response = await transcribeAudio(''); // This will need to be updated to handle text commands
-
       if (response.requires_confirmation && response.confirmation_data) {
         addMessage('ai', 'Do you confirm an event with the following attributes:', response.confirmation_data);
         setConfirmationData({
@@ -122,7 +120,7 @@ export default function HomeScreen() {
       addMessage('ai', 'Sorry, I couldn\'t process your command. Please try again.');
       scrollToBottom();
     }
-  };
+  };*/
 
   const handleConfirmAction = async (eventData: EventConfirmationData) => {
     if (!confirmationData) return;
@@ -342,7 +340,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 20,
     paddingTop:20,
-    paddingBottom: 28,
+    paddingBottom: 32,
     backgroundColor: 'rgba(255, 255, 255, 0.1)',
     borderTopWidth: 1,
     borderTopColor: 'rgba(255, 255, 255, 0.1)',

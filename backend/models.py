@@ -119,3 +119,6 @@ class EventConfirmationData(BaseModel):
 class ConfirmationRequest(BaseModel):
     action: str  # "create", "update", "delete"
     event_data: EventConfirmationData 
+
+class TranscribeMessage(BaseModel):
+    message: str
