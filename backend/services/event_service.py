@@ -4,7 +4,7 @@ from typing import List, Optional, Dict, Any
 from adapter.event_adapter import EventAdapter
 from database.config import get_async_db
 from fastapi import Depends, HTTPException, status
-from models import EventBase, EventUpdate, Event, EventCreate
+from models import EventUpdate, Event, EventCreate
 from sqlalchemy.ext.asyncio import AsyncSession
 from utils.jwt import get_user_id_from_token
 
@@ -15,7 +15,7 @@ class EventService:
     def __init__(self, event_adapter: EventAdapter):
         self.event_adapter = event_adapter
 
-    async def create_event(self, token: str, event_data: EventBase) -> Event:
+    async def create_event(self, token: str, event_data: EventCreate) -> Event:
         """
         Create a new event for the authenticated user.
         
@@ -32,23 +32,9 @@ class EventService:
         try:
             # Extract user_id from token
             user_id = get_user_id_from_token(token)
-            if user_id is None:
-                raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Invalid token"
-                )
-
-            # Create event with user_id
-            event_create = EventCreate(
-                title=event_data.title,
-                startDate=event_data.startDate,
-                duration=event_data.duration,
-                location=event_data.location,
-                user_id=user_id,
-            )
 
             logger.info(f"EventService: Creating event for user {user_id}")
-            result = await self.event_adapter.create_event(event_create)
+            result = await self.event_adapter.create_event(user_id, event_data)
 
             if not result:
                 logger.error(f"EventService: Failed to create event for user {user_id}")
@@ -138,12 +124,7 @@ class EventService:
         try:
             # Extract user_id from token
             user_id = get_user_id_from_token(token)
-            if user_id is None:
-                raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Invalid token"
-                )
-
+           
             logger.info(f"EventService: Getting events for user {user_id}")
 
             result = await self.event_adapter.get_events_by_user_id(user_id, limit=limit, offset=offset)
@@ -178,12 +159,7 @@ class EventService:
         try:
             # Extract user_id from token
             user_id = get_user_id_from_token(token)
-            if user_id is None:
-                raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Invalid token"
-                )
-
+           
             logger.info(f"EventService: Getting events in date range for user {user_id}")
 
             result = await self.event_adapter.get_events_by_date_range(user_id, start_date, end_date)
@@ -231,7 +207,7 @@ class EventService:
                 )
 
             logger.info(f"EventService: Event updated successfully: {event_id}")
-            return {"message": "Event updated successfully", "event": result}
+            return result
 
         except HTTPException:
             raise

@@ -3,7 +3,7 @@ from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from models import EventBase, EventUpdate, Event
+from models import EventCreate, EventUpdate, Event
 from services.event_service import EventService, get_event_service
 
 # Configure logging
@@ -15,7 +15,7 @@ security = HTTPBearer()
 
 @router.post("", response_model=Event)
 async def create_event(
-        event_data: EventBase,
+        event_data: EventCreate,
         credentials: HTTPAuthorizationCredentials = Depends(security),
         event_service: EventService = Depends(get_event_service)
 ):
@@ -26,7 +26,6 @@ async def create_event(
     """
     logger.info(f"Creating event with title: {event_data.title}")
     try:
-        print(event_data)
         token = credentials.credentials
         result = await event_service.create_event(token, event_data)
         logger.info(f"Event created successfully: {result.id}")
@@ -132,7 +131,7 @@ async def get_events_by_date_range(
         )
 
 
-@router.put("/{event_id}")
+@router.patch("/{event_id}")
 async def update_event(
         event_id: str,
         event_data: EventUpdate,
