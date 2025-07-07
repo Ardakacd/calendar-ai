@@ -1,4 +1,4 @@
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, computed_field
 from typing import Optional, List
 from datetime import datetime as dt
 
@@ -32,22 +32,43 @@ class User(UserBase):
 # Event Models
 class EventBase(BaseModel):
     title: str
-    datetime: dt  # Use proper datetime type with timezone support
-    duration: Optional[int] = None  # Duration in minutes
+    startDate: dt  # Use proper datetime type with timezone support
+    endDate: Optional[dt] = None  # End date (nullable)
+    duration: Optional[int] = None  # Duration in minutes for input
     location: Optional[str] = None
+
+    @computed_field
+    @property
+    def computed_duration(self) -> Optional[int]:
+        """Calculate duration in minutes from startDate and endDate"""
+        if self.startDate and self.endDate:
+            delta = self.endDate - self.startDate
+            return int(delta.total_seconds() / 60)
+        return None
 
     class Config:
         json_encoders = {
             dt: lambda v: v.isoformat()
         }
 
-class EventCreate(EventBase):
+class EventCreate(BaseModel):
+    title: str
+    startDate: dt
+    duration: Optional[int] = None  # Duration in minutes for input
+    endDate: Optional[dt] = None  # End date (nullable) - can be provided directly
+    location: Optional[str] = None
     user_id: int  # References internal user.id
+
+    class Config:
+        json_encoders = {
+            dt: lambda v: v.isoformat()
+        }
 
 class EventUpdate(BaseModel):
     title: Optional[str] = None
-    datetime: Optional[dt] = None
-    duration: Optional[int] = None
+    startDate: Optional[dt] = None
+    duration: Optional[int] = None  # Duration in minutes for input
+    endDate: Optional[dt] = None  # End date (nullable) - can be provided directly
     location: Optional[str] = None
 
     class Config:
@@ -102,8 +123,8 @@ class TranscribeResponse(BaseModel):
 # Confirmation Models for the frontend
 class EventConfirmationData(BaseModel):
     title: str
-    datetime: str  # ISO format string
-    duration: Optional[int] = None
+    startDate: str  # ISO format string
+    duration: Optional[int] = None  # Duration in minutes
     location: Optional[str] = None
     event_id: Optional[str] = None  # For update/delete operations
 

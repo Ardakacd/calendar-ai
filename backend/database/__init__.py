@@ -28,4 +28,6 @@ __all__ = [
     "init_db",
     "get_pool_status",
     "health_check"
-] 
+]
+
+# This file makes the database directory a Python package 
