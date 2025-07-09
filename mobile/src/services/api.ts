@@ -278,6 +278,24 @@ class CalendarAPI {
     }
   }
 
+  async processText(text: string): Promise<string> {
+    try {
+      const {currentDateTime: current_datetime, weekday, daysInMonth: days_in_month} = getUserDateTime()
+      console.log({ text, 
+        current_datetime, 
+        weekday, 
+        days_in_month })
+      const response = await this.api.post('/assistant', { text, 
+        current_datetime, 
+        weekday, 
+        days_in_month });
+      return response.data;
+    } catch (error) {
+      console.error('Error processing text:', error);
+      throw new Error('Failed to process text');
+    }
+  }
+
   async confirmAction(confirmationRequest: ConfirmationRequest): Promise<{ message: string }> {
     try {
       const response = await this.api.post('/transcribe/confirm', confirmationRequest);
@@ -287,6 +305,8 @@ class CalendarAPI {
       throw new Error('Failed to confirm action');
     }
   }
+
+  
 
   private isTokenExpiredError(error: any): boolean {
     // Check if the error response indicates token expiration
@@ -329,5 +349,6 @@ export const useCalendarAPI = () => {
     updateEvent: calendarAPI.updateEvent.bind(calendarAPI),
     deleteEvent: calendarAPI.deleteEvent.bind(calendarAPI),
     confirmAction: calendarAPI.confirmAction.bind(calendarAPI),
+    processText: calendarAPI.processText.bind(calendarAPI),
   };
 }; 
