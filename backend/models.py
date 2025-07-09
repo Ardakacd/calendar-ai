@@ -122,3 +122,9 @@ class ConfirmationRequest(BaseModel):
 
 class TranscribeMessage(BaseModel):
     message: str
+
+class ProcessInput(BaseModel):
+    text: str
+    current_datetime: str
+    weekday: str
+    days_in_month: int

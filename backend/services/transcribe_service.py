@@ -4,51 +4,10 @@ import logging
 
 from config import settings
 from fastapi import UploadFile, HTTPException, Depends
-from langchain_core.prompts import PromptTemplate
-from langchain_openai import ChatOpenAI
-from models import EventCreate, EventUpdate, TranscribeResponse, EventConfirmationData
 from openai import OpenAI
-from openai import OpenAIError, RateLimitError
 from services.event_service import get_event_service, EventService
-from tenacity import retry, stop_after_attempt, wait_random_exponential, retry_if_exception_type
-from utils.constants import AGENT_PROMPT
-from utils.datetime import convert_datetime_string_to_datetime
-from utils.jwt import get_user_id_from_token
-
+from utils.jwt import verify_token
 logger = logging.getLogger(__name__)
-retryable_exceptions = (OpenAIError, RateLimitError)
-
-
-@retry(
-    wait=wait_random_exponential(min=1, max=10),
-    stop=stop_after_attempt(5),
-    retry=retry_if_exception_type(retryable_exceptions),
-)
-async def invoke_llm(llm, user_events, transcription_text, current_datetime, weekday, days_in_month):
-    prompt = PromptTemplate.from_template(AGENT_PROMPT)
-    formatted_prompt = prompt.invoke({'user_events': user_events,
-                                      'transcription_text': transcription_text,
-                                      'current_datetime': current_datetime,
-                                      'weekday': weekday,
-                                      'days_in_month': days_in_month})
-    # Get response from LLM
-    result = await llm.ainvoke(formatted_prompt)
-
-    print(f"LLM Response: {result.content}")
-
-    # Try to parse JSON from response
-    try:
-
-        result = json.loads(result.content)
-        return result
-
-    except json.JSONDecodeError as e:
-        print(f"JSON parsing error: {e}")
-        return {
-            "function": "none",
-            "arguments": {},
-            "message": "An error occurred."
-        }
 
 
 class TranscribeService:
@@ -58,7 +17,7 @@ class TranscribeService:
 
     async def transcribe(self, token: str, audio_file: UploadFile) -> str:
         try:            
-            user_id = get_user_id_from_token(token)
+            verify_token(token)
             
             # Create OpenAI client and transcribe
             client = OpenAI(api_key=settings.OPENAI_API_KEY)
