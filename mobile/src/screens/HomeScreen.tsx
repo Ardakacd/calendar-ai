@@ -5,7 +5,7 @@ import {
   ScrollView,
   Alert,
   KeyboardAvoidingView,
-  TextInput,
+  TextInput,  
 } from 'react-native';
 import { Text, Button, Card, Avatar, IconButton } from 'react-native-paper';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -44,7 +44,7 @@ export default function HomeScreen() {
     eventData: EventConfirmationData;
   } | null>(null);
   const [isConfirming, setIsConfirming] = useState(false);
-  const { transcribeAudio, confirmAction } = useCalendarAPI();
+  const { transcribeAudio, confirmAction, processText } = useCalendarAPI();
   const { user, logout } = useAuth();
   const scrollViewRef = useRef<ScrollView>(null);
   const inputRef = useRef<TextInput>(null);
@@ -53,7 +53,7 @@ export default function HomeScreen() {
     const newMessage: ChatMessage = {
       id: Date.now().toString(),
       type,
-      content: content.trim(),
+      content: content ? content.trim() : '',
       timestamp: new Date(),
       eventData,
     };
@@ -73,6 +73,7 @@ export default function HomeScreen() {
     addMessage('user', userMessage);
     setInputText('');
     scrollToBottom();
+    await handleProcessText(userMessage)
 
     // Maintain focus on the input
     setTimeout(() => {
@@ -82,6 +83,19 @@ export default function HomeScreen() {
     // await processCommand(userMessage);
   };
 
+  const handleProcessText = async (text: string) => {
+    try {
+      const response = await processText(text)
+      console.log(response)
+      addMessage('ai', response)
+      scrollToBottom();
+    } catch (error) {
+      console.error('Error processing text:', error);
+      addMessage('ai', 'Sorry, I couldn\'t process your command. Please try again.');
+      scrollToBottom();
+    }
+  }
+
   const handleVoiceCommand = async (audioUri: string) => {
     setIsProcessing(true);
 
@@ -90,6 +104,7 @@ export default function HomeScreen() {
       const userMessage = response.message || 'Voice command processed';
       addMessage('user', userMessage);
       scrollToBottom();
+      await handleProcessText(userMessage)
 
       //await processCommand(userMessage);
     } catch (error) {

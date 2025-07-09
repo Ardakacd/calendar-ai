@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from controller.event_controller import router as event_router
 from controller.transcribe_controller import router as transcribe_router
+from controller.assistant_controller import router as assistant_router
 from controller.user_controller import router as auth_router
 from database import init_db
 
@@ -49,6 +50,7 @@ except Exception as e:
 
 # Include transcribe routes
 app.include_router(transcribe_router)
+app.include_router(assistant_router)
 
 
 @app.get("/")

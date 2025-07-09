@@ -89,7 +89,6 @@ async def get_async_db():
             await session.rollback()
             raise
         except Exception as e:
-            print(e)
             logger.error(f"Unexpected async database error: {e}")
             await session.rollback()
             raise
@@ -118,13 +117,6 @@ def init_db():
             logger.info("Tables created successfully")
         else:
             logger.info("Tables already exist, skipping creation")
-        
-        # Run datetime column migration if needed
-        try:
-            from .migrate_datetime import migrate_datetime_column
-            migrate_datetime_column()
-        except Exception as e:
-            logger.warning(f"Datetime migration failed (this might be expected): {e}")
         
         # Log pool status
         pool_status = get_pool_status()

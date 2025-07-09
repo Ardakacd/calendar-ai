@@ -78,7 +78,6 @@ async def refresh_token(refresh_request: RefreshTokenRequest, user_service: User
     logger.info("Token refresh attempt")
     try:
         result = await user_service.refresh_token(refresh_request)
-        print(result)
         logger.info("Token refresh successful")
         return Token(**result)
 
