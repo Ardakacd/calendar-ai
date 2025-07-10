@@ -13,3 +13,5 @@ class FlowState(TypedDict):
     user_id: int
     route: dict
     create_data: dict
+    list_data: dict
+    delete_data: dict
