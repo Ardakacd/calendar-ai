@@ -1,7 +1,7 @@
 from langchain_core.messages import SystemMessage, AIMessage
 from langchain_core.prompts import PromptTemplate
 from ..state import FlowState
-from .prompt import CREATE_EVENT_AGENT_PROMPT
+from .prompt import LIST_EVENT_AGENT_PROMPT
 from ..llm import model
 from tenacity import retry, stop_after_attempt, wait_random_exponential, retry_if_exception_type
 from openai import OpenAIError, RateLimitError
@@ -16,9 +16,9 @@ retryable_exceptions = (OpenAIError, RateLimitError)
     stop=stop_after_attempt(3),
     retry=retry_if_exception_type(retryable_exceptions),
 )
-async def create_agent(state: FlowState):
+async def list_agent(state: FlowState):
     
-    template = PromptTemplate.from_template(CREATE_EVENT_AGENT_PROMPT)
+    template = PromptTemplate.from_template(LIST_EVENT_AGENT_PROMPT)
     prompt_text = template.format(
             current_datetime=state['current_datetime'],
             weekday=state['weekday'],
@@ -33,20 +33,19 @@ async def create_agent(state: FlowState):
     
     try:
         route_data = json.loads(response[0].content)
-        state['create_data'] = route_data
+        state['list_data'] = route_data
     except json.JSONDecodeError:
-        state['create_data'] = {"message": "Sorry, I couldn't understand your request. Please try again."}
+        state['list_data'] = {"message": "Sorry, I couldn't understand your request. Please try again."}
     
     return state
 
-def create_action(state: FlowState):
-    print(state['create_data'])
-    if "function" in state['create_data'] and "arguments" in state['create_data']:
+def list_action(state: FlowState):
+    print(state['list_data'])
+    if "function" in state['list_data'] and "arguments" in state['list_data']:
         return END
     else:
-        return "create_message_handler"
+        return "list_message_handler"
         
-def create_message_handler(state: FlowState):
-
+def list_message_handler(_: FlowState):
         """Handle cases where router returns a message instead of arguments"""
-        return {"messages": [AIMessage(content=state["create_data"]["message"])]}
+        return {"messages": [AIMessage(content="An error occurred while listing events. Please try again.")]}
