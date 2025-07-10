@@ -47,5 +47,6 @@ def create_action(state: FlowState):
         return "create_message_handler"
         
 def create_message_handler(state: FlowState):
+
         """Handle cases where router returns a message instead of arguments"""
         return {"messages": [AIMessage(content=state["create_data"]["message"])]}

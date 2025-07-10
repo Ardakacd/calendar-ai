@@ -2,6 +2,7 @@ from langchain_openai import ChatOpenAI
 from config import settings
 
 
+
 MODEL_NAME = "gpt-4o-mini"
 
 model = ChatOpenAI(

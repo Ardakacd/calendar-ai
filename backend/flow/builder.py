@@ -24,13 +24,16 @@ class FlowBuilder:
         # graph_builder.add_node("update_agent", update_agent)
         # graph_builder.add_node("delete_agent", delete_agent)
         
+        # TODO: Add your actual agent nodes here
+        # graph_builder.add_node("update_agent", update_agent)
+        # graph_builder.add_node("delete_agent", delete_agent)
+        # graph_builder.add_node("list_agent", list_agent)
 
         # Add edges
         graph_builder.add_edge(START, "router_agent")
         graph_builder.add_conditional_edges("router_agent", route_action)
         graph_builder.add_edge("router_message_handler", END)
         # TODO: Add edges from agents to END
-
         graph_builder.add_conditional_edges("create_agent", create_action)
         graph_builder.add_edge("create_message_handler", END)
 
@@ -39,6 +42,10 @@ class FlowBuilder:
 
         graph_builder.add_conditional_edges("delete_agent_timestamp", delete_action_timestamp)
         graph_builder.add_edge("delete_message_timestamp_handler", END)
+
+
+
+
         # graph_builder.add_edge("update_agent", END)
         # graph_builder.add_edge("delete_agent", END)
         # graph_builder.add_edge("list_agent", END)
