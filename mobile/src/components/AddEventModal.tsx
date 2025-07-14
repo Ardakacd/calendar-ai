@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   StyleSheet,
@@ -17,20 +17,24 @@ import {
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { MaterialIcons } from '@expo/vector-icons';
 import NumericInput from './NumericInput';
-import { Event } from '../models/event';
-
-
+import { EventCreate } from '../models/event';
 
 interface AddEventModalProps {
   visible: boolean;
   onDismiss: () => void;
-  onAdd: (event: Omit<Event, 'id'>) => Promise<void>;
+  onAdd: (event: EventCreate) => Promise<void>;
+  onEdit?: (event: EventCreate) => Promise<void>;
+  initialEvent?: EventCreate;
+  mode?: 'add' | 'edit';
 }
 
 export default function AddEventModal({
   visible,
   onDismiss,
   onAdd,
+  onEdit,
+  initialEvent,
+  mode = 'add',
 }: AddEventModalProps) {
   const [title, setTitle] = useState('');
   const [location, setLocation] = useState('');
@@ -39,7 +43,23 @@ export default function AddEventModal({
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [loading, setLoading] = useState(false);
 
-  const handleAdd = async () => {
+  // Initialize form with initial values when editing
+  useEffect(() => {
+    if (initialEvent && mode === 'edit') {
+      setTitle(initialEvent.title);
+      setLocation(initialEvent.location || '');
+      setDuration(initialEvent.duration ? initialEvent.duration.toString() : '');
+      setDatetime(new Date(initialEvent.startDate));
+    } else {
+      // Reset form for add mode
+      setTitle('');
+      setLocation('');
+      setDuration('');
+      setDatetime(new Date());
+    }
+  }, [initialEvent, mode, visible]);
+
+  const handleSubmit = async () => {
     if (!title.trim()) {
       Alert.alert('Error', 'Title is required');
       return;
@@ -55,14 +75,22 @@ export default function AddEventModal({
       }
     }
 
+    const eventData: EventCreate = {
+      title: title.trim(),
+      location: location.trim() || undefined,
+      duration: durationMinutes,
+      startDate: datetime.toISOString(),
+    };
+
     try {
       setLoading(true);
-      await onAdd({
-        title: title.trim(),
-        location: location.trim() || undefined,
-        duration: durationMinutes,
-        startDate: datetime.toISOString(),
-      });
+      
+      if (mode === 'edit' && onEdit && initialEvent) {
+        await onEdit(eventData);
+      } else {
+        await onAdd(eventData);
+        Alert.alert('Success', 'Event added successfully');
+      }
       
       // Reset form
       setTitle('');
@@ -71,10 +99,9 @@ export default function AddEventModal({
       setDatetime(new Date());
       
       onDismiss();
-      Alert.alert('Success', 'Event added successfully');
     } catch (error) {
-      console.error('Error adding event:', error);
-      Alert.alert('Error', 'Failed to add event');
+      console.error('Error saving event:', error);
+      Alert.alert('Error', mode === 'edit' ? 'Failed to update event' : 'Failed to add event');
     } finally {
       setLoading(false);
     }
@@ -100,7 +127,9 @@ export default function AddEventModal({
       >
         <Card>
           <Card.Content>
-            <Title style={styles.title}>Add New Event</Title>
+            <Title style={styles.title}>
+              {mode === 'edit' ? 'Edit Event' : 'Add New Event'}
+            </Title>
             
             <ScrollView>
               <View style={styles.inputContainer}>
@@ -177,12 +206,12 @@ export default function AddEventModal({
               </Button>
               <Button
                 mode="contained"
-                onPress={handleAdd}
+                onPress={handleSubmit}
                 style={[styles.button, styles.addButton]}
                 loading={loading}
                 disabled={loading}
               >
-                Add Event
+                {mode === 'edit' ? 'Update Event' : 'Add Event'}
               </Button>
             </View>
           </Card.Content>
