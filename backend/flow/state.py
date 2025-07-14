@@ -24,4 +24,9 @@ class FlowState(TypedDict):
     delete_date_range_data: dict
     delete_date_range_filtered_events: List[Event]
     delete_final_filtered_events: List[Event]
+    update_date_range_data: dict
+    update_date_range_filtered_events: List[Event]
+    update_final_filtered_events: List[Event]
+    update_arguments: dict
+    
     is_success: Annotated[bool, merge_is_success]

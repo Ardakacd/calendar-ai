@@ -15,6 +15,7 @@ import MicButton from '../components/MicButton';
 import ListComponent from '../components/ListComponent';
 import DeleteComponent from '../components/DeleteComponent';
 import CreateComponent from '../components/CreateComponent';
+import UpdateComponent from '../components/UpdateComponent';
 import { useCalendarAPI } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
 import { Event, EventCreate } from '../models/event';
@@ -46,7 +47,8 @@ interface ChatMessage {
   timestamp: Date;
   eventData?: EventCreate;
   events?: Event[];
-  responseType?: 'text' | 'list' | 'delete' | 'create';
+  updateArguments?: any;
+  responseType?: 'text' | 'list' | 'delete' | 'create' | 'update';
 }
 
 export default function HomeScreen() {
@@ -66,13 +68,13 @@ export default function HomeScreen() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [isThinking, setIsThinking] = useState(false);
   const [hasUncompletedComponent, setHasUncompletedComponent] = useState(false);
-  const { transcribeAudio, addEvent, processText, deleteMultipleEvents } = useCalendarAPI();
+  const { transcribeAudio, addEvent, processText, deleteMultipleEvents, updateEvent } = useCalendarAPI();
   const { user, logout } = useAuth();
   const scrollViewRef = useRef<ScrollView>(null);
   const inputRef = useRef<TextInput>(null);
   
 
-  const addMessage = (type: 'user' | 'ai', content: string, eventData?: EventCreate, events?: Event[], responseType: 'text' | 'list' | 'delete' | 'create' = 'text') => {
+  const addMessage = (type: 'user' | 'ai', content: string, eventData?: EventCreate, events?: Event[], responseType: 'text' | 'list' | 'delete' | 'create' | 'update' = 'text', updateArguments?: any) => {
     const newMessage: ChatMessage = {
       id: Date.now().toString(),
       type,
@@ -80,6 +82,7 @@ export default function HomeScreen() {
       timestamp: new Date(),
       eventData,
       events,
+      updateArguments,
       responseType,
     };
     setMessages(prev => [...prev, newMessage]);
@@ -112,15 +115,16 @@ export default function HomeScreen() {
     try {
       const response = await processText(text)
     
-      // Handle different response types
       if (response && typeof response === 'object' && response.type === 'list' && response.events) {
         addMessage('ai', response.message || 'İşte etkinlikleriniz:', undefined, response.events, 'list')
       } else if (response && typeof response === 'object' && response.type === 'delete' && response.events) {
         addMessage('ai', response.message || 'Silinecek etkinlikleri seçin:', undefined, response.events, 'delete')
         setHasUncompletedComponent(true);
       } else if (response && typeof response === 'object' && response.type === 'create' && response.event) {
-        // Handle create event response from backend
         addMessage('ai', response.message || 'Lütfen etkinlik detaylarını gözden geçirin:', response.event, undefined, 'create')
+        setHasUncompletedComponent(true);
+      } else if (response && typeof response === 'object' && response.type === 'update' && response.events) {
+        addMessage('ai', response.message || 'Güncellenecek etkinlikleri seçin:', undefined, response.events, 'update', response.update_arguments)
         setHasUncompletedComponent(true);
       } else {
         // Handle string responses or other types
@@ -200,6 +204,17 @@ export default function HomeScreen() {
     }
   };
 
+  const handleUpdateEvent = async (eventId: string, updatedEvent: any) => {
+    try {
+      await updateEvent(eventId, updatedEvent);
+      addMessage('ai', 'Etkinlik başarıyla güncellendi!', undefined, undefined, 'text');
+      scrollToBottom();
+    } catch (error) {
+      addMessage('ai', 'Etkinlik güncellenemedi. Lütfen tekrar deneyin.', undefined, undefined, 'text');
+      scrollToBottom();
+    }
+  };
+
   // Function to mark component as completed
   const markComponentAsCompleted = () => {
     setHasUncompletedComponent(false);
@@ -233,6 +248,15 @@ export default function HomeScreen() {
             <CreateComponent 
               eventData={message.eventData}
               onCreate={handleCreateEvent}
+              onCompleted={markComponentAsCompleted}
+            />
+          )}
+
+          {message.responseType === 'update' && message.events && (
+            <UpdateComponent 
+              events={message.events}
+              updateArguments={message.updateArguments || {}}
+              onUpdate={handleUpdateEvent}
               onCompleted={markComponentAsCompleted}
             />
           )}

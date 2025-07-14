@@ -4,7 +4,7 @@ from services.event_service import get_event_service, EventService
 from utils.jwt import get_user_id_from_token
 from langchain_core.messages import HumanMessage
 from flow.builder import FlowBuilder
-from models import SuccessfulListResponse, SuccessfulDeleteResponse, SuccessfulCreateResponse, EventCreate
+from models import SuccessfulListResponse, SuccessfulDeleteResponse, SuccessfulCreateResponse, SuccessfulUpdateResponse, EventCreate
 logger = logging.getLogger(__name__)
 
 
@@ -43,7 +43,12 @@ class AssistantService:
                     )
                     return create_response.model_dump()
                 elif route == "update":
-                    return response["messages"][-1].content
+                    update_response = SuccessfulUpdateResponse(
+                        message=response["messages"][-1].content, 
+                        events=response["update_final_filtered_events"],
+                        update_arguments=response["update_arguments"]
+                    )
+                    return update_response.model_dump()
                 elif route == "delete":
                     delete_response = SuccessfulDeleteResponse(
                         message=response["messages"][-1].content, 

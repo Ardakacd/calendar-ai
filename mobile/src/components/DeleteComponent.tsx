@@ -157,7 +157,7 @@ export default function DeleteComponent({ events, onDelete, onCompleted }: Delet
             labelStyle={[styles.deleteButtonText, styles.disabledText]}
             icon="delete"
           >
-            Silindi
+            Sil
           </Button>
           <Button
             mode="outlined"

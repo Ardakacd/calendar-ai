@@ -60,8 +60,8 @@ async def list_event_by_date_range(state: FlowState) -> List[Event]:
     try:
         async with get_async_db_context_manager() as db:
             adapter = EventAdapter(db)
-            start_date = state['list_date_range_data']['arguments']['startDate']
-            end_date = state['list_date_range_data']['arguments']['endDate']
+            start_date = state['list_date_range_data']['arguments'].get('startDate')
+            end_date = state['list_date_range_data']['arguments'].get('endDate')
             state['list_date_range_filtered_events'] = await adapter.get_events_by_date_range(state['user_id'], start_date, end_date)
             return state
     except Exception as e:
