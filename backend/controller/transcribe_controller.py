@@ -1,8 +1,8 @@
 import logging
 
-from fastapi import APIRouter, Depends, File, Form, UploadFile, HTTPException
+from fastapi import APIRouter, Depends, File, UploadFile, HTTPException
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from models import ConfirmationRequest, TranscribeMessage
+from models import TranscribeMessage
 from services.transcribe_service import TranscribeService, get_transcribe_service
 
 logger = logging.getLogger(__name__)
@@ -39,33 +39,3 @@ async def transcribe(
     except Exception as e:
         logger.error(f"Error in transcribe endpoint: {e}")
         raise HTTPException(status_code=500, detail="Failed to process the audio")
-
-
-@router.post("/confirm")
-async def confirm_action(
-        confirmation_request: ConfirmationRequest,
-        credentials: HTTPAuthorizationCredentials = Depends(security),
-        transcribe_service: TranscribeService = Depends(get_transcribe_service)
-):
-    """
-    Confirm and execute a calendar action (create, update, delete event).
-    """
-    try:
-        # Get token from credentials
-        token = credentials.credentials
-
-        # Execute the confirmed action
-        logger.info(f"Confirming action: {confirmation_request.action}")
-        result = await transcribe_service.confirm_action(
-            confirmation_request.action,
-            confirmation_request.event_data,
-            token
-        )
-
-        return result
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error in confirm action endpoint: {e}")
-        raise HTTPException(status_code=500, detail="Failed to confirm action")
