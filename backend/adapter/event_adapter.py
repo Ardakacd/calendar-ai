@@ -1,11 +1,12 @@
 from typing import List, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy import select, delete, update, func
+from sqlalchemy import select, delete, update, func, or_, and_
 import logging
 from database import EventModel
 from models import EventCreate, EventUpdate, Event
 from datetime import datetime, timedelta
+from exceptions import EventNotFoundError, EventPermissionError,  DatabaseError
 
 logger = logging.getLogger(__name__)
 
@@ -24,10 +25,9 @@ class EventAdapter:
     def _convert_to_model(self, event_model: EventModel) -> Event:
         """Convert EventModel to Event Pydantic model."""
         # Calculate duration from startDate and endDate
-        duration = None
-        if event_model.startDate and event_model.endDate:
-            delta = event_model.endDate - event_model.startDate
-            duration = int(delta.total_seconds() / 60)
+        
+        delta = event_model.endDate - event_model.startDate
+        duration = int(delta.total_seconds() / 60)
         
         return Event(
             id=event_model.event_id,  # Use event_id (UUID) for API exposure
@@ -45,6 +45,8 @@ class EventAdapter:
         end_date = None
         if event_data.duration and event_data.duration > 0:
             end_date = event_data.startDate + timedelta(minutes=event_data.duration)
+        else:
+            end_date = event_data.startDate
             
         return EventModel(
             title=event_data.title,
@@ -54,7 +56,12 @@ class EventAdapter:
             user_id=user_id
         )
     
-    async def create_event(self, user_id: int, event_data: EventCreate) -> Optional[Event]:
+    def _ensure_datetime(self, value: Optional[datetime | str]) -> Optional[datetime]:
+        if isinstance(value, str):
+            return datetime.fromisoformat(value)
+        return value
+    
+    async def create_event(self, user_id: int, event_data: EventCreate) -> Event:
         """
         Create a new event.
         
@@ -62,7 +69,10 @@ class EventAdapter:
             event_data: Event data to create
             
         Returns:
-            Created event or None if failed
+            Created event
+            
+        Raises:
+            DatabaseError: If there's a database error
         """
         try:
             db_event = self._convert_to_db_model(user_id, event_data)
@@ -75,13 +85,13 @@ class EventAdapter:
         except SQLAlchemyError as e:
             logger.error(f"Database error creating event: {e}")
             await self.db.rollback()
-            return None
+            raise DatabaseError(f"Failed to create event: {e}")
         except Exception as e:
             logger.error(f"Unexpected error creating event: {e}")
             await self.db.rollback()
-            return None
+            raise DatabaseError(f"Unexpected error creating event: {e}")
     
-    async def get_event_by_event_id(self, event_id: str) -> Optional[Event]:
+    async def get_event_by_event_id(self, event_id: str) -> Event:
         """
         Get event by event_id (UUID).
         
@@ -89,7 +99,11 @@ class EventAdapter:
             event_id: Event ID (UUID) to retrieve
             
         Returns:
-            Event or None if not found
+            Event
+            
+        Raises:
+            EventNotFoundError: If event is not found
+            DatabaseError: If there's a database error
         """
         try:
             stmt = select(EventModel).where(EventModel.event_id == event_id)
@@ -98,14 +112,16 @@ class EventAdapter:
             
             if db_event:
                 return self._convert_to_model(db_event)
-            return None
+            raise EventNotFoundError(f"Event with ID {event_id} not found")
             
+        except EventNotFoundError:
+            raise
         except SQLAlchemyError as e:
             logger.error(f"Database error retrieving event {event_id}: {e}")
-            return None
+            raise DatabaseError(f"Database error retrieving event {event_id}: {e}")
         except Exception as e:
             logger.error(f"Unexpected error retrieving event {event_id}: {e}")
-            return None
+            raise DatabaseError(f"Unexpected error retrieving event {event_id}: {e}")
          
     async def get_events_by_user_id(self, user_id: int, limit: Optional[int] = None, offset: Optional[int] = None) -> List[Event]:
         """
@@ -170,38 +186,52 @@ class EventAdapter:
             logger.error(f"Unexpected error retrieving events: {e}")
             return []
     
-    async def get_events_by_date_range(self, user_id: int, start_date: str, end_date: str) -> List[Event]:
+    from typing import Optional
+
+    async def get_events_by_date_range(
+        self,
+        user_id: int,
+        start_date: Optional[datetime] = None,
+        end_date: Optional[datetime] = None
+    ) -> List[Event]:
         """
-        Get events within a date range for a specific user.
+        Get events within an optional date range for a specific user.
         
         Args:
             user_id: User ID to filter events
-            start_date: Start date (YYYY-MM-DD HH:MM:SS)
-            end_date: End date (YYYY-MM-DD HH:MM:SS)
+            start_date: Optional start date (YYYY-MM-DD HH:MM:SS)
+            end_date: Optional end date (YYYY-MM-DD HH:MM:SS)
             
         Returns:
-            List of events in date range
+            List of events filtered by optional date range (empty list if no events found)
+            
+        Raises:
+            DatabaseError: If there's a database error
         """
         try:
-            stmt = select(EventModel).where(
-                EventModel.user_id == user_id,
-                EventModel.startDate >= start_date,
-                EventModel.endDate <= end_date
-            ).order_by(EventModel.startDate.asc())
+            conditions = [EventModel.user_id == user_id]
+
+            if start_date:
+                conditions.append(EventModel.startDate >= self._ensure_datetime(start_date))
+            if end_date:
+                conditions.append(EventModel.endDate <= self._ensure_datetime(end_date))
+
+            stmt = select(EventModel).where(*conditions).order_by(EventModel.startDate.asc())
             
             result = await self.db.execute(stmt)
             db_events = result.scalars().all()
             
             return [self._convert_to_model(event) for event in db_events]
-            
+
         except SQLAlchemyError as e:
             logger.error(f"Database error retrieving events by date range: {e}")
-            return []
+            raise DatabaseError(f"Database error retrieving events by date range: {e}")
         except Exception as e:
             logger.error(f"Unexpected error retrieving events by date range: {e}")
-            return []
+            raise DatabaseError(f"Unexpected error retrieving events by date range: {e}")
+
     
-    async def update_event(self, event_id: str, user_id: int, event_data: EventUpdate) -> Optional[Event]:
+    async def update_event(self, event_id: str, user_id: int, event_data: EventUpdate) -> Event:
         """
         Update an existing event.
         
@@ -211,7 +241,12 @@ class EventAdapter:
             event_data: Updated event data
             
         Returns:
-            Updated event or None if failed
+            Updated event
+            
+        Raises:
+            EventNotFoundError: If event is not found
+            EventPermissionError: If user doesn't have permission
+            DatabaseError: If there's a database error
         """
         try:
             # First, get the existing event to verify ownership
@@ -221,11 +256,11 @@ class EventAdapter:
             
             if not db_event:
                 logger.warning(f"Event not found for update: {event_id}")
-                return None
+                raise EventNotFoundError(f"Event with ID {event_id} not found")
             
             if db_event.user_id != user_id:
                 logger.warning(f"User {user_id} not authorized to update event {event_id}")
-                return None
+                raise EventPermissionError(f"User {user_id} not authorized to update event {event_id}")
             
             # Update fields
             update_data = {}
@@ -246,10 +281,8 @@ class EventAdapter:
                 start_date = event_data.startDate if event_data.startDate is not None else db_event.startDate
                 duration = event_data.duration if event_data.duration is not None else db_event.duration
 
-                if duration == 0:
-                    update_data['endDate'] = None
-                else:
-                    update_data['endDate'] = start_date + timedelta(minutes=duration)
+                
+                update_data['endDate'] = start_date + timedelta(minutes=duration)
             
             if update_data:
                 stmt = update(EventModel).where(EventModel.event_id == event_id).values(**update_data).returning(EventModel)
@@ -259,15 +292,22 @@ class EventAdapter:
                 logger.info(f"Updated event: {event_id}")
                 if db_event:
                     return self._convert_to_model(db_event)
-            return None
+                else:
+                    raise DatabaseError(f"Failed to retrieve updated event {event_id}")
+            else:
+                # No changes to make, return the original event
+                return self._convert_to_model(db_event)
+                
+        except (EventNotFoundError, EventPermissionError):
+            raise
         except SQLAlchemyError as e:
             logger.error(f"Database error updating event {event_id}: {e}")
             await self.db.rollback()
-            return None
+            raise DatabaseError(f"Database error updating event {event_id}: {e}")
         except Exception as e:
             logger.error(f"Unexpected error updating event {event_id}: {e}")
             await self.db.rollback()
-            return None
+            raise DatabaseError(f"Unexpected error updating event {event_id}: {e}")
     
     async def delete_event(self, event_id: str, user_id: int) -> bool:
         """
@@ -364,3 +404,57 @@ class EventAdapter:
         except Exception as e:
             logger.error(f"Unexpected error counting events: {e}")
             return 0
+
+    async def check_event_conflict(
+        self,
+        user_id: int,
+        start_date: datetime,
+        end_date: datetime,
+        exclude_event_id: Optional[str] = None
+    ) -> Optional[Event]:
+        """
+        Check if there's an event that conflicts with the given date range.
+        
+        Args:
+            user_id: User ID to filter events
+            start_date: Start date of the time range to check
+            end_date: End date of the time range to check
+            exclude_event_id: Optional event ID to exclude from conflict check (useful for updates)
+            
+        Returns:
+            Conflicting event if found, None if no conflicts
+        """
+        try:
+            conditions = [
+            EventModel.user_id == user_id,
+            or_(
+                and_(
+                    EventModel.startDate < self._ensure_datetime(end_date),
+                    EventModel.endDate > self._ensure_datetime(start_date)
+                ),
+                and_(
+                    EventModel.startDate == self._ensure_datetime(start_date),
+                    EventModel.endDate == self._ensure_datetime(end_date)
+                )
+            )
+            ]
+            # Exclude a specific event (useful when updating an event)
+            if exclude_event_id:
+                conditions.append(EventModel.event_id != exclude_event_id)
+            
+            stmt = select(EventModel).where(*conditions).order_by(EventModel.startDate.asc())
+            result = await self.db.execute(stmt)
+            conflicting_event = result.scalar_one_or_none()
+            
+            if conflicting_event:
+                logger.info(f"Found conflicting event: {conflicting_event.event_id} for time range {start_date} - {end_date}")
+                return self._convert_to_model(conflicting_event)
+            
+            return None
+            
+        except SQLAlchemyError as e:
+            logger.error(f"Database error checking event conflicts: {e}")
+            return None
+        except Exception as e:
+            logger.error(f"Unexpected error checking event conflicts: {e}")
+            return None
