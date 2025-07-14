@@ -14,7 +14,7 @@ import * as Localization from 'expo-localization';
 import { useCalendarAPI } from '../services/api';
 import UpdateEventModal from '../components/UpdateEventModal';
 import AddEventModal from '../components/AddEventModal';
-import { Event } from '../models/event';
+import { Event, EventCreate } from '../models/event';
 
 
 interface MarkedDates {
@@ -98,7 +98,6 @@ export default function CalendarScreen() {
   };
 
   const getEventsForDate = (date: string) => {
-    console.log("EVENTS:" , events);
     const filteredEvents = events.filter(event => {
       return event.startDate.split('T')[0] === date
     });
@@ -186,7 +185,7 @@ export default function CalendarScreen() {
 
 
 
-  const handleAddEvent = async (newEvent: Omit<Event, 'id'>) => {
+  const handleAddEvent = async (newEvent: EventCreate) => {
     try {
       const addedEvent = await addEvent(newEvent);
       

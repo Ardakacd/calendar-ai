@@ -13,11 +13,13 @@ import { MaterialIcons } from '@expo/vector-icons';
 interface MicButtonProps {
   onRecordingComplete: (audioUri: string) => void;
   isProcessing?: boolean;
+  disabled?: boolean;
 }
 
 export default function MicButton({ 
   onRecordingComplete, 
   isProcessing = false, 
+  disabled = false,
 }: MicButtonProps) {
   const [recording, setRecording] = useState<Audio.Recording | null>(null);
   const [isRecording, setIsRecording] = useState(false);
@@ -174,10 +176,11 @@ export default function MicButton({
             styles.micButton,
             isRecording && styles.recording,
             isProcessing && styles.processing,
+            disabled && styles.disabled,
           ]}
           onPressIn={handlePressIn}
           onPressOut={handlePressOut}
-          disabled={isProcessing}
+          disabled={isProcessing || disabled}
           activeOpacity={0.8}
         >
           <Animated.View
@@ -231,6 +234,10 @@ const styles = StyleSheet.create({
   },
   processing: {
     backgroundColor: 'rgba(98, 0, 238, 0.6)',
+  },
+  disabled: {
+    opacity: 0.5,
+    backgroundColor: 'rgba(255, 255, 255, 0.3)',
   },
   instructionText: {
     marginTop: 15,

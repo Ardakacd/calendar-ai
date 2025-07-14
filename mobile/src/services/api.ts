@@ -1,7 +1,7 @@
-import axios from 'axios';
+import axios, { AxiosError, AxiosResponse } from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getUserDateTime } from '../../utils/datetime/get_current_time';
-import { Event, EventConfirmationData } from '../models/event';
+import { Event, EventCreate } from '../models/event';
 
 const API_BASE_URL = 'http://localhost:8000';
 
@@ -11,25 +11,6 @@ const REFRESH_TOKEN_KEY = 'refresh_token';
 
 interface TranscribeMessage {
   message: string;
-}
-
-interface TranscribeResponse {
-  message: string;
-  action: 'create' | 'delete' | 'update' | 'query' | 'none';
-  requires_confirmation: boolean;
-  confirmation_data?: {
-    title: string;
-    startDate: string;
-    duration?: number;
-    location?: string;
-    event_id?: string;
-  };
-  event?: {
-    id: string;
-    title: string;
-    date: string;
-    time: string;
-  };
 }
 
 interface User {
@@ -55,11 +36,6 @@ interface TokenResponse {
   user_id: string;
   user_name: string;
   expires_in: number;
-}
-
-interface ConfirmationRequest {
-  action: 'create' | 'update' | 'delete';
-  event_data: EventConfirmationData;
 }
 
 class CalendarAPI {
@@ -249,9 +225,11 @@ class CalendarAPI {
     }
   }
 
-  async addEvent(event: Omit<Event, 'id'>): Promise<Event> {
+  async addEvent(event: EventCreate, conflict_check: boolean = true): Promise<Event> {
     try {
-      const response = await this.api.post('/events', event);
+      const response = await this.api.post('/events', event, {
+        params: { conflict_check }
+      });
       return response.data;
     } catch (error) {
       console.error('Error adding event:', error);
@@ -269,22 +247,20 @@ class CalendarAPI {
     }
   }
 
-  async deleteEvent(eventId: string): Promise<void> {
+  async deleteEvent(eventId: string): Promise<{message: string}> {
     try {
-      await this.api.delete(`/events/${eventId}`);
+      const response = await this.api.delete(`/events/${eventId}`);
+      return response.data;
     } catch (error) {
       console.error('Error deleting event:', error);
       throw new Error('Failed to delete event');
     }
   }
 
-  async processText(text: string): Promise<string> {
+  async processText(text: string): Promise<any> {
     try {
       const {currentDateTime: current_datetime, weekday, daysInMonth: days_in_month} = getUserDateTime()
-      console.log({ text, 
-        current_datetime, 
-        weekday, 
-        days_in_month })
+      
       const response = await this.api.post('/assistant', { text, 
         current_datetime, 
         weekday, 
@@ -296,17 +272,6 @@ class CalendarAPI {
     }
   }
 
-  async confirmAction(confirmationRequest: ConfirmationRequest): Promise<{ message: string }> {
-    try {
-      const response = await this.api.post('/transcribe/confirm', confirmationRequest);
-      return response.data;
-    } catch (error) {
-      console.error('Error confirming action:', error);
-      throw new Error('Failed to confirm action');
-    }
-  }
-
-  
 
   private isTokenExpiredError(error: any): boolean {
     // Check if the error response indicates token expiration
@@ -348,7 +313,6 @@ export const useCalendarAPI = () => {
     addEvent: calendarAPI.addEvent.bind(calendarAPI),
     updateEvent: calendarAPI.updateEvent.bind(calendarAPI),
     deleteEvent: calendarAPI.deleteEvent.bind(calendarAPI),
-    confirmAction: calendarAPI.confirmAction.bind(calendarAPI),
     processText: calendarAPI.processText.bind(calendarAPI),
   };
 }; 

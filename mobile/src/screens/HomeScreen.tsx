@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   View,
   StyleSheet,
@@ -12,17 +12,41 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useNavigation } from '@react-navigation/native';
 
 import MicButton from '../components/MicButton';
-import ConfirmationModal from '../components/ConfirmationModal';
+import ListComponent from '../components/ListComponent';
+import DeleteComponent from '../components/DeleteComponent';
+import CreateComponent from '../components/CreateComponent';
 import { useCalendarAPI } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
-import { EventConfirmationData } from '../models/event';
+import { Event, EventCreate } from '../models/event';
+
+// Animated thinking dots component
+const ThinkingDots = () => {
+  const [dots, setDots] = useState('');
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setDots(prev => {
+        if (prev === '...') return '';
+        if (prev === '..') return '...';
+        if (prev === '.') return '..';
+        return '.';
+      });
+    }, 500);
+
+    return () => clearInterval(interval);
+  }, []);
+
+  return <Text style={{ fontSize: 16, lineHeight: 22, color: 'rgba(255, 255, 255, 0.9)' }}>{dots}</Text>;
+};
 
 interface ChatMessage {
   id: string;
   type: 'user' | 'ai';
   content: string;
   timestamp: Date;
-  eventData?: EventConfirmationData;
+  eventData?: EventCreate;
+  events?: Event[];
+  responseType?: 'text' | 'list' | 'delete' | 'create';
 }
 
 export default function HomeScreen() {
@@ -34,28 +58,29 @@ export default function HomeScreen() {
       content: 'Hello, how can I help you today?  ',
       timestamp: new Date(),
       eventData: undefined,
+      events: undefined,
+      responseType: 'text',
     }
   ]);
   const [inputText, setInputText] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
-  const [showConfirmationModal, setShowConfirmationModal] = useState(false);
-  const [confirmationData, setConfirmationData] = useState<{
-    action: 'create' | 'update' | 'delete';
-    eventData: EventConfirmationData;
-  } | null>(null);
-  const [isConfirming, setIsConfirming] = useState(false);
-  const { transcribeAudio, confirmAction, processText } = useCalendarAPI();
+  const [isThinking, setIsThinking] = useState(false);
+  const [hasUncompletedComponent, setHasUncompletedComponent] = useState(false);
+  const { transcribeAudio, addEvent, processText, deleteEvent } = useCalendarAPI();
   const { user, logout } = useAuth();
   const scrollViewRef = useRef<ScrollView>(null);
   const inputRef = useRef<TextInput>(null);
+  
 
-  const addMessage = (type: 'user' | 'ai', content: string, eventData?: EventConfirmationData) => {
+  const addMessage = (type: 'user' | 'ai', content: string, eventData?: EventCreate, events?: Event[], responseType: 'text' | 'list' | 'delete' | 'create' = 'text') => {
     const newMessage: ChatMessage = {
       id: Date.now().toString(),
       type,
       content: content ? content.trim() : '',
       timestamp: new Date(),
       eventData,
+      events,
+      responseType,
     };
     setMessages(prev => [...prev, newMessage]);
   };
@@ -80,19 +105,35 @@ export default function HomeScreen() {
       inputRef.current?.focus();
     }, 100);
 
-    // await processCommand(userMessage);
   };
 
   const handleProcessText = async (text: string) => {
+    setIsThinking(true);
     try {
       const response = await processText(text)
-      console.log(response)
-      addMessage('ai', response)
+    
+      // Handle different response types
+      if (response && typeof response === 'object' && response.type === 'list' && response.events) {
+        addMessage('ai', response.message || 'Here are your events:', undefined, response.events, 'list')
+      } else if (response && typeof response === 'object' && response.type === 'delete' && response.events) {
+        addMessage('ai', response.message || 'Select an event to delete:', undefined, response.events, 'delete')
+        setHasUncompletedComponent(true);
+      } else if (response && typeof response === 'object' && response.type === 'create' && response.event) {
+        // Handle create event response from backend
+        addMessage('ai', response.message || 'Please review the event details:', response.event, undefined, 'create')
+        setHasUncompletedComponent(true);
+      } else {
+        // Handle string responses or other types
+        const message = typeof response === 'string' ? response : (response?.message || 'Command processed successfully.');
+        addMessage('ai', message, undefined, undefined, 'text')
+      }
+      
       scrollToBottom();
     } catch (error) {
-      console.error('Error processing text:', error);
       addMessage('ai', 'Sorry, I couldn\'t process your command. Please try again.');
       scrollToBottom();
+    } finally {
+      setIsThinking(false);
     }
   }
 
@@ -116,56 +157,6 @@ export default function HomeScreen() {
     }
   };
 
-  /*const processCommand = async (command: string) => {
-    try {
-      if (response.requires_confirmation && response.confirmation_data) {
-        addMessage('ai', 'Do you confirm an event with the following attributes:', response.confirmation_data);
-        setConfirmationData({
-          action: response.action as 'create' | 'update' | 'delete',
-          eventData: response.confirmation_data,
-        });
-        setShowConfirmationModal(true);
-      } else {
-        addMessage('ai', response.message || 'Command processed successfully.');
-      }
-
-      scrollToBottom();
-    } catch (error) {
-      console.error('Error processing command:', error);
-      addMessage('ai', 'Sorry, I couldn\'t process your command. Please try again.');
-      scrollToBottom();
-    }
-  };*/
-
-  const handleConfirmAction = async (eventData: EventConfirmationData) => {
-    if (!confirmationData) return;
-
-    setIsConfirming(true);
-    try {
-      const result = await confirmAction({
-        action: confirmationData.action,
-        event_data: eventData,
-      });
-
-      addMessage('ai', result.message);
-      setShowConfirmationModal(false);
-      setConfirmationData(null);
-      scrollToBottom();
-
-    } catch (error) {
-      console.error('Error confirming action:', error);
-      addMessage('ai', 'Failed to confirm action. Please try again.');
-      scrollToBottom();
-    } finally {
-      setIsConfirming(false);
-    }
-  };
-
-  const handleDismissModal = () => {
-    setShowConfirmationModal(false);
-    setConfirmationData(null);
-  };
-
   const handleLogout = async () => {
     Alert.alert(
       'Logout',
@@ -187,6 +178,33 @@ export default function HomeScreen() {
     );
   };
 
+  const handleDeleteEvent = async (eventId: string) => {
+    try {
+      const response = await deleteEvent(eventId);
+      addMessage('ai', response.message || 'Etkinlik basariyla silindi!', undefined, undefined, 'text');
+      scrollToBottom();
+    } catch (error) {
+      addMessage('ai', 'Failed to delete event. Please try again.', undefined, undefined, 'text');
+      scrollToBottom();
+    }
+  };
+
+  const handleCreateEvent = async (eventData: EventCreate) => {
+    try {
+      await addEvent(eventData, false);
+      addMessage('ai', 'Event created successfully!', undefined, undefined, 'text');
+      scrollToBottom();
+    } catch (error) {
+      addMessage('ai', 'Failed to create event. Please try again.', undefined, undefined, 'text');
+      scrollToBottom();
+    }
+  };
+
+  // Function to mark component as completed
+  const markComponentAsCompleted = () => {
+    setHasUncompletedComponent(false);
+  };
+
   const renderMessage = (message: ChatMessage) => {
     const isUser = message.type === 'user';
 
@@ -197,21 +215,28 @@ export default function HomeScreen() {
             {message.content}
           </Text>
 
-          {message.eventData && (
-            <Card style={styles.eventCard}>
-              <Card.Content>
-                <Text style={styles.eventTitle}>Event Details:</Text>
-                <Text style={styles.eventDetail}>Title: {message.eventData.title}</Text>
-                <Text style={styles.eventDetail}>Date: {new Date(message.eventData.startDate).toLocaleString()}</Text>
-                {message.eventData.duration && (
-                  <Text style={styles.eventDetail}>Duration: {message.eventData.duration} minutes</Text>
-                )}
-                {message.eventData.location && (
-                  <Text style={styles.eventDetail}>Location: {message.eventData.location}</Text>
-                )}
-              </Card.Content>
-            </Card>
+          {message.responseType === 'list' && message.events && (
+            <ListComponent 
+              events={message.events} 
+            />
           )}
+
+          {message.responseType === 'delete' && message.events && (
+            <DeleteComponent 
+              events={message.events}
+              onDelete={handleDeleteEvent}
+              onCompleted={markComponentAsCompleted}
+            />
+          )}
+
+          {message.responseType === 'create' && message.eventData && (
+            <CreateComponent 
+              eventData={message.eventData}
+              onCreate={handleCreateEvent}
+              onCompleted={markComponentAsCompleted}
+            />
+          )}
+
         </View>
       </View>
     );
@@ -252,6 +277,13 @@ export default function HomeScreen() {
           showsVerticalScrollIndicator={false}
         >
           {messages.map(renderMessage)}
+          {isThinking && (
+            <View style={[styles.messageContainer, styles.aiMessage]}>
+              <View style={[styles.messageBubble, styles.aiBubble]}>
+                <ThinkingDots />
+              </View>
+            </View>
+          )}
         </ScrollView>
 
         <View style={styles.inputContainer}>
@@ -262,13 +294,13 @@ export default function HomeScreen() {
             placeholderTextColor="rgba(255, 255, 255, 0.6)"
             onSubmitEditing={handleSendMessage}
             returnKeyType="send"
-            style={styles.textInput}
+            style={[styles.textInput, hasUncompletedComponent && styles.disabledInput]}
             contextMenuHidden={true}
             selectTextOnFocus={false}
             autoCorrect={false}
             autoCapitalize="none"
-            editable={true}
-            pointerEvents="auto"
+            editable={!hasUncompletedComponent}
+            pointerEvents={hasUncompletedComponent ? "none" : "auto"}
             ref={inputRef}
           />
           <View>
@@ -278,28 +310,20 @@ export default function HomeScreen() {
                 iconColor="white"
                 size={20}
                 onPress={handleSendMessage}
-                style={styles.sendButton}
+                style={[styles.sendButton, hasUncompletedComponent && styles.disabledButton]}
+                disabled={hasUncompletedComponent}
               />
             ) : (
               <MicButton
                 onRecordingComplete={handleVoiceCommand}
                 isProcessing={isProcessing}
+                disabled={hasUncompletedComponent}
               />
             )}
           </View>
         </View>
       </KeyboardAvoidingView>
 
-      {confirmationData && (
-        <ConfirmationModal
-          visible={showConfirmationModal}
-          onDismiss={handleDismissModal}
-          action={confirmationData.action}
-          eventData={confirmationData.eventData}
-          onConfirm={handleConfirmAction}
-          isLoading={isConfirming}
-        />
-      )}
     </LinearGradient>
   );
 }
@@ -347,7 +371,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   messagesContent: {
-    paddingHorizontal: 16,
+    paddingHorizontal: 8,
     paddingBottom: 20,
   },
   inputContainer: {
@@ -375,6 +399,10 @@ const styles = StyleSheet.create({
     borderWidth: 0,
     borderColor: 'transparent',
   },
+  disabledInput: {
+    opacity: 0.5,
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+  },
   inputButtons: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -387,6 +415,10 @@ const styles = StyleSheet.create({
     margin: 0,
     padding:0
   },
+  disabledButton: {
+    opacity: 0.5,
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+  },
   messageContainer: {
     marginVertical: 8,
     paddingHorizontal: 8,
@@ -398,7 +430,7 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
   },
   messageBubble: {
-    maxWidth: '80%',
+    maxWidth: '90%',
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderRadius: 20,
