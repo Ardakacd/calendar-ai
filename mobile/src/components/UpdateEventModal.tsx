@@ -52,7 +52,7 @@ export default function UpdateEventModal({
     if (!event) return;
 
     if (!title.trim()) {
-      Alert.alert('Error', 'Title is required');
+      Alert.alert('Hata', 'Başlık gereklidir');
       return;
     }
 
@@ -62,11 +62,11 @@ export default function UpdateEventModal({
       try {
         durationMinutes = parseInt(duration);
         if (durationMinutes <= 0) {
-          Alert.alert('Error', 'Duration must be a positive number in minutes');
+          Alert.alert('Hata', 'Süre 0\'dan büyük olmalıdır');
           return;
         }   
       } catch (error) {
-        Alert.alert('Error', 'Invalid duration format');
+        Alert.alert('Hata', 'Geçersiz süre formatı');
         return;
       }
      
@@ -81,10 +81,10 @@ export default function UpdateEventModal({
         startDate: datetime.toISOString(),
       });
       onDismiss();
-      Alert.alert('Success', 'Event updated successfully');
+      Alert.alert('Başarılı', 'Etkinlik başarıyla güncellendi');
     } catch (error) {
       console.error('Error updating event:', error);
-      Alert.alert('Error', 'Failed to update event');
+      Alert.alert('Hata', 'Etkinlik güncellenemedi');
     } finally {
       setLoading(false);
     }

@@ -61,7 +61,7 @@ export default function AddEventModal({
 
   const handleSubmit = async () => {
     if (!title.trim()) {
-      Alert.alert('Error', 'Title is required');
+      Alert.alert('Hata', 'Başlık gereklidir');
       return;
     }
 
@@ -70,7 +70,7 @@ export default function AddEventModal({
     if (duration) {
       durationMinutes = parseInt(duration);
       if (durationMinutes <= 0) {
-        Alert.alert('Error', 'Duration must be a positive number in minutes');
+        Alert.alert('Hata', 'Süre 0\'dan büyük olmalıdır');
         return;
       }
     }
@@ -89,7 +89,7 @@ export default function AddEventModal({
         await onEdit(eventData);
       } else {
         await onAdd(eventData);
-        Alert.alert('Success', 'Event added successfully');
+        Alert.alert('Başarılı', 'Etkinlik başarıyla eklendi');
       }
       
       // Reset form
@@ -101,7 +101,7 @@ export default function AddEventModal({
       onDismiss();
     } catch (error) {
       console.error('Error saving event:', error);
-      Alert.alert('Error', mode === 'edit' ? 'Failed to update event' : 'Failed to add event');
+      Alert.alert('Hata', mode === 'edit' ? 'Etkinlik güncellenemedi' : 'Etkinlik eklenemedi');
     } finally {
       setLoading(false);
     }
@@ -128,23 +128,23 @@ export default function AddEventModal({
         <Card>
           <Card.Content>
             <Title style={styles.title}>
-              {mode === 'edit' ? 'Edit Event' : 'Add New Event'}
+              {mode === 'edit' ? 'Etkinlik Düzenle' : 'Yeni Etkinlik Ekle'}
             </Title>
             
             <ScrollView>
               <View style={styles.inputContainer}>
-                <Text style={styles.label}>Title *</Text>
+                <Text style={styles.label}>Başlık *</Text>
                 <TextInput
                   mode="outlined"
                   value={title}
                   onChangeText={setTitle}
-                  placeholder="Enter event title"
+                  placeholder="Etkinlik başlığını girin"
                   style={styles.input}
                 />
               </View>
 
               <View style={styles.inputContainer}>
-                <Text style={styles.label}>Date & Time *</Text>
+                <Text style={styles.label}>Tarih & Saat *</Text>
                 <Button
                   mode="outlined"
                   onPress={() => setShowDatePicker(true)}
@@ -166,30 +166,30 @@ export default function AddEventModal({
               <View style={styles.inputContainer}>
                 <View style={styles.labelContainer}>
                   <MaterialIcons name="schedule" size={20} color="#6200ee" />
-                  <Text style={styles.label}>Duration (minutes)</Text>
+                  <Text style={styles.label}>Süre (dakika)</Text>
                 </View>
                 <NumericInput
                   mode="outlined"
                   value={duration}
                   onValueChange={setDuration}
-                  placeholder="Enter duration in minutes"
+                  placeholder="Dakika cinsinden süre giriniz"
                   style={styles.input}
                 />
                 <Text style={styles.helperText}>
-                  Enter the duration in minutes (e.g., 30 for 30 minutes) - Optional
+                  Süre dakika cinsinden giriniz (örn: 30 dakika) - Opsiyonel
                 </Text>
               </View>
 
               <View style={styles.inputContainer}>
                 <View style={styles.labelContainer}>
                   <MaterialIcons name="location-on" size={20} color="#6200ee" />
-                  <Text style={styles.label}>Location</Text>
+                  <Text style={styles.label}>Konum</Text>
                 </View>
                 <TextInput
                   mode="outlined"
                   value={location}
                   onChangeText={setLocation}
-                  placeholder="Enter event location (optional)"
+                  placeholder="Etkinlik konumunu girin (opsiyonel)"
                   style={styles.input}
                 />
               </View>
@@ -202,7 +202,7 @@ export default function AddEventModal({
                 style={[styles.button, styles.cancelButton]}
                 disabled={loading}
               >
-                Cancel
+                İptal Et
               </Button>
               <Button
                 mode="contained"
@@ -211,7 +211,7 @@ export default function AddEventModal({
                 loading={loading}
                 disabled={loading}
               >
-                {mode === 'edit' ? 'Update Event' : 'Add Event'}
+                {mode === 'edit' ? 'Etkinlik Güncelle' : 'Etkinlik Ekle'}
               </Button>
             </View>
           </Card.Content>

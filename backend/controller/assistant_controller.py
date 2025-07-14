@@ -20,7 +20,7 @@ async def process(
     """
     try:
         if len(input.text) == 0:
-            raise HTTPException(status_code=400, detail="Text cannot be empty")
+            raise HTTPException(status_code=400, detail="Metin boş olamaz")
 
         token = credentials.credentials
         
@@ -31,4 +31,4 @@ async def process(
         raise
     except Exception as e:
         logger.error(f"Error in process endpoint: {e}")
-        raise HTTPException(status_code=500, detail="Failed to process the user message")
+        raise HTTPException(status_code=500, detail="Kullanıcı mesajı işlenemedi")

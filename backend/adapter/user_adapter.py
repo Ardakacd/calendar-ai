@@ -57,13 +57,13 @@ class UserAdapter:
         error_msg = str(e).lower()
         
         if "email" in error_msg and "unique" in error_msg:
-            raise ValueError("Email already exists")
+            raise ValueError("Bu e-posta adresi zaten kullanımda")
         elif "password" in error_msg and "length" in error_msg:
-            raise ValueError("Password must be at least 6 characters long")
+            raise ValueError("Şifre en az 6 karakter olmalıdır")
         elif "email" in error_msg and "format" in error_msg:
-            raise ValueError("Invalid email format")
+            raise ValueError("Geçersiz e-posta formatı")
         else:
-            raise ValueError(f"Data validation failed during {operation}")
+            raise ValueError(f"Veri doğrulama hatası: {operation}")
     
     async def create_user(self, user_data: UserCreate) -> Optional[User]:
         """

@@ -38,7 +38,7 @@ def verify_token(token: str):
         if token_type != "access":
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid token type",
+                detail="Geçersiz token türü",
                 headers={"WWW-Authenticate": "Bearer"},
             )
         
@@ -47,14 +47,13 @@ def verify_token(token: str):
     except jwt.ExpiredSignatureError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Token has expired",
+            detail="Token süresi dolmuş",
             headers={"WWW-Authenticate": "Bearer"},
         )
     except Exception:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Could not validate credentials",
-            headers={"WWW-Authenticate": "Bearer"},
+            detail="Geçersiz token",
         )
 
 def verify_refresh_token(token: str):
@@ -75,13 +74,13 @@ def verify_refresh_token(token: str):
     except jwt.ExpiredSignatureError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Refresh token has expired",
+            detail="Yenileme tokeni süresi dolmuş",
             headers={"WWW-Authenticate": "Bearer"},
         )
     except Exception:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Could not validate refresh token",
+            detail="Geçersiz yenileme tokeni",
             headers={"WWW-Authenticate": "Bearer"},
         )
     
@@ -94,5 +93,5 @@ def get_user_id_from_token(token: str) -> Optional[int]:
             logger.error(f"Error extracting user ID from token: {e}")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid token"
+                detail="Geçersiz token",
             )

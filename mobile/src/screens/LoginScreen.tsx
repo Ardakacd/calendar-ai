@@ -27,7 +27,7 @@ const LoginScreen: React.FC = () => {
 
   const handleLogin = async () => {
     if (!email || !password) {
-      Alert.alert('Error', 'Please fill in all fields');
+      Alert.alert('Hata', 'Lütfen tüm alanları doldurun');
       return;
     }
 
@@ -35,7 +35,7 @@ const LoginScreen: React.FC = () => {
     try {
       await login(email, password);
     } catch (error: any) {
-      Alert.alert('Error', error.message || 'Login failed');
+      Alert.alert('Hata', error.message || 'Giriş başarısız oldu');
     } finally {
       setIsLoading(false);
     }

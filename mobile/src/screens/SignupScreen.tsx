@@ -27,14 +27,14 @@ const SignupScreen: React.FC = () => {
 
   const handleSignup = async () => {
     if (!name || !email || !password) {
-      Alert.alert('Error', 'Please fill in all fields');
+      Alert.alert('Hata', 'Lütfen tüm alanları doldurun');
       return;
     }
     setIsLoading(true);
     try {
       await register(name, email, password);
     } catch (error: any) {
-      Alert.alert('Error', error.message || 'Registration failed');
+      Alert.alert('Hata', error.message || 'Kayıt başarısız');
     } finally {
       setIsLoading(false);
     }
