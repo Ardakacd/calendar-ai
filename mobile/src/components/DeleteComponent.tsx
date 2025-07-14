@@ -14,12 +14,12 @@ import { Event } from '../models/event';
 
 interface DeleteComponentProps {
   events: Event[];
-  onDelete: (eventId: string) => Promise<void>;
+  onDelete: (eventIds: string[]) => Promise<void>;
   onCompleted: () => void;
 }
 
 export default function DeleteComponent({ events, onDelete, onCompleted }: DeleteComponentProps) {
-  const [selectedEvent, setSelectedEvent] = useState<Event | null>(null);
+  const [selectedEvents, setSelectedEvents] = useState<Set<string>>(new Set());
   const [isDeleting, setIsDeleting] = useState(false);
   const [isCompleted, setIsCompleted] = useState(false);
   
@@ -55,23 +55,38 @@ export default function DeleteComponent({ events, onDelete, onCompleted }: Delet
 
   const handleEventPress = (event: Event) => {
     if (isCompleted) return;
-    if (selectedEvent?.id === event.id) {
-        setSelectedEvent(null);
+    
+    const newSelectedEvents = new Set(selectedEvents);
+    if (newSelectedEvents.has(event.id)) {
+      newSelectedEvents.delete(event.id);
     } else {
-        setSelectedEvent(event);
+      newSelectedEvents.add(event.id);
     }
+    setSelectedEvents(newSelectedEvents);
+  };
+
+  const handleSelectAll = () => {
+    if (isCompleted) return;
+    const allEventIds = events.map(event => event.id);
+    setSelectedEvents(new Set(allEventIds));
+  };
+
+  const handleDeselectAll = () => {
+    if (isCompleted) return;
+    setSelectedEvents(new Set());
   };
 
   const handleDelete = async () => {
-    if (!selectedEvent) return;
+    if (selectedEvents.size === 0) return;
     
     setIsDeleting(true);
     try {
-      await onDelete(selectedEvent.id);
+      const eventIds = Array.from(selectedEvents);
+      await onDelete(eventIds);
       setIsCompleted(true);
       onCompleted();
     } catch (error) {
-      console.error('Error deleting event:', error);
+      console.error('Error deleting events:', error);
     } finally {
       setIsDeleting(false);
     }
@@ -160,10 +175,30 @@ export default function DeleteComponent({ events, onDelete, onCompleted }: Delet
 
   return (
     <View style={styles.container}>
-      
+      <View style={styles.selectionControls}>
+        <Button
+          mode="text"
+          onPress={handleSelectAll}
+          disabled={isDeleting}
+          style={styles.selectionButton}
+          labelStyle={styles.selectionButtonText}
+        >
+          Tümünü Seç
+        </Button>
+        <Button
+          mode="text"
+          onPress={handleDeselectAll}
+          disabled={isDeleting}
+          style={styles.selectionButton}
+          labelStyle={styles.selectionButtonText}
+        >
+          Seçimi Kaldır
+        </Button>
+      </View>
+
       <View style={styles.eventsContainer}>
         {events.map((event, index) => {
-          const isSelected = selectedEvent?.id === event.id;
+          const isSelected = selectedEvents.has(event.id);
           
           return (
             <TouchableOpacity
@@ -199,23 +234,19 @@ export default function DeleteComponent({ events, onDelete, onCompleted }: Delet
                       </Text>
                     </View>
 
-                    
-                      <View style={styles.detailRow}>
-                        <MaterialIcons name="timer" size={16} color="rgba(255, 255, 255, 0.7)" />
-                        <Text style={styles.detailText}>
-                          {formatDuration(event.duration)}
-                        </Text>
-                      </View>
-                    
+                    <View style={styles.detailRow}>
+                      <MaterialIcons name="timer" size={16} color="rgba(255, 255, 255, 0.7)" />
+                      <Text style={styles.detailText}>
+                        {formatDuration(event.duration)}
+                      </Text>
+                    </View>
 
-                    
-                      <View style={styles.detailRow}>
-                        <MaterialIcons name="location-on" size={16} color="rgba(255, 255, 255, 0.7)" />
-                        <Text style={styles.detailText} numberOfLines={1}>
-                          {formatLocation(event.location)}
-                        </Text>
-                      </View>
-                    
+                    <View style={styles.detailRow}>
+                      <MaterialIcons name="location-on" size={16} color="rgba(255, 255, 255, 0.7)" />
+                      <Text style={styles.detailText} numberOfLines={1}>
+                        {formatLocation(event.location)}
+                      </Text>
+                    </View>
                   </View>
                 </Card.Content>
               </Card>
@@ -229,9 +260,9 @@ export default function DeleteComponent({ events, onDelete, onCompleted }: Delet
           mode="contained"
           onPress={handleDelete}
           loading={isDeleting}
-          disabled={isDeleting || !selectedEvent}
-          style={[styles.deleteButton, !selectedEvent && styles.disabledButton]}
-          labelStyle={[styles.deleteButtonText, !selectedEvent && styles.disabledText]}
+          disabled={isDeleting || selectedEvents.size === 0}
+          style={[styles.deleteButton, selectedEvents.size === 0 && styles.disabledButton]}
+          labelStyle={[styles.deleteButtonText, selectedEvents.size === 0 && styles.disabledText]}
           icon="delete"
         >
           Sil
@@ -363,5 +394,18 @@ const styles = StyleSheet.create({
   },
   disabledText: {
     color: 'rgba(255, 255, 255, 0.3)',
+  },
+  selectionControls: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    marginBottom: 12,
+  },
+  selectionButton: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  selectionButtonText: {
+    color: 'rgba(255, 255, 255, 0.8)',
+    fontSize: 14,
   },
 }); 

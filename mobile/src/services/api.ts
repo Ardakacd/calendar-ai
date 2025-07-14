@@ -257,6 +257,22 @@ class CalendarAPI {
     }
   }
 
+  async deleteMultipleEvents(eventIds: string[]): Promise<{message: string}> {
+    try {
+      console.log(eventIds);
+      const response = await this.api.delete('/events/bulk/', {
+        params: { event_ids: eventIds },
+        paramsSerializer: {
+          indexes: null
+        }
+      });
+      return response.data;
+    } catch (error) {
+      console.error('Error deleting multiple events:', error);
+      throw new Error('Failed to delete events');
+    }
+  }
+
   async processText(text: string): Promise<any> {
     try {
       const {currentDateTime: current_datetime, weekday, daysInMonth: days_in_month} = getUserDateTime()
@@ -313,6 +329,7 @@ export const useCalendarAPI = () => {
     addEvent: calendarAPI.addEvent.bind(calendarAPI),
     updateEvent: calendarAPI.updateEvent.bind(calendarAPI),
     deleteEvent: calendarAPI.deleteEvent.bind(calendarAPI),
+    deleteMultipleEvents: calendarAPI.deleteMultipleEvents.bind(calendarAPI),
     processText: calendarAPI.processText.bind(calendarAPI),
   };
 }; 

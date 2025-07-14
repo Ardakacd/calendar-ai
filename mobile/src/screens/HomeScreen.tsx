@@ -66,7 +66,7 @@ export default function HomeScreen() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [isThinking, setIsThinking] = useState(false);
   const [hasUncompletedComponent, setHasUncompletedComponent] = useState(false);
-  const { transcribeAudio, addEvent, processText, deleteEvent } = useCalendarAPI();
+  const { transcribeAudio, addEvent, processText, deleteMultipleEvents } = useCalendarAPI();
   const { user, logout } = useAuth();
   const scrollViewRef = useRef<ScrollView>(null);
   const inputRef = useRef<TextInput>(null);
@@ -178,13 +178,13 @@ export default function HomeScreen() {
     );
   };
 
-  const handleDeleteEvent = async (eventId: string) => {
+  const handleDeleteEvent = async (eventIds: string[]) => {
     try {
-      const response = await deleteEvent(eventId);
-      addMessage('ai', response.message || 'Etkinlik basariyla silindi!', undefined, undefined, 'text');
+      const response = await deleteMultipleEvents(eventIds);
+      addMessage('ai', response.message || 'Etkinlikler basariyla silindi!', undefined, undefined, 'text');
       scrollToBottom();
     } catch (error) {
-      addMessage('ai', 'Failed to delete event. Please try again.', undefined, undefined, 'text');
+      addMessage('ai', 'Failed to delete events. Please try again.', undefined, undefined, 'text');
       scrollToBottom();
     }
   };

@@ -351,6 +351,53 @@ class EventService:
                 detail="Internal server error"
             )
 
+    async def delete_multiple_events(self, token: str, event_ids: List[str]) -> Dict[str, str]:
+        """
+        Delete multiple events by their IDs.
+        
+        Args:
+            token: JWT token for user authentication
+            event_ids: List of event IDs to delete
+            
+        Returns:
+            Success or error message
+            
+        Raises:
+            HTTPException: If user not authenticated, no valid event IDs provided, or deletion fails
+        """
+        try:
+            user_id = get_user_id_from_token(token)
+
+            if not event_ids:
+                logger.warning(f"EventService: No event IDs provided for bulk deletion")
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="No event IDs provided"
+                )
+
+            logger.info(f"EventService: Deleting {len(event_ids)} events for user {user_id}")
+
+            result = await self.event_adapter.delete_multiple_events(event_ids, user_id)
+
+            if result:
+                logger.info(f"EventService: Successfully deleted {len(event_ids)} events")
+                return {"message": f"Successfully deleted {len(event_ids)} events"}
+            else:
+                logger.warning(f"EventService: Failed to delete events - some events not found or not authorized")
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Some events not found or not authorized for deletion"
+                )
+
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"EventService: Unexpected error in bulk delete: {str(e)}", exc_info=True)
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Internal server error"
+            )
+
     async def search_events(self, token: str, query: str) -> List[Event]:
         """
         Search events by title for the authenticated user.
