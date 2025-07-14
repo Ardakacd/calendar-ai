@@ -8,6 +8,7 @@ from sqlalchemy_utils import create_database, database_exists
 from sqlalchemy.exc import SQLAlchemyError
 from .models.event import Base
 from config import settings
+from contextlib import asynccontextmanager
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -80,6 +81,21 @@ def get_db():
         db.close()
 
 async def get_async_db():
+    """Get async database session with automatic cleanup and error handling"""
+    async with AsyncSessionLocal() as session:
+        try:
+            yield session
+        except SQLAlchemyError as e:
+            logger.error(f"Async database error: {e}")
+            await session.rollback()
+            raise
+        except Exception as e:
+            logger.error(f"Unexpected async database error: {e}")
+            await session.rollback()
+            raise
+
+@asynccontextmanager
+async def get_async_db_context_manager():
     """Get async database session with automatic cleanup and error handling"""
     async with AsyncSessionLocal() as session:
         try:

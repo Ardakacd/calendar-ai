@@ -1,7 +1,8 @@
 import logging
 from typing import List, Optional, Dict, Any
-
+from datetime import datetime, timedelta
 from adapter.event_adapter import EventAdapter
+from exceptions import EventNotFoundError, DatabaseError, ValidationError, EventPermissionError
 from database.config import get_async_db
 from fastapi import Depends, HTTPException, status
 from models import EventUpdate, Event, EventCreate
@@ -15,9 +16,9 @@ class EventService:
     def __init__(self, event_adapter: EventAdapter):
         self.event_adapter = event_adapter
 
-    async def create_event(self, token: str, event_data: EventCreate) -> Event:
+    async def create_event_with_conflict_check(self, token: str, event_data: EventCreate) -> Event:
         """
-        Create a new event for the authenticated user.
+        Create a new event for the authenticated user with conflict checking.
         
         Args:
             token: JWT token for user authentication
@@ -27,34 +28,96 @@ class EventService:
             Created event
             
         Raises:
-            HTTPException: If user not authenticated or creation fails
+            HTTPException: If user not authenticated, conflict found, or creation fails
         """
         try:
             # Extract user_id from token
             user_id = get_user_id_from_token(token)
 
-            logger.info(f"EventService: Creating event for user {user_id}")
-            result = await self.event_adapter.create_event(user_id, event_data)
-
-            if not result:
-                logger.error(f"EventService: Failed to create event for user {user_id}")
+            logger.info(f"EventService: Creating event with conflict check for user {user_id}")
+            
+            # Calculate end date from start date and duration
+            start_date = event_data.startDate
+            duration = event_data.duration or 0
+            end_date = start_date + timedelta(minutes=duration)
+            
+            # Check for conflicts using adapter directly
+            conflict_event = await self.event_adapter.check_event_conflict(user_id, start_date, end_date)
+            
+            if conflict_event:
+                logger.warning(f"EventService: Conflict detected for user {user_id}")
                 raise HTTPException(
-                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail="Failed to create event"
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=f"Event conflicts with existing event: {conflict_event.title}"
                 )
+            
+            # Create the event if no conflicts
+            result = await self.event_adapter.create_event(user_id, event_data)
 
             logger.info(f"EventService: Event created successfully for user {user_id}")
             return result
 
         except HTTPException:
             raise
+        except ValidationError as e:
+            logger.warning(f"EventService: Validation error creating event: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=str(e)
+            )
+        except DatabaseError as e:
+            logger.error(f"EventService: Database error creating event: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to create event due to database error"
+            )
         except Exception as e:
             logger.error(f"EventService: Unexpected error creating event: {str(e)}", exc_info=True)
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Internal server error"
             )
+    
+    async def create_event_without_conflict_check(self, token: str, event_data: EventCreate) -> Event:
+        """
+        Create a new event for the authenticated user.
+        
+        Args:
+            token: JWT token for user authentication
+        """
 
+        try:
+            # Extract user_id from token
+            user_id = get_user_id_from_token(token)
+
+            logger.info(f"EventService: Creating event without conflict check for user {user_id}")
+            
+            result = await self.event_adapter.create_event(user_id, event_data)
+
+            logger.info(f"EventService: Event created successfully for user {user_id}")
+            return result
+
+        except HTTPException:
+            raise
+        except ValidationError as e:
+            logger.warning(f"EventService: Validation error creating event: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=str(e)
+            )
+        except DatabaseError as e:
+            logger.error(f"EventService: Database error creating event: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to create event due to database error"
+            )
+        except Exception as e:
+            logger.error(f"EventService: Unexpected error creating event: {str(e)}", exc_info=True)
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Internal server error"
+            )
+    
     async def get_event(self, token: str, event_id: str) -> Event:
         """
         Get a specific event by ID.
@@ -78,13 +141,6 @@ class EventService:
             # Get event by event_id
             result = await self.event_adapter.get_event_by_event_id(event_id)
 
-            if not result:
-                logger.warning(f"EventService: Event not found: {event_id}")
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail="Event not found"
-                )
-
             # Check if user owns the event
             if result.user_id != user_id:
                 logger.warning(f"EventService: User {user_id} not authorized to access event {event_id}")
@@ -96,6 +152,18 @@ class EventService:
             logger.info(f"EventService: Event retrieved successfully: {event_id}")
             return result
 
+        except EventNotFoundError as e:
+            logger.warning(f"EventService: Event not found: {event_id}")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Event not found"
+            )
+        except DatabaseError as e:
+            logger.error(f"EventService: Database error getting event {event_id}: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Database error retrieving event"
+            )
         except HTTPException:
             raise
         except Exception as e:
@@ -141,7 +209,7 @@ class EventService:
                 detail="Internal server error"
             )
 
-    async def get_events_by_date_range(self, token: str, start_date: str, end_date: str) -> List[Event]:
+    async def get_events_by_date_range(self, token: str, start_date: datetime, end_date: datetime) -> List[Event]:
         """
         Get events within a date range for the authenticated user.
         
@@ -167,6 +235,12 @@ class EventService:
             logger.info(f"EventService: Retrieved {len(result)} events in date range for user {user_id}")
             return result
 
+        except DatabaseError as e:
+            logger.error(f"EventService: Database error getting events by date range: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Database error retrieving events"
+            )
         except HTTPException:
             raise
         except Exception as e:
@@ -178,7 +252,7 @@ class EventService:
 
     async def update_event(self, token: str, event_id: str, event_data: EventUpdate) -> Dict[str, Any]:
         """
-        Update an existing event.
+        Update an existing event with conflict checking.
         
         Args:
             token: JWT token for user authentication
@@ -186,10 +260,10 @@ class EventService:
             event_data: Updated event data
             
         Returns:
-            Success message
+            Updated event
             
         Raises:
-            HTTPException: If user not authenticated, event not found, or not authorized
+            HTTPException: If user not authenticated, event not found, not authorized, or conflict found
         """
         try:
             # Extract user_id from token
@@ -211,6 +285,24 @@ class EventService:
 
         except HTTPException:
             raise
+        except EventNotFoundError as e:
+            logger.warning(f"EventService: Event not found: {event_id}")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Event not found"
+            )
+        except EventPermissionError as e:
+            logger.warning(f"EventService: Permission denied for event {event_id}")
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Not authorized to update this event"
+            )
+        except DatabaseError as e:
+            logger.error(f"EventService: Database error updating event {event_id}: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Database error updating event"
+            )
         except Exception as e:
             logger.error(f"EventService: Unexpected error updating event {event_id}: {str(e)}", exc_info=True)
             raise HTTPException(
@@ -218,7 +310,7 @@ class EventService:
                 detail="Internal server error"
             )
 
-    async def delete_event(self, token: str, event_id: str) -> Dict[str, Any]:
+    async def delete_event(self, token: str, event_id: str) -> Dict[str, str]:
         """
         Delete an event.
         

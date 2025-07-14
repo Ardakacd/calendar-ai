@@ -16,7 +16,8 @@ from .config import (
     get_async_db,
     init_db,
     get_pool_status,
-    health_check
+    health_check,
+    get_async_db_context_manager
 )
 
 __all__ = [
@@ -27,7 +28,8 @@ __all__ = [
     "get_async_db",
     "init_db",
     "get_pool_status",
-    "health_check"
+    "health_check",
+    "get_async_db_context_manager"
 ]
 
 # This file makes the database directory a Python package 

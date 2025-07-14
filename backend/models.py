@@ -34,7 +34,7 @@ class User(UserBase):
 class EventBase(BaseModel):
     title: str
     startDate: dt  # Use proper datetime type with timezone support
-    endDate: Optional[dt] = None  # End date (nullable)
+    endDate: dt  # End date
     duration: Optional[int] = None  # Duration in minutes for input
     location: Optional[str] = None
 
@@ -101,24 +101,6 @@ class RefreshTokenRequest(BaseModel):
 class TranscribeRequest(BaseModel):
     audio_data: str  # Base64 encoded audio
 
-class TranscribeResponse(BaseModel):
-    message: str
-    action: str  # "create", "delete", "update", "query", "none"
-    requires_confirmation: bool = False
-    confirmation_data: Optional[dict] = None  # Contains the fields for confirmation modal
-    event_id: Optional[str] = None
-
-# Confirmation Models for the frontend
-class EventConfirmationData(BaseModel):
-    title: str
-    startDate: str  # ISO format string
-    duration: Optional[int] = None  # Duration in minutes
-    location: Optional[str] = None
-    event_id: Optional[str] = None  # For update/delete operations
-
-class ConfirmationRequest(BaseModel):
-    action: str  # "create", "update", "delete"
-    event_data: EventConfirmationData 
 
 class TranscribeMessage(BaseModel):
     message: str
@@ -128,3 +110,18 @@ class ProcessInput(BaseModel):
     current_datetime: str
     weekday: str
     days_in_month: int
+
+class SuccessfulListResponse(BaseModel):
+    type: str = "list"
+    message: str
+    events: List[Event]
+
+class SuccessfulDeleteResponse(BaseModel):
+    type: str = "delete"
+    message: str
+    events: List[Event]
+
+class SuccessfulCreateResponse(BaseModel):
+    type: str = "create"
+    message: str
+    event: EventCreate

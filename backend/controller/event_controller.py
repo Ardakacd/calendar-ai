@@ -1,6 +1,6 @@
 import logging
-from typing import List, Optional
-
+from typing import List, Optional, Dict
+from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from models import EventCreate, EventUpdate, Event
@@ -16,6 +16,7 @@ security = HTTPBearer()
 @router.post("", response_model=Event)
 async def create_event(
         event_data: EventCreate,
+        conflict_check: bool = Query(True, description="Determine whether to check for conflicts"),
         credentials: HTTPAuthorizationCredentials = Depends(security),
         event_service: EventService = Depends(get_event_service)
 ):
@@ -27,7 +28,10 @@ async def create_event(
     logger.info(f"Creating event with title: {event_data.title}")
     try:
         token = credentials.credentials
-        result = await event_service.create_event(token, event_data)
+        if conflict_check:
+            result = await event_service.create_event_with_conflict_check(token, event_data)
+        else:
+            result = await event_service.create_event_without_conflict_check(token, event_data)
         logger.info(f"Event created successfully: {result.id}")
         return result
 
@@ -103,8 +107,8 @@ async def get_user_events(
 
 @router.get("/range/", response_model=List[Event])
 async def get_events_by_date_range(
-        start_date: str = Query(..., description="Start date (YYYY-MM-DD HH:MM:SS)"),
-        end_date: str = Query(..., description="End date (YYYY-MM-DD HH:MM:SS)"),
+        start_date: datetime = Query(..., description="Start date (YYYY-MM-DD HH:MM:SS)"),
+        end_date: datetime = Query(..., description="End date (YYYY-MM-DD HH:MM:SS)"),
         credentials: HTTPAuthorizationCredentials = Depends(security),
         event_service: EventService = Depends(get_event_service)
 ):
@@ -161,7 +165,7 @@ async def update_event(
         )
 
 
-@router.delete("/{event_id}")
+@router.delete("/{event_id}", response_model=Dict[str, str])
 async def delete_event(
         event_id: str,
         credentials: HTTPAuthorizationCredentials = Depends(security),

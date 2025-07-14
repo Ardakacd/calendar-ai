@@ -7,6 +7,13 @@ from tenacity import retry, stop_after_attempt, wait_random_exponential, retry_i
 from openai import OpenAIError, RateLimitError
 from langgraph.graph import END
 import json
+from typing import Optional
+from adapter.event_adapter import EventAdapter
+from database import get_async_db_context_manager
+from models import Event
+import traceback
+from datetime import timedelta, datetime, timezone
+from zoneinfo import ZoneInfo
 
 retryable_exceptions = (OpenAIError, RateLimitError)
 
@@ -29,24 +36,60 @@ async def create_agent(state: FlowState):
         state["messages"][0] = SystemMessage(content=prompt_text)
     else:
         state["messages"].insert(0, SystemMessage(content=prompt_text))
-    response = [await model.ainvoke(state["messages"])]
-    
     try:
+        response = [await model.ainvoke(state["messages"])]
         route_data = json.loads(response[0].content)
-        state['create_data'] = route_data
-    except json.JSONDecodeError:
-        state['create_data'] = {"message": "Sorry, I couldn't understand your request. Please try again."}
+        state['create_event_data'] = route_data
+    except Exception as e:
+        state['create_event_data'] = {"message": "Bir hata olustu. Lutfen daha sonra tekrar deneyiniz."}
     
     return state
 
 def create_action(state: FlowState):
-    print(state['create_data'])
-    if "function" in state['create_data'] and "arguments" in state['create_data']:
-        return END
+    if "function" in state['create_event_data'] and "arguments" in state['create_event_data']:
+        return "check_event_conflict"
     else:
         return "create_message_handler"
         
 def create_message_handler(state: FlowState):
+        return {"messages": [AIMessage(content="Bir hata olustu. Lutfen daha sonra tekrar deneyiniz.")]}
 
-        """Handle cases where router returns a message instead of arguments"""
-        return {"messages": [AIMessage(content=state["create_data"]["message"])]}
+async def check_event_conflict(state: FlowState) -> Optional[Event]:
+    """
+    Check for event conflicts before creating the event.
+    """
+    try:
+        async with get_async_db_context_manager() as db:
+            adapter = EventAdapter(db)
+            start_date = datetime.fromisoformat(state['create_event_data']['arguments']['startDate'])
+            duration = state['create_event_data']['arguments']['duration'] if state['create_event_data']['arguments'].get('duration') else 0
+            end_date = start_date + timedelta(minutes=duration)
+            conflict_event = await adapter.check_event_conflict(state['user_id'], start_date, end_date)
+            state['create_conflict_event'] = conflict_event
+            if conflict_event is None:  
+                state['is_success'] = True    
+                state['messages'].append(AIMessage(content="Asagidaki etkinligi olusturmak istediginize emin misiniz?"))
+            return state
+    except Exception as e:
+        state['create_conflict_event'] = True # when there is an error, we return True to indicate an error
+        return state
+    
+def create_conflict_action(state: FlowState):
+    if state['create_conflict_event'] is None:
+        return END
+    else:
+        return "create_conflict_message_handler"
+    
+def create_conflict_message_handler(state: FlowState):
+    conflict_event = state['create_conflict_event']
+    if conflict_event == True:
+        return {"messages": [AIMessage(content="Bir hata olustu. Lutfen daha sonra tekrar deneyiniz.")]}
+    else:
+        startDate_local = conflict_event.startDate.astimezone(ZoneInfo("Europe/Istanbul"))
+        start_date_str = startDate_local.strftime("%d.%m.%Y %H:%M")
+        endDate_local = conflict_event.endDate.astimezone(ZoneInfo("Europe/Istanbul"))
+        end_date_str = endDate_local.strftime("%d.%m.%Y %H:%M")
+        
+        message = f"Bu zaman aralığında çakışan bir etkinliğiniz var: '{conflict_event.title}' ({start_date_str} - {end_date_str})"
+        
+        return {"messages": [AIMessage(content=message)]}
