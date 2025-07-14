@@ -36,8 +36,6 @@ async def router_agent(state: FlowState):
     return state
 
 def route_action(state: FlowState):
-    print(state['route'])
-    print('burasi router')
     if "route" in state['route']:
         route = state["route"]["route"]
         if route == "create":
@@ -46,11 +44,9 @@ def route_action(state: FlowState):
             return END
             # return "update_agent"
         elif route == "delete":
-            return END
-            # return "delete_agent"
+            return "delete_date_range_agent"
         elif route == "list":
-            return END
-            # return "list_agent"
+            return "list_date_range_agent"
     else:
         return "router_message_handler"
         
