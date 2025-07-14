@@ -19,7 +19,7 @@ class EventModel(Base):
 
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     startDate: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    endDate: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    endDate: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=False)
     location: Mapped[Optional[str]] = mapped_column(String(255))
     
     user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False)
