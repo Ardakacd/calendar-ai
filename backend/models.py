@@ -125,3 +125,9 @@ class SuccessfulCreateResponse(BaseModel):
     type: str = "create"
     message: str
     event: EventCreate
+
+class SuccessfulUpdateResponse(BaseModel):
+    type: str = "update"
+    message: str
+    events: List[Event]
+    update_arguments: dict

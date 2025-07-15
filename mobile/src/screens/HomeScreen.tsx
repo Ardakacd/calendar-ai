@@ -15,6 +15,7 @@ import MicButton from '../components/MicButton';
 import ListComponent from '../components/ListComponent';
 import DeleteComponent from '../components/DeleteComponent';
 import CreateComponent from '../components/CreateComponent';
+import UpdateComponent from '../components/UpdateComponent';
 import { useCalendarAPI } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
 import { Event, EventCreate } from '../models/event';
@@ -46,7 +47,8 @@ interface ChatMessage {
   timestamp: Date;
   eventData?: EventCreate;
   events?: Event[];
-  responseType?: 'text' | 'list' | 'delete' | 'create';
+  updateArguments?: any;
+  responseType?: 'text' | 'list' | 'delete' | 'create' | 'update';
 }
 
 export default function HomeScreen() {
@@ -55,7 +57,7 @@ export default function HomeScreen() {
     {
       id: Date.now().toString(),
       type: 'ai',
-      content: 'Hello, how can I help you today?  ',
+      content: 'Merhaba, bugün size nasıl yardımcı olabilirim?',
       timestamp: new Date(),
       eventData: undefined,
       events: undefined,
@@ -66,13 +68,13 @@ export default function HomeScreen() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [isThinking, setIsThinking] = useState(false);
   const [hasUncompletedComponent, setHasUncompletedComponent] = useState(false);
-  const { transcribeAudio, addEvent, processText, deleteEvent } = useCalendarAPI();
+  const { transcribeAudio, addEvent, processText, deleteMultipleEvents, updateEvent } = useCalendarAPI();
   const { user, logout } = useAuth();
   const scrollViewRef = useRef<ScrollView>(null);
   const inputRef = useRef<TextInput>(null);
   
 
-  const addMessage = (type: 'user' | 'ai', content: string, eventData?: EventCreate, events?: Event[], responseType: 'text' | 'list' | 'delete' | 'create' = 'text') => {
+  const addMessage = (type: 'user' | 'ai', content: string, eventData?: EventCreate, events?: Event[], responseType: 'text' | 'list' | 'delete' | 'create' | 'update' = 'text', updateArguments?: any) => {
     const newMessage: ChatMessage = {
       id: Date.now().toString(),
       type,
@@ -80,6 +82,7 @@ export default function HomeScreen() {
       timestamp: new Date(),
       eventData,
       events,
+      updateArguments,
       responseType,
     };
     setMessages(prev => [...prev, newMessage]);
@@ -112,25 +115,26 @@ export default function HomeScreen() {
     try {
       const response = await processText(text)
     
-      // Handle different response types
       if (response && typeof response === 'object' && response.type === 'list' && response.events) {
-        addMessage('ai', response.message || 'Here are your events:', undefined, response.events, 'list')
+        addMessage('ai', response.message || 'İşte etkinlikleriniz:', undefined, response.events, 'list')
       } else if (response && typeof response === 'object' && response.type === 'delete' && response.events) {
-        addMessage('ai', response.message || 'Select an event to delete:', undefined, response.events, 'delete')
+        addMessage('ai', response.message || 'Silinecek etkinlikleri seçin:', undefined, response.events, 'delete')
         setHasUncompletedComponent(true);
       } else if (response && typeof response === 'object' && response.type === 'create' && response.event) {
-        // Handle create event response from backend
-        addMessage('ai', response.message || 'Please review the event details:', response.event, undefined, 'create')
+        addMessage('ai', response.message || 'Lütfen etkinlik detaylarını gözden geçirin:', response.event, undefined, 'create')
+        setHasUncompletedComponent(true);
+      } else if (response && typeof response === 'object' && response.type === 'update' && response.events) {
+        addMessage('ai', response.message || 'Güncellenecek etkinlikleri seçin:', undefined, response.events, 'update', response.update_arguments)
         setHasUncompletedComponent(true);
       } else {
         // Handle string responses or other types
-        const message = typeof response === 'string' ? response : (response?.message || 'Command processed successfully.');
+        const message = typeof response === 'string' ? response : (response?.message || 'Komut başarıyla işlendi.');
         addMessage('ai', message, undefined, undefined, 'text')
       }
       
       scrollToBottom();
     } catch (error) {
-      addMessage('ai', 'Sorry, I couldn\'t process your command. Please try again.');
+      addMessage('ai', 'Üzgünüm, komutunuzu işleyemedim. Lütfen tekrar deneyin.');
       scrollToBottom();
     } finally {
       setIsThinking(false);
@@ -142,7 +146,7 @@ export default function HomeScreen() {
 
     try {
       const response = await transcribeAudio(audioUri);
-      const userMessage = response.message || 'Voice command processed';
+      const userMessage = response.message || 'Ses komutu işlendi';
       addMessage('user', userMessage);
       scrollToBottom();
       await handleProcessText(userMessage)
@@ -150,7 +154,7 @@ export default function HomeScreen() {
       //await processCommand(userMessage);
     } catch (error) {
       console.error('Error processing voice command:', error);
-      addMessage('ai', 'Sorry, I couldn\'t process your voice command. Please try again.');
+      addMessage('ai', 'Üzgünüm, ses komutunuzu işleyemedim. Lütfen tekrar deneyin.');
       scrollToBottom();
     } finally {
       setIsProcessing(false);
@@ -159,12 +163,12 @@ export default function HomeScreen() {
 
   const handleLogout = async () => {
     Alert.alert(
-      'Logout',
-      'Are you sure you want to logout?',
+      'Çıkış',
+      'Çıkış yapmak istediğinizden emin misiniz?',
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: 'İptal', style: 'cancel' },
         {
-          text: 'Logout',
+          text: 'Çıkış',
           style: 'destructive',
           onPress: async () => {
             try {
@@ -178,13 +182,13 @@ export default function HomeScreen() {
     );
   };
 
-  const handleDeleteEvent = async (eventId: string) => {
+  const handleDeleteEvent = async (eventIds: string[]) => {
     try {
-      const response = await deleteEvent(eventId);
-      addMessage('ai', response.message || 'Etkinlik basariyla silindi!', undefined, undefined, 'text');
+      const response = await deleteMultipleEvents(eventIds);
+      addMessage('ai', response.message || 'Etkinlikler basariyla silindi!', undefined, undefined, 'text');
       scrollToBottom();
     } catch (error) {
-      addMessage('ai', 'Failed to delete event. Please try again.', undefined, undefined, 'text');
+      addMessage('ai', 'Etkinlikler silinemedi. Lütfen tekrar deneyin.', undefined, undefined, 'text');
       scrollToBottom();
     }
   };
@@ -192,10 +196,21 @@ export default function HomeScreen() {
   const handleCreateEvent = async (eventData: EventCreate) => {
     try {
       await addEvent(eventData, false);
-      addMessage('ai', 'Event created successfully!', undefined, undefined, 'text');
+      addMessage('ai', 'Etkinlik başarıyla oluşturuldu!', undefined, undefined, 'text');
       scrollToBottom();
     } catch (error) {
-      addMessage('ai', 'Failed to create event. Please try again.', undefined, undefined, 'text');
+      addMessage('ai', 'Etkinlik oluşturulamadı. Lütfen tekrar deneyin.', undefined, undefined, 'text');
+      scrollToBottom();
+    }
+  };
+
+  const handleUpdateEvent = async (eventId: string, updatedEvent: any) => {
+    try {
+      await updateEvent(eventId, updatedEvent);
+      addMessage('ai', 'Etkinlik başarıyla güncellendi!', undefined, undefined, 'text');
+      scrollToBottom();
+    } catch (error) {
+      addMessage('ai', 'Etkinlik güncellenemedi. Lütfen tekrar deneyin.', undefined, undefined, 'text');
       scrollToBottom();
     }
   };
@@ -233,6 +248,15 @@ export default function HomeScreen() {
             <CreateComponent 
               eventData={message.eventData}
               onCreate={handleCreateEvent}
+              onCompleted={markComponentAsCompleted}
+            />
+          )}
+
+          {message.responseType === 'update' && message.events && (
+            <UpdateComponent 
+              events={message.events}
+              updateArguments={message.updateArguments || {}}
+              onUpdate={handleUpdateEvent}
               onCompleted={markComponentAsCompleted}
             />
           )}
@@ -290,7 +314,7 @@ export default function HomeScreen() {
           <TextInput
             value={inputText}
             onChangeText={setInputText}
-            placeholder="Type your command..."
+            placeholder="Komutunuzu yazın..."
             placeholderTextColor="rgba(255, 255, 255, 0.6)"
             onSubmitEditing={handleSendMessage}
             returnKeyType="send"

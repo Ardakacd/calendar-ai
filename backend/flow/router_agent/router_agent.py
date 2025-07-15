@@ -41,8 +41,7 @@ def route_action(state: FlowState):
         if route == "create":
             return "create_agent"
         elif route == "update":
-            return END
-            # return "update_agent"
+            return "update_date_range_agent"
         elif route == "delete":
             return "delete_date_range_agent"
         elif route == "list":

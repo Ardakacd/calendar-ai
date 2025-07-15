@@ -53,7 +53,7 @@ export default function CalendarScreen() {
       const fetchedEvents = await getEvents();
       setEvents(fetchedEvents);
     } catch (error) {
-      Alert.alert('Error', 'Failed to load events');
+      Alert.alert('Hata', 'Etkinlikler yüklenemedi');
     } finally {
       setLoading(false);
     }
@@ -154,15 +154,15 @@ export default function CalendarScreen() {
 
   const handleDeleteEvent = (eventId: string) => {
     Alert.alert(
-      'Delete Event',
-      'Are you sure you want to delete this event?',
+      'Etkinliği Sil',
+      'Bu etkinliği silmek istediğinizden emin misiniz?',
       [
         {
-          text: 'Cancel',
+          text: 'İptal',
           style: 'cancel',
         },
         {
-          text: 'Delete',
+          text: 'Sil',
           style: 'destructive',
           onPress: async () => {
             try {
@@ -172,10 +172,10 @@ export default function CalendarScreen() {
               const updatedEvents = events.filter(event => event.id !== eventId);
               setEvents(updatedEvents);
               
-              Alert.alert('Success', 'Event deleted successfully');
+              Alert.alert('Başarılı', 'Etkinlik başarıyla silindi');
             } catch (error) {
               console.error('Error deleting event:', error);
-              Alert.alert('Error', 'Failed to delete event');
+              Alert.alert('Hata', 'Etkinlik silinemedi');
             }
           },
         },

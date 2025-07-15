@@ -48,7 +48,7 @@ class EventService:
                 logger.warning(f"EventService: Conflict detected for user {user_id}")
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,
-                    detail=f"Event conflicts with existing event: {conflict_event.title}"
+                    detail=f"Etkinlik mevcut bir etkinlikle çakışıyor: {conflict_event.title}"
                 )
             
             # Create the event if no conflicts
@@ -69,13 +69,13 @@ class EventService:
             logger.error(f"EventService: Database error creating event: {e}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Failed to create event due to database error"
+                detail="Etkinlik oluşturulamadı, veritabanı hatası"
             )
         except Exception as e:
             logger.error(f"EventService: Unexpected error creating event: {str(e)}", exc_info=True)
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Internal server error"
+                detail="İç sunucu hatası"
             )
     
     async def create_event_without_conflict_check(self, token: str, event_data: EventCreate) -> Event:
@@ -109,13 +109,13 @@ class EventService:
             logger.error(f"EventService: Database error creating event: {e}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Failed to create event due to database error"
+                detail="Etkinlik oluşturulamadı, veritabanı hatası"
             )
         except Exception as e:
             logger.error(f"EventService: Unexpected error creating event: {str(e)}", exc_info=True)
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Internal server error"
+                detail="İç sunucu hatası"
             )
     
     async def get_event(self, token: str, event_id: str) -> Event:
@@ -146,7 +146,7 @@ class EventService:
                 logger.warning(f"EventService: User {user_id} not authorized to access event {event_id}")
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
-                    detail="Not authorized to access this event"
+                    detail="Bu etkinliğe erişim yetkiniz yok"
                 )
 
             logger.info(f"EventService: Event retrieved successfully: {event_id}")
@@ -156,13 +156,13 @@ class EventService:
             logger.warning(f"EventService: Event not found: {event_id}")
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="Event not found"
+                detail="Etkinlik bulunamadı"
             )
         except DatabaseError as e:
             logger.error(f"EventService: Database error getting event {event_id}: {e}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Database error retrieving event"
+                detail="Etkinlik veritabanından alınamadı"
             )
         except HTTPException:
             raise
@@ -170,7 +170,7 @@ class EventService:
             logger.error(f"EventService: Unexpected error getting event {event_id}: {str(e)}", exc_info=True)
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Internal server error"
+                detail="İç sunucu hatası"
             )
 
     async def get_user_events(self, token: str, limit: Optional[int] = None, offset: Optional[int] = None) -> List[
@@ -206,7 +206,7 @@ class EventService:
             logger.error(f"EventService: Unexpected error getting events: {str(e)}", exc_info=True)
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Internal server error"
+                detail="İç sunucu hatası"
             )
 
     async def get_events_by_date_range(self, token: str, start_date: datetime, end_date: datetime) -> List[Event]:
@@ -239,7 +239,7 @@ class EventService:
             logger.error(f"EventService: Database error getting events by date range: {e}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Database error retrieving events"
+                detail="Etkinlik veritabanından alınamadı"
             )
         except HTTPException:
             raise
@@ -247,7 +247,7 @@ class EventService:
             logger.error(f"EventService: Unexpected error getting events by date range: {str(e)}", exc_info=True)
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Internal server error"
+                detail="İç sunucu hatası"
             )
 
     async def update_event(self, token: str, event_id: str, event_data: EventUpdate) -> Dict[str, Any]:
@@ -277,7 +277,7 @@ class EventService:
                 logger.warning(f"EventService: Event not found or not authorized for update: {event_id}")
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
-                    detail="Event not found or not authorized"
+                    detail="Etkinlik bulunamadı veya yetkiniz yok"
                 )
 
             logger.info(f"EventService: Event updated successfully: {event_id}")
@@ -289,25 +289,25 @@ class EventService:
             logger.warning(f"EventService: Event not found: {event_id}")
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="Event not found"
+                detail="Etkinlik bulunamadı"
             )
         except EventPermissionError as e:
             logger.warning(f"EventService: Permission denied for event {event_id}")
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Not authorized to update this event"
+                detail="Bu etkinliği güncellemek için yetkiniz yok"
             )
         except DatabaseError as e:
             logger.error(f"EventService: Database error updating event {event_id}: {e}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Database error updating event"
+                detail="Etkinlik veritabanından güncellenemedi"
             )
         except Exception as e:
             logger.error(f"EventService: Unexpected error updating event {event_id}: {str(e)}", exc_info=True)
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Internal server error"
+                detail="İç sunucu hatası"
             )
 
     async def delete_event(self, token: str, event_id: str) -> Dict[str, str]:
@@ -336,11 +336,11 @@ class EventService:
                 logger.warning(f"EventService: Event not found or not authorized for deletion: {event_id}")
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
-                    detail="Event not found or not authorized"
+                    detail="Etkinlik bulunamadı veya yetkiniz yok"
                 )
 
             logger.info(f"EventService: Event deleted successfully: {event_id}")
-            return {"message": "Event deleted successfully"}
+            return {"message": "Etkinlik başarıyla silindi"}
 
         except HTTPException:
             raise
@@ -348,7 +348,54 @@ class EventService:
             logger.error(f"EventService: Unexpected error deleting event {event_id}: {str(e)}", exc_info=True)
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Internal server error"
+                detail="İç sunucu hatası"
+            )
+
+    async def delete_multiple_events(self, token: str, event_ids: List[str]) -> Dict[str, str]:
+        """
+        Delete multiple events by their IDs.
+        
+        Args:
+            token: JWT token for user authentication
+            event_ids: List of event IDs to delete
+            
+        Returns:
+            Success or error message
+            
+        Raises:
+            HTTPException: If user not authenticated, no valid event IDs provided, or deletion fails
+        """
+        try:
+            user_id = get_user_id_from_token(token)
+
+            if not event_ids:
+                logger.warning(f"EventService: No event IDs provided for bulk deletion")
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Silinecek etkinlik ID'leri sağlanmadı"
+                )
+
+            logger.info(f"EventService: Deleting {len(event_ids)} events for user {user_id}")
+
+            result = await self.event_adapter.delete_multiple_events(event_ids, user_id)
+
+            if result:
+                logger.info(f"EventService: Successfully deleted {len(event_ids)} events")
+                return {"message": f"Başarıyla {len(event_ids)} etkinlik silindi"}
+            else:
+                logger.warning(f"EventService: Failed to delete events - some events not found or not authorized")
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Silinecek etkinlikler bulunamadı veya yetkiniz yok"
+                )
+
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"EventService: Unexpected error in bulk delete: {str(e)}", exc_info=True)
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="İç sunucu hatası"
             )
 
     async def search_events(self, token: str, query: str) -> List[Event]:
@@ -382,7 +429,7 @@ class EventService:
             logger.error(f"EventService: Unexpected error searching events: {str(e)}", exc_info=True)
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Internal server error"
+                detail="İç sunucu hatası"
             )
 
     async def get_events_count(self, token: str) -> Dict[str, Any]:
@@ -415,7 +462,7 @@ class EventService:
             logger.error(f"EventService: Unexpected error getting event count: {str(e)}", exc_info=True)
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Internal server error"
+                detail="İç sunucu hatası"
             )
 
 

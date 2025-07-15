@@ -1,5 +1,5 @@
 import logging
-from typing import List, Optional, Dict
+from typing import List, Optional, Dict, Any
 from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -188,6 +188,35 @@ async def delete_event(
         raise
     except Exception as e:
         logger.error(f"Unexpected error during event deletion: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Internal server error"
+        )
+
+
+@router.delete("/bulk/", response_model=Dict[str, str])
+async def delete_multiple_events(
+        event_ids: List[str] = Query(..., description="List of event IDs to delete"),
+        credentials: HTTPAuthorizationCredentials = Depends(security),
+        event_service: EventService = Depends(get_event_service)
+):
+    """
+    Delete multiple events for the authenticated user.
+    
+    Returns a success message if all events were deleted, or an error if any failed.
+    """
+    logger.info(f"Deleting multiple events: {len(event_ids)} events")
+    try:
+        token = credentials.credentials
+        result = await event_service.delete_multiple_events(token, event_ids)
+        logger.info(f"Bulk delete completed successfully")
+        return result
+
+    except HTTPException as e:
+        logger.error(f"HTTP error during bulk event deletion: {e.detail}")
+        raise
+    except Exception as e:
+        logger.error(f"Unexpected error during bulk event deletion: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Internal server error"

@@ -53,7 +53,7 @@ export default function MicButton({
       setHasPermission(status === 'granted');
       
       if (status !== 'granted') {
-        Alert.alert('Permission required', 'Microphone permission is required to record voice commands.');
+        Alert.alert('İzin Gerekli', 'Ses komutları kaydetmek için mikrofon izni gereklidir.');
       }
     })();
   }, []);
@@ -91,7 +91,7 @@ export default function MicButton({
 
   const startRecording = async () => {
     if (!hasPermission) {
-      Alert.alert('Permission required', 'Please grant microphone permission in settings.');
+      Alert.alert('İzin Gerekli', 'Lütfen ayarlarından mikrofon iznine izin verin.');
       return;
     }
 
@@ -116,7 +116,7 @@ export default function MicButton({
       }).start();
     } catch (err) {
       console.error('Failed to start recording', err);
-      Alert.alert('Error', 'Failed to start recording. Please try again.');
+      Alert.alert('Hata', 'Kayıt başlatılamadı. Lütfen tekrar deneyin.');
     }
   };
   
@@ -140,7 +140,7 @@ export default function MicButton({
       }
     } catch (err) {
       console.error('Failed to stop recording', err);
-      Alert.alert('Error', 'Failed to stop recording. Please try again.');
+      Alert.alert('Hata', 'Kayıt durdurulamadı. Lütfen tekrar deneyin.');
     }
   };
 

@@ -186,8 +186,6 @@ class EventAdapter:
             logger.error(f"Unexpected error retrieving events: {e}")
             return []
     
-    from typing import Optional
-
     async def get_events_by_date_range(
         self,
         user_id: int,
@@ -321,26 +319,21 @@ class EventAdapter:
             True if deleted, False otherwise
         """
         try:
-            # First, verify ownership
-            stmt = select(EventModel).where(EventModel.event_id == event_id)
+            stmt = delete(EventModel).where(
+                EventModel.event_id == event_id,
+                EventModel.user_id == user_id
+            )
             result = await self.db.execute(stmt)
-            db_event = result.scalar_one_or_none()
+            deleted_count = result.rowcount
             
-            if not db_event:
-                logger.warning(f"Event not found for deletion: {event_id}")
+            if deleted_count == 1:
+                await self.db.commit()
+                logger.info(f"Deleted event: {event_id}")
+                return True
+            else:
+                await self.db.rollback()
+                logger.warning(f"Event not found or not authorized for deletion: {event_id}")
                 return False
-            
-            if db_event.user_id != user_id:
-                logger.warning(f"User {user_id} not authorized to delete event {event_id}")
-                return False
-            
-            # Delete the event
-            stmt = delete(EventModel).where(EventModel.event_id == event_id)
-            await self.db.execute(stmt)
-            await self.db.commit()
-            
-            logger.info(f"Deleted event: {event_id}")
-            return True
             
         except SQLAlchemyError as e:
             logger.error(f"Database error deleting event {event_id}: {e}")
@@ -458,3 +451,40 @@ class EventAdapter:
         except Exception as e:
             logger.error(f"Unexpected error checking event conflicts: {e}")
             return None
+
+    async def delete_multiple_events(self, event_ids: List[str], user_id: int) -> bool:
+        """
+        Delete multiple events by their IDs.
+        
+        Args:
+            event_ids: List of event IDs (UUIDs) to delete
+            user_id: User ID to verify ownership
+            
+        Returns:
+            True if ALL events were successfully deleted, False if ANY failed (none deleted)
+        """
+        try:
+            stmt = delete(EventModel).where(
+                EventModel.event_id.in_(event_ids),
+                EventModel.user_id == user_id
+            )
+            result = await self.db.execute(stmt)
+            deleted_count = result.rowcount
+            
+            if deleted_count == len(event_ids):
+                await self.db.commit()
+                logger.info(f"Successfully deleted {deleted_count} events")
+                return True
+            else:
+                await self.db.rollback()
+                logger.warning(f"Only {deleted_count} out of {len(event_ids)} events were deleted")
+                return False
+            
+        except SQLAlchemyError as e:
+            logger.error(f"Database error in bulk delete operation: {e}")
+            await self.db.rollback()
+            return False
+        except Exception as e:
+            logger.error(f"Unexpected error in bulk delete operation: {e}")
+            await self.db.rollback()
+            return False

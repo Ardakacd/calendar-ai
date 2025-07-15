@@ -19,19 +19,21 @@ import { MaterialIcons } from '@expo/vector-icons';
 import NumericInput from './NumericInput';
 import { Event } from '../models/event';
 
-interface UpdateEventModalProps {
+interface UpdateAgentEventModalProps {
   visible: boolean;
   event: Event | null;
+  updateArguments?: any;
   onDismiss: () => void;
   onUpdate: (eventId: string, updatedEvent: Partial<Event>) => Promise<void>;
 }
 
-export default function UpdateEventModal({
+export default function UpdateAgentEventModal({
   visible,
   event,
+  updateArguments = {},
   onDismiss,
   onUpdate,
-}: UpdateEventModalProps) {
+}: UpdateAgentEventModalProps) {
   const [title, setTitle] = useState('');
   const [location, setLocation] = useState('');
   const [duration, setDuration] = useState('');
@@ -41,12 +43,16 @@ export default function UpdateEventModal({
 
   useEffect(() => {
     if (event) {
-      setTitle(event.title);
-      setLocation(event.location || '');
-      setDuration(event.duration?.toString() || '');
-      setDatetime(new Date(event.startDate));
+      // Use update arguments if available, otherwise use current event values
+      setTitle(updateArguments.title || event.title);
+      setLocation(updateArguments.location || event.location || '');
+      setDuration(updateArguments.duration ? updateArguments.duration.toString() : (event.duration?.toString() || ''));
+      
+      // Use update arguments startDate if available, otherwise use current event startDate
+      const startDate = updateArguments.startDate ? new Date(updateArguments.startDate) : new Date(event.startDate);
+      setDatetime(startDate);
     }
-  }, [event]);
+  }, [event, updateArguments]);
 
   const handleUpdate = async () => {
     if (!event) return;
@@ -69,7 +75,6 @@ export default function UpdateEventModal({
         Alert.alert('Hata', 'Geçersiz süre formatı');
         return;
       }
-     
     }
 
     try {
@@ -81,10 +86,8 @@ export default function UpdateEventModal({
         startDate: datetime.toISOString(),
       });
       onDismiss();
-      Alert.alert('Başarılı', 'Etkinlik başarıyla güncellendi');
     } catch (error) {
       console.error('Error updating event:', error);
-      Alert.alert('Hata', 'Etkinlik güncellenemedi');
     } finally {
       setLoading(false);
     }
@@ -98,8 +101,32 @@ export default function UpdateEventModal({
   };
 
   const formatDateTime = (date: Date) => {
-    return date.toLocaleString();
+    return date.toLocaleString('tr-TR');
   };
+
+  const renderFieldWithPreviousValue = (
+    label: string,
+    currentValue: string,
+    updateValue: string | undefined,
+    icon: string,
+    inputComponent: React.ReactNode
+  ) => (
+    <View style={styles.inputContainer}>
+      <View style={styles.labelContainer}>
+        <MaterialIcons name={icon as any} size={20} color="#6200ee" />
+        <Text style={styles.label}>{label}</Text>
+      </View>
+      
+      {inputComponent}
+      
+      {updateValue && updateValue !== currentValue && (
+        <View style={styles.previousValueContainer}>
+          <Text style={styles.previousValueLabel}>Önceki değer:</Text>
+          <Text style={styles.previousValueText}>{currentValue}</Text>
+        </View>
+      )}
+    </View>
+  );
 
   return (
     <Portal>
@@ -108,24 +135,30 @@ export default function UpdateEventModal({
         onDismiss={onDismiss}
         contentContainerStyle={styles.modalContainer}
       >
-        <Card >
+        <Card>
           <Card.Content>
-            <Title style={styles.title}>Update Event</Title>
+            <Title style={styles.title}>Etkinlik Güncelle</Title>
             
-            <ScrollView >
-              <View style={styles.inputContainer}>
-                <Text style={styles.label}>Title *</Text>
+            <ScrollView>
+              {renderFieldWithPreviousValue(
+                'Başlık *',
+                event?.title || '',
+                updateArguments.title,
+                'edit',
                 <TextInput
                   mode="outlined"
                   value={title}
                   onChangeText={setTitle}
-                  placeholder="Enter event title"
+                  placeholder="Etkinlik başlığını girin"
                   style={styles.input}
                 />
-              </View>
+              )}
 
-              <View style={styles.inputContainer}>
-                <Text style={styles.label}>Date & Time *</Text>
+              {renderFieldWithPreviousValue(
+                'Tarih & Saat *',
+                event ? formatDateTime(new Date(event.startDate)) : '',
+                updateArguments.startDate ? formatDateTime(new Date(updateArguments.startDate)) : undefined,
+                'event',
                 <Button
                   mode="outlined"
                   onPress={() => setShowDatePicker(true)}
@@ -134,46 +167,44 @@ export default function UpdateEventModal({
                 >
                   {formatDateTime(datetime)}
                 </Button>
-                {showDatePicker && (
-                  <DateTimePicker
-                    value={datetime}
-                    mode="datetime"
-                    display="default"
-                    onChange={onDateChange}
-                  />
-                )}
-              </View>
+              )}
 
-              <View style={styles.inputContainer}>
-                <View style={styles.labelContainer}>
-                  <MaterialIcons name="schedule" size={20} color="#6200ee" />
-                  <Text style={styles.label}>Duration (minutes)</Text>
-                </View>
+              {showDatePicker && (
+                <DateTimePicker
+                  value={datetime}
+                  mode="datetime"
+                  display="default"
+                  onChange={onDateChange}
+                />
+              )}
+
+              {renderFieldWithPreviousValue(
+                'Süre (dakika)',
+                event?.duration ? `${event.duration} dakika` : 'Süre belirtilmemiş',
+                updateArguments.duration ? `${updateArguments.duration} dakika` : undefined,
+                'schedule',
                 <NumericInput
                   mode="outlined"
                   value={duration}
                   onValueChange={setDuration}
-                  placeholder="Enter duration in minutes"
+                  placeholder="Dakika cinsinden süre giriniz"
                   style={styles.input}
                 />
-                <Text style={styles.helperText}>
-                  Enter the duration in minutes (e.g., 30 for 30 minutes) - Optional
-                </Text>
-              </View>
+              )}
 
-              <View style={styles.inputContainer}>
-                <View style={styles.labelContainer}>
-                  <MaterialIcons name="location-on" size={20} color="#6200ee" />
-                  <Text style={styles.label}>Location</Text>
-                </View>
+              {renderFieldWithPreviousValue(
+                'Konum',
+                event?.location || 'Konum belirtilmemiş',
+                updateArguments.location,
+                'location-on',
                 <TextInput
                   mode="outlined"
                   value={location}
                   onChangeText={setLocation}
-                  placeholder="Enter event location (optional)"
+                  placeholder="Etkinlik konumunu girin (opsiyonel)"
                   style={styles.input}
                 />
-              </View>
+              )}
             </ScrollView>
 
             <View style={styles.buttonContainer}>
@@ -183,7 +214,7 @@ export default function UpdateEventModal({
                 style={[styles.button, styles.cancelButton]}
                 disabled={loading}
               >
-                Cancel
+                İptal Et
               </Button>
               <Button
                 mode="contained"
@@ -192,7 +223,7 @@ export default function UpdateEventModal({
                 loading={loading}
                 disabled={loading}
               >
-                Update Event
+                Etkinlik Güncelle
               </Button>
             </View>
           </Card.Content>
@@ -240,10 +271,21 @@ const styles = StyleSheet.create({
     borderColor: '#6200ee',
     borderWidth: 1.5,
   },
-  helperText: {
+  previousValueContainer: {
+    marginTop: 6,
+    padding: 8,
+    backgroundColor: '#f0f0f0',
+    borderRadius: 6,
+  },
+  previousValueLabel: {
     fontSize: 12,
     color: '#666',
-    marginTop: 4,
+    fontWeight: '500',
+    marginBottom: 2,
+  },
+  previousValueText: {
+    fontSize: 12,
+    color: '#999',
     fontStyle: 'italic',
   },
   buttonContainer: {

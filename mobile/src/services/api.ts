@@ -117,7 +117,7 @@ class CalendarAPI {
       return tokenData;
     } catch (error) {
       console.error('Error logging in:', error);
-      throw new Error('Failed to login');
+      throw new Error('Giriş başarısız oldu');
     }
   }
 
@@ -130,7 +130,7 @@ class CalendarAPI {
       return tokenData;
     } catch (error) {
       console.error('Error registering:', error);
-      throw new Error('Failed to register');
+      throw new Error('Kayıt başarısız oldu');
     }
   }
 
@@ -142,7 +142,7 @@ class CalendarAPI {
       return response.data;
     } catch (error) {
       console.error('Error refreshing token:', error);
-      throw new Error('Failed to refresh token');
+      throw new Error('Token yenilenemedi');
     }
   }
 
@@ -162,7 +162,7 @@ class CalendarAPI {
       return response.data;
     } catch (error) {
       console.error('Error getting current user:', error);
-      throw new Error('Failed to get current user');
+      throw new Error('Mevcut kullanıcı alınamadı');
     }
   }
 
@@ -210,7 +210,7 @@ class CalendarAPI {
       
     } catch (error) {
       console.error('Error transcribing audio:', error);
-      throw new Error('Failed to transcribe audio');
+      throw new Error('Ses işlenemedi');
     }
   }
 
@@ -221,7 +221,7 @@ class CalendarAPI {
       return response.data;
     } catch (error) {
       console.error('Error fetching events:', error);
-      throw new Error('Failed to fetch events');
+      throw new Error('Etkinlikler alınamadı');
     }
   }
 
@@ -233,7 +233,7 @@ class CalendarAPI {
       return response.data;
     } catch (error) {
       console.error('Error adding event:', error);
-      throw new Error('Failed to add event');
+      throw new Error('Etkinlik eklenemedi');
     }
   }
 
@@ -243,7 +243,7 @@ class CalendarAPI {
       return response.data;
     } catch (error) {
       console.error('Error updating event:', error);
-      throw new Error('Failed to update event');
+      throw new Error('Etkinlik güncellenemedi');
     }
   }
 
@@ -253,7 +253,23 @@ class CalendarAPI {
       return response.data;
     } catch (error) {
       console.error('Error deleting event:', error);
-      throw new Error('Failed to delete event');
+      throw new Error('Etkinlik silinemedi');
+    }
+  }
+
+  async deleteMultipleEvents(eventIds: string[]): Promise<{message: string}> {
+    try {
+      console.log(eventIds);
+      const response = await this.api.delete('/events/bulk/', {
+        params: { event_ids: eventIds },
+        paramsSerializer: {
+          indexes: null
+        }
+      });
+      return response.data;
+    } catch (error) {
+      console.error('Error deleting multiple events:', error);
+      throw new Error('Etkinlikler silinemedi');
     }
   }
 
@@ -268,7 +284,7 @@ class CalendarAPI {
       return response.data;
     } catch (error) {
       console.error('Error processing text:', error);
-      throw new Error('Failed to process text');
+      throw new Error('Metin işlenemedi');
     }
   }
 
@@ -313,6 +329,7 @@ export const useCalendarAPI = () => {
     addEvent: calendarAPI.addEvent.bind(calendarAPI),
     updateEvent: calendarAPI.updateEvent.bind(calendarAPI),
     deleteEvent: calendarAPI.deleteEvent.bind(calendarAPI),
+    deleteMultipleEvents: calendarAPI.deleteMultipleEvents.bind(calendarAPI),
     processText: calendarAPI.processText.bind(calendarAPI),
   };
 }; 
