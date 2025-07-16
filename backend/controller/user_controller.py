@@ -2,7 +2,7 @@ import logging
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from models import UserLogin, Token, RefreshTokenRequest, UserRegister
+from models import UserLogin, Token, RefreshTokenRequest, UserRegister, PasswordChangeRequest
 from services.user_service import UserService, get_user_service
 
 # Configure logging
@@ -134,6 +134,33 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
         raise
     except Exception as e:
         logger.error(f"Unexpected error during get current user: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Internal server error"
+        )
+
+
+@router.patch("/change-password")
+async def change_password(
+    password_request: PasswordChangeRequest,
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    user_service: UserService = Depends(get_user_service)
+):
+    """
+    Change user password.
+    """
+    logger.info("Password change attempt")
+    try:
+        token = credentials.credentials
+        result = await user_service.change_password(token, password_request)
+        logger.info("Password change successful")
+        return result
+
+    except HTTPException as e:
+        logger.error(f"HTTP error during password change: {e.detail}")
+        raise
+    except Exception as e:
+        logger.error(f"Unexpected error during password change: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Internal server error"

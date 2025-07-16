@@ -8,12 +8,13 @@ import {
   Text,
   Card,
   Button,
-  Chip,
   Divider,
 } from 'react-native-paper';
 import { MaterialIcons } from '@expo/vector-icons';
 import UpdateAgentEventModal from './UpdateAgentEventModal';
 import { Event } from '../models/event';
+import { formatDuration, formatLocation } from '../common/formatting';
+
 
 interface UpdateComponentProps {
   events: Event[];
@@ -71,16 +72,6 @@ export default function UpdateComponent({
     }
   };
 
-  const formatDuration = (duration: number | undefined) => {
-    if (!duration || duration === 0) return 'Süre belirtilmemiş';
-    return `${duration} dakika`;
-  };
-
-  const formatLocation = (location: string | undefined) => {
-    if (!location) return 'Konum belirtilmemiş';
-    return location;
-  };
-
   const renderEventCard = (event: Event) => (
     <TouchableOpacity
       key={event.id}
@@ -104,7 +95,7 @@ export default function UpdateComponent({
             </View>
             
               <View style={styles.detailRow}>
-                <MaterialIcons name="schedule" size={16} color={isCompleted ? "rgba(255, 255, 255, 0.3)" : "#666"} />
+                <MaterialIcons name="timer" size={16} color={isCompleted ? "rgba(255, 255, 255, 0.3)" : "#666"} />
                 <Text style={[styles.detailText, isCompleted && styles.disabledText]}>
                   {formatDuration(event.duration)}
                 </Text>

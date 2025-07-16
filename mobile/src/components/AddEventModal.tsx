@@ -18,7 +18,7 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import { MaterialIcons } from '@expo/vector-icons';
 import NumericInput from './NumericInput';
 import { EventCreate } from '../models/event';
-
+import { showErrorToast, showSuccessToast } from '../common/toast-message';
 interface AddEventModalProps {
   visible: boolean;
   onDismiss: () => void;
@@ -61,7 +61,7 @@ export default function AddEventModal({
 
   const handleSubmit = async () => {
     if (!title.trim()) {
-      Alert.alert('Hata', 'Başlık gereklidir');
+      showErrorToast('Başlık gereklidir');
       return;
     }
 
@@ -70,7 +70,7 @@ export default function AddEventModal({
     if (duration) {
       durationMinutes = parseInt(duration);
       if (durationMinutes <= 0) {
-        Alert.alert('Hata', 'Süre 0\'dan büyük olmalıdır');
+        showErrorToast('Süre 0\'dan büyük olmalıdır');
         return;
       }
     }
@@ -89,7 +89,7 @@ export default function AddEventModal({
         await onEdit(eventData);
       } else {
         await onAdd(eventData);
-        Alert.alert('Başarılı', 'Etkinlik başarıyla eklendi');
+        showSuccessToast('Etkinlik başarıyla eklendi');
       }
       
       // Reset form
@@ -100,8 +100,7 @@ export default function AddEventModal({
       
       onDismiss();
     } catch (error) {
-      console.error('Error saving event:', error);
-      Alert.alert('Hata', mode === 'edit' ? 'Etkinlik güncellenemedi' : 'Etkinlik eklenemedi');
+      showErrorToast(mode === 'edit' ? 'Etkinlik güncellenemedi' : 'Etkinlik eklenemedi');
     } finally {
       setLoading(false);
     }

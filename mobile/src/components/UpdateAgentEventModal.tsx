@@ -18,7 +18,7 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import { MaterialIcons } from '@expo/vector-icons';
 import NumericInput from './NumericInput';
 import { Event } from '../models/event';
-
+import { showErrorToast } from '../common/toast-message';
 interface UpdateAgentEventModalProps {
   visible: boolean;
   event: Event | null;
@@ -58,7 +58,7 @@ export default function UpdateAgentEventModal({
     if (!event) return;
 
     if (!title.trim()) {
-      Alert.alert('Hata', 'Başlık gereklidir');
+      showErrorToast('Başlık gereklidir');
       return;
     }
 
@@ -68,11 +68,11 @@ export default function UpdateAgentEventModal({
       try {
         durationMinutes = parseInt(duration);
         if (durationMinutes <= 0) {
-          Alert.alert('Hata', 'Süre 0\'dan büyük olmalıdır');
+          showErrorToast('Süre 0\'dan büyük olmalıdır');
           return;
         }   
       } catch (error) {
-        Alert.alert('Hata', 'Geçersiz süre formatı');
+        showErrorToast('Geçersiz süre formatı');
         return;
       }
     }

@@ -16,28 +16,38 @@ import {
 } from 'react-native-paper';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigation } from '@react-navigation/native';
+import { showErrorToast } from '../common/toast-message';
 
-const SignupScreen: React.FC = () => {
+interface SignupScreenProps {
+  setShowSignup: (show: boolean) => void;
+}
+
+const SignupScreen: React.FC<SignupScreenProps> = ({ setShowSignup }) => {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const { register } = useAuth();
-  const navigation = useNavigation();
 
   const handleSignup = async () => {
     if (!name || !email || !password) {
-      Alert.alert('Hata', 'Lütfen tüm alanları doldurun');
+      showErrorToast('Lütfen tüm alanları doldurun');
       return;
     }
     setIsLoading(true);
     try {
       await register(name, email, password);
     } catch (error: any) {
-      Alert.alert('Hata', error.message || 'Kayıt başarısız');
+      console.log(error.response.data)
+      showErrorToast(error.response?.data?.detail || 'Kayıt edilirken bir hata oluştu');
+      // No navigation - user stays on signup screen with their data
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handleNavigateToLogin = () => {
+    setShowSignup(false);
   };
 
   return (
@@ -95,7 +105,7 @@ const SignupScreen: React.FC = () => {
             </Button>
             <Button
               mode="text"
-              onPress={() => navigation.navigate('Login' as never)}
+              onPress={handleNavigateToLogin}
               style={styles.switchButton}
             >
               Already have an account? Log in

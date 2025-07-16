@@ -4,7 +4,7 @@ import uuid
 from adapter.user_adapter import UserAdapter
 from database.config import get_async_db
 from fastapi import Depends, HTTPException, status
-from models import User, RefreshTokenRequest, UserRegister, UserLogin, UserUpdate, UserCreate
+from models import User, RefreshTokenRequest, UserRegister, UserLogin, UserUpdate, UserCreate, PasswordChangeRequest
 from sqlalchemy.ext.asyncio import AsyncSession
 from utils.jwt import create_access_token, create_refresh_token, verify_token, verify_refresh_token, get_user_id_from_token
 from utils.password import verify_password, get_password_hash
@@ -205,6 +205,40 @@ class UserService:
             await self.user_adapter.update_user(existing_user.id, user_data)
 
             return {"message": "Kullanıcı güncellendi"}
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Sunucu hatası"
+            )
+
+    async def change_password(self, token: str, password_request: PasswordChangeRequest):
+        try:
+            user_id = get_user_id_from_token(token)
+
+            existing_user = await self.user_adapter.get_user_by_id(user_id)
+            if not existing_user:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Kullanıcı bulunamadı"
+                )
+
+            # Verify current password
+            if not verify_password(password_request.current_password, existing_user.password):
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Mevcut şifre yanlış"
+                )
+
+            # Hash new password
+            hashed_new_password = get_password_hash(password_request.new_password)
+
+            # Update password
+            user_data = UserUpdate(password=hashed_new_password)
+            await self.user_adapter.update_user(existing_user.id, user_data)
+
+            return {"message": "Şifre başarıyla değiştirildi"}
         except HTTPException:
             raise
         except Exception as e:

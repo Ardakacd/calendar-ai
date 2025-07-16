@@ -60,12 +60,12 @@ def verify_refresh_token(token: str):
     try:
         payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
         user_id: int = payload.get("user_id")
-        token_type: str = payload.get("type", "refresh")
+        token_type: str = payload.get("type")
         
         if token_type != "refresh":
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid refresh token",
+                detail="Geçersiz yenileme tokeni",
                 headers={"WWW-Authenticate": "Bearer"},
             )
         
@@ -94,4 +94,5 @@ def get_user_id_from_token(token: str) -> Optional[int]:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Geçersiz token",
+                headers={"WWW-Authenticate": "Bearer"},
             )

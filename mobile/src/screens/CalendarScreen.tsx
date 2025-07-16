@@ -7,15 +7,14 @@ import {
 } from 'react-native';
 import { Text, Card, FAB, ActivityIndicator, IconButton } from 'react-native-paper';
 import { Calendar, DateData } from 'react-native-calendars';
-import { useNavigation } from '@react-navigation/native';
 import { MaterialIcons } from '@expo/vector-icons';
 import * as Localization from 'expo-localization';
-
 import { useCalendarAPI } from '../services/api';
 import UpdateEventModal from '../components/UpdateEventModal';
 import AddEventModal from '../components/AddEventModal';
 import { Event, EventCreate } from '../models/event';
-
+import { formatDuration, formatLocation } from '../common/formatting';
+import { showErrorToast, showSuccessToast } from '../common/toast-message';
 
 interface MarkedDates {
   [date: string]: {
@@ -39,6 +38,8 @@ export default function CalendarScreen() {
   const [addModalVisible, setAddModalVisible] = useState(false);
   const { getEvents, updateEvent, deleteEvent, addEvent } = useCalendarAPI();
 
+  console.log(events);
+
   useEffect(() => {
     loadEvents();
   }, []);
@@ -53,7 +54,7 @@ export default function CalendarScreen() {
       const fetchedEvents = await getEvents();
       setEvents(fetchedEvents);
     } catch (error) {
-      Alert.alert('Hata', 'Etkinlikler yüklenemedi');
+      showErrorToast('Etkinlikler yüklenemedi');
     } finally {
       setLoading(false);
     }
@@ -172,18 +173,16 @@ export default function CalendarScreen() {
               const updatedEvents = events.filter(event => event.id !== eventId);
               setEvents(updatedEvents);
               
-              Alert.alert('Başarılı', 'Etkinlik başarıyla silindi');
+              showSuccessToast('Etkinlik başarıyla silindi');
             } catch (error) {
               console.error('Error deleting event:', error);
-              Alert.alert('Hata', 'Etkinlik silinemedi');
+              showErrorToast('Etkinlik silinemedi');
             }
           },
         },
       ]
     );
   };
-
-
 
   const handleAddEvent = async (newEvent: EventCreate) => {
     try {
@@ -264,19 +263,19 @@ export default function CalendarScreen() {
                    
                   <View style={styles.eventBottomContainer}>
                     <View style={styles.eventDetailsContainer}>
-                    {event.location && (
+                    
+                      <View style={styles.eventDetailRow}>
+                        <MaterialIcons name="timer" size={16} color="#666" />
+                        <Text style={styles.eventDetailText}>{formatDuration(event.duration)}</Text>
+                      </View>
+
+                      
                       <View style={styles.eventDetailRow}>
                         <MaterialIcons name="location-on" size={16} color="#666" />
-                        <Text style={styles.eventDetailText}>{event.location}</Text>
+                        <Text style={styles.eventDetailText}>{formatLocation(event.location)}</Text>
                       </View>
-                    )}
                     
-                    {event.duration && (
-                      <View style={styles.eventDetailRow}>
-                        <MaterialIcons name="schedule" size={16} color="#666" />
-                        <Text style={styles.eventDetailText}>{event.duration} minutes</Text>
-                      </View>
-                    )}
+                    
                     </View>
                   
                   <View style={styles.eventActions}>

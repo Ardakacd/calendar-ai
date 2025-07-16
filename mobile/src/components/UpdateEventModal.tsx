@@ -3,7 +3,6 @@ import {
   View,
   StyleSheet,
   ScrollView,
-  Alert,
 } from 'react-native';
 import {
   Modal,
@@ -18,7 +17,7 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import { MaterialIcons } from '@expo/vector-icons';
 import NumericInput from './NumericInput';
 import { Event } from '../models/event';
-
+import { showErrorToast, showSuccessToast } from '../common/toast-message';
 interface UpdateEventModalProps {
   visible: boolean;
   event: Event | null;
@@ -52,7 +51,7 @@ export default function UpdateEventModal({
     if (!event) return;
 
     if (!title.trim()) {
-      Alert.alert('Hata', 'Başlık gereklidir');
+      showErrorToast('Başlık gereklidir');
       return;
     }
 
@@ -62,11 +61,11 @@ export default function UpdateEventModal({
       try {
         durationMinutes = parseInt(duration);
         if (durationMinutes <= 0) {
-          Alert.alert('Hata', 'Süre 0\'dan büyük olmalıdır');
+          showErrorToast('Süre 0\'dan büyük olmalıdır');
           return;
         }   
       } catch (error) {
-        Alert.alert('Hata', 'Geçersiz süre formatı');
+        showErrorToast('Geçersiz süre formatı');
         return;
       }
      
@@ -81,10 +80,9 @@ export default function UpdateEventModal({
         startDate: datetime.toISOString(),
       });
       onDismiss();
-      Alert.alert('Başarılı', 'Etkinlik başarıyla güncellendi');
+      showSuccessToast('Etkinlik başarıyla güncellendi');
     } catch (error) {
-      console.error('Error updating event:', error);
-      Alert.alert('Hata', 'Etkinlik güncellenemedi');
+      showErrorToast('Etkinlik güncellenemedi');
     } finally {
       setLoading(false);
     }

@@ -1,6 +1,6 @@
-import axios, { AxiosError, AxiosResponse } from 'axios';
+import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { getUserDateTime } from '../../utils/datetime/get_current_time';
+import { getUserDateTime } from '../utils/datetime/get_current_time';
 import { Event, EventCreate } from '../models/event';
 
 const API_BASE_URL = 'http://localhost:8000';
@@ -29,6 +29,11 @@ interface RegisterData {
   password: string;
 }
 
+interface PasswordChangeRequest {
+  current_password: string;
+  new_password: string;
+}
+
 interface TokenResponse {
   access_token: string;
   refresh_token: string;
@@ -44,8 +49,14 @@ class CalendarAPI {
     timeout: 30000,
   });
 
+  private onAuthFailure?: () => void;
+
   constructor() {
     this.setupInterceptors();
+  }
+
+  setAuthFailureCallback(callback: () => void) {
+    this.onAuthFailure = callback;
   }
 
   private setupInterceptors() {
@@ -73,14 +84,13 @@ class CalendarAPI {
         // 1. Status is 401 (Unauthorized)
         // 2. Request hasn't been retried yet
         // 3. This is not already a refresh request
-        // 4. The error indicates token expiration (check WWW-Authenticate header or specific error message)
+        // 4. The error indicates token expiration (check WWW-Authenticate header)
         if (error.response?.status === 401 && 
             !originalRequest._retry && 
             !originalRequest.url?.includes('/auth/refresh')) {
-          
+              
           // Check if this is likely a token expiration error
           const isTokenExpired = this.isTokenExpiredError(error);
-          
           if (isTokenExpired) {
             originalRequest._retry = true;
 
@@ -97,6 +107,10 @@ class CalendarAPI {
             } catch (refreshError) {
               // Refresh failed, clear tokens and redirect to login
               await this.clearTokens();
+              // Notify AuthContext that authentication failed
+              if (this.onAuthFailure) {
+                this.onAuthFailure();
+              }
               throw refreshError;
             }
           }
@@ -116,8 +130,7 @@ class CalendarAPI {
       await this.storeTokens(tokenData);
       return tokenData;
     } catch (error) {
-      console.error('Error logging in:', error);
-      throw new Error('Giriş başarısız oldu');
+      throw error;
     }
   }
 
@@ -129,8 +142,7 @@ class CalendarAPI {
       await this.storeTokens(tokenData);
       return tokenData;
     } catch (error) {
-      console.error('Error registering:', error);
-      throw new Error('Kayıt başarısız oldu');
+      throw error;
     }
   }
 
@@ -163,6 +175,16 @@ class CalendarAPI {
     } catch (error) {
       console.error('Error getting current user:', error);
       throw new Error('Mevcut kullanıcı alınamadı');
+    }
+  }
+
+  async changePassword(passwordRequest: PasswordChangeRequest): Promise<{message: string}> {
+    try {
+      const response = await this.api.patch('/auth/change-password', passwordRequest);
+      return response.data;
+    } catch (error) {
+      console.error('Error changing password:', error);
+      throw new Error('Şifre değiştirilemedi');
     }
   }
 
@@ -288,24 +310,10 @@ class CalendarAPI {
     }
   }
 
-
   private isTokenExpiredError(error: any): boolean {
-    // Check if the error response indicates token expiration
-    if (error.response?.data?.detail) {
-      const detail = error.response.data.detail.toLowerCase();
-      return detail.includes('invalid token') || 
-             detail.includes('token has expired');
-    }
-    
-    // Check WWW-Authenticate header for token expiration indication
-    if (error.response?.headers?.['www-authenticate']) {
-      const authHeader = error.response.headers['www-authenticate'].toLowerCase();
-      return authHeader.includes('expired') || authHeader.includes('invalid_token');
-    }
-    
-    // If we can't determine the specific cause, assume it's not a token expiration
-    // This prevents unnecessary refresh attempts for other 401 errors
-    return false;
+    // Check if this is an authentication error by looking for the WWW-Authenticate header
+    // This is set by the backend for all token-related issues (expired, invalid, etc.)
+    return error.response?.headers?.['www-authenticate']?.includes('Bearer');
   }
 }
 
@@ -320,6 +328,7 @@ export const useCalendarAPI = () => {
     logout: calendarAPI.logout.bind(calendarAPI),
     refreshToken: calendarAPI.refreshToken.bind(calendarAPI),
     getCurrentUser: calendarAPI.getCurrentUser.bind(calendarAPI),
+    changePassword: calendarAPI.changePassword.bind(calendarAPI),
     isAuthenticated: calendarAPI.isAuthenticated.bind(calendarAPI),
     getStoredTokens: calendarAPI.getStoredTokens.bind(calendarAPI),
     
