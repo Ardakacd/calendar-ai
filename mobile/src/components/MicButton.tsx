@@ -9,6 +9,7 @@ import {
 import { Text } from 'react-native-paper';
 import { Audio } from 'expo-av';
 import { MaterialIcons } from '@expo/vector-icons';
+import { showErrorToast } from '../common/toast-message';
 
 interface MicButtonProps {
   onRecordingComplete: (audioUri: string) => void;
@@ -53,7 +54,7 @@ export default function MicButton({
       setHasPermission(status === 'granted');
       
       if (status !== 'granted') {
-        Alert.alert('İzin Gerekli', 'Ses komutları kaydetmek için mikrofon izni gereklidir.');
+        showErrorToast('Ses komutları kaydetmek için mikrofon izni gereklidir.');
       }
     })();
   }, []);
@@ -91,7 +92,7 @@ export default function MicButton({
 
   const startRecording = async () => {
     if (!hasPermission) {
-      Alert.alert('İzin Gerekli', 'Lütfen ayarlarından mikrofon iznine izin verin.');
+      showErrorToast('Ses komutları kaydetmek için mikrofon izni gereklidir.');
       return;
     }
 
@@ -116,7 +117,7 @@ export default function MicButton({
       }).start();
     } catch (err) {
       console.error('Failed to start recording', err);
-      Alert.alert('Hata', 'Kayıt başlatılamadı. Lütfen tekrar deneyin.');
+      showErrorToast('Kayıt başlatılamadı. Lütfen tekrar deneyin.');
     }
   };
   
@@ -139,8 +140,7 @@ export default function MicButton({
         onRecordingComplete(uri);
       }
     } catch (err) {
-      console.error('Failed to stop recording', err);
-      Alert.alert('Hata', 'Kayıt durdurulamadı. Lütfen tekrar deneyin.');
+      showErrorToast('Kayıt durdurulamadı. Lütfen tekrar deneyin.');
     }
   };
 
