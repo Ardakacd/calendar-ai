@@ -75,7 +75,7 @@ class EventService:
             logger.error(f"EventService: Unexpected error creating event: {str(e)}", exc_info=True)
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="İç sunucu hatası"
+                detail="Sunucu hatası"
             )
     
     async def create_event_without_conflict_check(self, token: str, event_data: EventCreate) -> Event:
@@ -115,7 +115,7 @@ class EventService:
             logger.error(f"EventService: Unexpected error creating event: {str(e)}", exc_info=True)
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="İç sunucu hatası"
+                detail="Sunucu hatası"
             )
     
     async def get_event(self, token: str, event_id: str) -> Event:
@@ -170,7 +170,7 @@ class EventService:
             logger.error(f"EventService: Unexpected error getting event {event_id}: {str(e)}", exc_info=True)
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="İç sunucu hatası"
+                detail="Sunucu hatası"
             )
 
     async def get_user_events(self, token: str, limit: Optional[int] = None, offset: Optional[int] = None) -> List[
@@ -206,7 +206,7 @@ class EventService:
             logger.error(f"EventService: Unexpected error getting events: {str(e)}", exc_info=True)
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="İç sunucu hatası"
+                detail="Sunucu hatası"
             )
 
     async def get_events_by_date_range(self, token: str, start_date: datetime, end_date: datetime) -> List[Event]:
@@ -247,7 +247,7 @@ class EventService:
             logger.error(f"EventService: Unexpected error getting events by date range: {str(e)}", exc_info=True)
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="İç sunucu hatası"
+                detail="Sunucu hatası"
             )
 
     async def update_event(self, token: str, event_id: str, event_data: EventUpdate) -> Dict[str, Any]:
@@ -307,7 +307,7 @@ class EventService:
             logger.error(f"EventService: Unexpected error updating event {event_id}: {str(e)}", exc_info=True)
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="İç sunucu hatası"
+                detail="Sunucu hatası"
             )
 
     async def delete_event(self, token: str, event_id: str) -> Dict[str, str]:
@@ -348,7 +348,7 @@ class EventService:
             logger.error(f"EventService: Unexpected error deleting event {event_id}: {str(e)}", exc_info=True)
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="İç sunucu hatası"
+                detail="Sunucu hatası"
             )
 
     async def delete_multiple_events(self, token: str, event_ids: List[str]) -> Dict[str, str]:
@@ -395,7 +395,7 @@ class EventService:
             logger.error(f"EventService: Unexpected error in bulk delete: {str(e)}", exc_info=True)
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="İç sunucu hatası"
+                detail="Sunucu hatası"
             )
 
     async def search_events(self, token: str, query: str) -> List[Event]:
@@ -429,7 +429,7 @@ class EventService:
             logger.error(f"EventService: Unexpected error searching events: {str(e)}", exc_info=True)
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="İç sunucu hatası"
+                detail="Sunucu hatası"
             )
 
     async def get_events_count(self, token: str) -> Dict[str, Any]:
@@ -462,7 +462,7 @@ class EventService:
             logger.error(f"EventService: Unexpected error getting event count: {str(e)}", exc_info=True)
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="İç sunucu hatası"
+                detail="Sunucu hatası"
             )
 
 
