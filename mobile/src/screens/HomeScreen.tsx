@@ -5,7 +5,9 @@ import {
   ScrollView,
   Alert,
   KeyboardAvoidingView,
-  TextInput,  
+  TextInput,
+  Platform,
+  TouchableOpacity,
 } from 'react-native';
 import { Text, Button, Card, Avatar, IconButton } from 'react-native-paper';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -161,27 +163,6 @@ export default function HomeScreen() {
     }
   };
 
-  const handleLogout = async () => {
-    Alert.alert(
-      'Çıkış',
-      'Çıkış yapmak istediğinizden emin misiniz?',
-      [
-        { text: 'İptal', style: 'cancel' },
-        {
-          text: 'Çıkış',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await logout();
-            } catch (error) {
-              console.error('Logout error:', error);
-            }
-          },
-        },
-      ]
-    );
-  };
-
   const handleDeleteEvent = async (eventIds: string[]) => {
     try {
       const response = await deleteMultipleEvents(eventIds);
@@ -272,16 +253,18 @@ export default function HomeScreen() {
       style={styles.container}
     >
       <View style={styles.header}>
-        <View style={styles.userInfo}>
-          <Avatar.Text
-            size={40}
-            label={user?.name?.charAt(0)?.toUpperCase() || 'U'}
-            style={styles.avatar}
-          />
-          <View style={styles.userText}>
-            <Text style={styles.userName}>{user?.name || 'User'}</Text>
+        <TouchableOpacity onPress={() => navigation.navigate('Profile' as never)}>
+          <View style={styles.userInfo}>
+            <Avatar.Text
+              size={40}
+              label={user?.name?.charAt(0)?.toUpperCase() || 'U'}
+              style={styles.avatar}
+            />
+            <View style={styles.userText}>
+              <Text style={styles.userName}>{user?.name || 'User'}</Text>
+            </View>
           </View>
-        </View>
+        </TouchableOpacity>
         <IconButton
           icon="calendar"
           iconColor="white"
@@ -293,6 +276,7 @@ export default function HomeScreen() {
 
       <KeyboardAvoidingView
         style={styles.chatContainer}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
         <ScrollView
           ref={scrollViewRef}

@@ -16,18 +16,22 @@ import {
 } from 'react-native-paper';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigation } from '@react-navigation/native';
+import { showErrorToast } from '../common/toast-message';
 
-const LoginScreen: React.FC = () => {
+interface LoginScreenProps {
+  setShowSignup: (show: boolean) => void;
+}
+
+const LoginScreen: React.FC<LoginScreenProps> = ({ setShowSignup }) => {
   const [email, setEmail] = useState<string>('');
   const [password, setPassword] = useState<string>('');
   const [isLoading, setIsLoading] = useState(false);
 
   const { login } = useAuth();
-  const navigation = useNavigation();
 
   const handleLogin = async () => {
     if (!email || !password) {
-      Alert.alert('Hata', 'Lütfen tüm alanları doldurun');
+      showErrorToast('Lütfen tüm alanları doldurun');
       return;
     }
 
@@ -35,10 +39,16 @@ const LoginScreen: React.FC = () => {
     try {
       await login(email, password);
     } catch (error: any) {
-      Alert.alert('Hata', error.message || 'Giriş başarısız oldu');
+      console.log(error);
+      showErrorToast(error.response?.data?.detail || 'Giriş başarısız oldu');
+      // No navigation - user stays on login screen with their data
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handleNavigateToSignup = () => {
+    setShowSignup(true);
   };
 
   return (
@@ -90,7 +100,7 @@ const LoginScreen: React.FC = () => {
 
             <Button
               mode="text"
-              onPress={() => navigation.navigate('Signup' as never)}
+              onPress={handleNavigateToSignup}
               style={styles.switchButton}
             >
               Don't have an account? Sign Up
