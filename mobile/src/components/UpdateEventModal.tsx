@@ -17,7 +17,7 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import { MaterialIcons } from '@expo/vector-icons';
 import NumericInput from './NumericInput';
 import { Event } from '../models/event';
-import { showErrorToast, showSuccessToast } from '../common/toast-message';
+import { showErrorToast, showSuccessToast } from '../common/toast/toast-message';
 interface UpdateEventModalProps {
   visible: boolean;
   event: Event | null;
@@ -39,10 +39,11 @@ export default function UpdateEventModal({
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
+    console.log(event);
     if (event) {
       setTitle(event.title);
       setLocation(event.location || '');
-      setDuration(event.duration?.toString() || '');
+      setDuration(event.duration ? event.duration.toString() : '');
       setDatetime(new Date(event.startDate));
     }
   }, [event]);
@@ -50,8 +51,15 @@ export default function UpdateEventModal({
   const handleUpdate = async () => {
     if (!event) return;
 
-    if (!title.trim()) {
+    const trimmedTitle = title.trim();
+
+    if (!trimmedTitle) {
       showErrorToast('Başlık gereklidir');
+      return;
+    }
+
+    if (trimmedTitle.length > 255) {
+      showErrorToast('Başlık 255 karakterden uzun olamaz');
       return;
     }
 
@@ -71,18 +79,19 @@ export default function UpdateEventModal({
      
     }
 
+
     try {
       setLoading(true);
       await onUpdate(event.id, {
-        title: title.trim(),
+        title: trimmedTitle,
         location: location.trim() || undefined,
         duration: durationMinutes,
         startDate: datetime.toISOString(),
       });
       onDismiss();
       showSuccessToast('Etkinlik başarıyla güncellendi');
-    } catch (error) {
-      showErrorToast('Etkinlik güncellenemedi');
+    } catch (error : any) {
+      showErrorToast(error.response?.data?.detail || 'Etkinlik güncellenemedi');
     } finally {
       setLoading(false);
     }
@@ -106,24 +115,24 @@ export default function UpdateEventModal({
         onDismiss={onDismiss}
         contentContainerStyle={styles.modalContainer}
       >
-        <Card >
+        <Card style={styles.card}>
           <Card.Content>
-            <Title style={styles.title}>Update Event</Title>
+            <Title style={styles.title}>Etkinlik Düzenle</Title>
             
             <ScrollView >
               <View style={styles.inputContainer}>
-                <Text style={styles.label}>Title *</Text>
+                <Text style={styles.label}>Baslik *</Text>
                 <TextInput
                   mode="outlined"
                   value={title}
                   onChangeText={setTitle}
-                  placeholder="Enter event title"
+                  placeholder="Etkinlik basligi giriniz"
                   style={styles.input}
                 />
               </View>
 
               <View style={styles.inputContainer}>
-                <Text style={styles.label}>Date & Time *</Text>
+                <Text style={styles.label}>Tarih & Saat *</Text>
                 <Button
                   mode="outlined"
                   onPress={() => setShowDatePicker(true)}
@@ -145,30 +154,30 @@ export default function UpdateEventModal({
               <View style={styles.inputContainer}>
                 <View style={styles.labelContainer}>
                   <MaterialIcons name="schedule" size={20} color="#6200ee" />
-                  <Text style={styles.label}>Duration (minutes)</Text>
+                  <Text style={styles.label}>Süre</Text>
                 </View>
                 <NumericInput
                   mode="outlined"
                   value={duration}
                   onValueChange={setDuration}
-                  placeholder="Enter duration in minutes"
+                  placeholder="Etkinlik suresini giriniz (opsiyonel)"
                   style={styles.input}
                 />
                 <Text style={styles.helperText}>
-                  Enter the duration in minutes (e.g., 30 for 30 minutes) - Optional
+                  Süreyi dakika cinsinden giriniz (örn: 30 dakika)
                 </Text>
               </View>
 
               <View style={styles.inputContainer}>
                 <View style={styles.labelContainer}>
                   <MaterialIcons name="location-on" size={20} color="#6200ee" />
-                  <Text style={styles.label}>Location</Text>
+                  <Text style={styles.label}>Konu</Text>
                 </View>
                 <TextInput
                   mode="outlined"
                   value={location}
                   onChangeText={setLocation}
-                  placeholder="Enter event location (optional)"
+                  placeholder="Etkinlik konumunu girin (opsiyonel)"
                   style={styles.input}
                 />
               </View>
@@ -204,8 +213,23 @@ const styles = StyleSheet.create({
   modalContainer: {
     flex: 1,
     justifyContent: 'center',
+    alignItems: 'center',
     padding: 20,
-    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    backgroundColor: 'transparent',
+  },
+  card: {
+    width: '100%',
+    maxWidth: 400,
+    borderRadius: 16,
+    elevation: 8,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 4,
+    },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    backgroundColor: '#ffffff',
   },
   title: {
     textAlign: 'center',

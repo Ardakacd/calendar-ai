@@ -18,7 +18,7 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import { MaterialIcons } from '@expo/vector-icons';
 import NumericInput from './NumericInput';
 import { Event } from '../models/event';
-import { showErrorToast } from '../common/toast-message';
+import { showErrorToast } from '../common/toast/toast-message';
 interface UpdateAgentEventModalProps {
   visible: boolean;
   event: Event | null;
@@ -43,7 +43,6 @@ export default function UpdateAgentEventModal({
 
   useEffect(() => {
     if (event) {
-      // Use update arguments if available, otherwise use current event values
       setTitle(updateArguments.title || event.title);
       setLocation(updateArguments.location || event.location || '');
       setDuration(updateArguments.duration ? updateArguments.duration.toString() : (event.duration?.toString() || ''));
@@ -57,8 +56,15 @@ export default function UpdateAgentEventModal({
   const handleUpdate = async () => {
     if (!event) return;
 
-    if (!title.trim()) {
+    const trimmedTitle = title.trim();
+
+    if (!trimmedTitle) {
       showErrorToast('Başlık gereklidir');
+      return;
+    }
+
+    if (trimmedTitle.length > 255) {
+      showErrorToast('Başlık 255 karakterden uzun olamaz');
       return;
     }
 
@@ -80,7 +86,7 @@ export default function UpdateAgentEventModal({
     try {
       setLoading(true);
       await onUpdate(event.id, {
-        title: title.trim(),
+        title: trimmedTitle,
         location: location.trim() || undefined,
         duration: durationMinutes,
         startDate: datetime.toISOString(),
@@ -135,7 +141,7 @@ export default function UpdateAgentEventModal({
         onDismiss={onDismiss}
         contentContainerStyle={styles.modalContainer}
       >
-        <Card>
+        <Card style={styles.card}>
           <Card.Content>
             <Title style={styles.title}>Etkinlik Güncelle</Title>
             
@@ -237,8 +243,23 @@ const styles = StyleSheet.create({
   modalContainer: {
     flex: 1,
     justifyContent: 'center',
+    alignItems: 'center',
     padding: 20,
-    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    backgroundColor: 'transparent',
+  },
+  card: {
+    width: '100%',
+    maxWidth: 400,
+    borderRadius: 16,
+    elevation: 8,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 4,
+    },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    backgroundColor: '#ffffff',
   },
   title: {
     textAlign: 'center',

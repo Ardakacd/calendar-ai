@@ -16,7 +16,7 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';
 import { useAuth } from '../contexts/AuthContext';
 import { useCalendarAPI } from '../services/api';
-import { showSuccessToast, showErrorToast } from '../common/toast-message';
+import { showSuccessToast, showErrorToast } from '../common/toast/toast-message';
 
 export default function ProfileScreen() {
   const { user, logout } = useAuth();

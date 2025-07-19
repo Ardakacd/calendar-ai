@@ -16,7 +16,7 @@ import {
 } from 'react-native-paper';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigation } from '@react-navigation/native';
-import { showErrorToast } from '../common/toast-message';
+import { showErrorToast } from '../common/toast/toast-message';
 
 interface SignupScreenProps {
   setShowSignup: (show: boolean) => void;

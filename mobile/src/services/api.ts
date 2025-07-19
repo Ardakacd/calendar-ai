@@ -247,15 +247,13 @@ class CalendarAPI {
     }
   }
 
-  async addEvent(event: EventCreate, conflict_check: boolean = true): Promise<Event> {
+  async addEvent(event: EventCreate): Promise<Event> {
     try {
-      const response = await this.api.post('/events', event, {
-        params: { conflict_check }
-      });
+      const response = await this.api.post('/events', event);
       return response.data;
     } catch (error) {
       console.error('Error adding event:', error);
-      throw new Error('Etkinlik eklenemedi');
+      throw error;
     }
   }
 
@@ -265,7 +263,7 @@ class CalendarAPI {
       return response.data;
     } catch (error) {
       console.error('Error updating event:', error);
-      throw new Error('Etkinlik güncellenemedi');
+      throw error;
     }
   }
 

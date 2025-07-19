@@ -11,29 +11,14 @@ class UserBase(BaseModel):
 class UserCreate(UserBase):
     user_id: str
     password: str = Field(..., min_length=6, description="Password must be at least 6 characters long")
-    @field_validator("password")
-    def password_length(cls, value):
-        if len(value) < 6:
-            raise ValueError("Şifre en az 6 karakter olmalıdır.")
-        return value
 
 class UserRegister(UserBase):
     password: str = Field(..., min_length=6, description="Password must be at least 6 characters long")
-    @field_validator("password")
-    def password_length(cls, value):
-        if len(value) < 6:
-            raise ValueError("Şifre en az 6 karakter olmalıdır.")
-        return value
 
 class UserUpdate(BaseModel):
     name: Optional[str] = None
     email: Optional[EmailStr] = None
     password: Optional[str] = Field(None, min_length=6, description="Password must be at least 6 characters long")
-    @field_validator("password")
-    def password_length(cls, value):
-        if len(value) < 6:
-            raise ValueError("Şifre en az 6 karakter olmalıdır.")
-        return value
 
 class User(UserBase):
     id: int  # Internal DB ID
@@ -99,25 +84,10 @@ class UserWithEvents(User):
 class UserLogin(BaseModel):
     email: EmailStr
     password: str = Field(..., min_length=6, description="Password must be at least 6 characters long")
-    @field_validator("password")
-    def password_length(cls, value):
-        if len(value) < 6:
-            raise ValueError("Şifre en az 6 karakter olmalıdır.")
-        return value
 
 class PasswordChangeRequest(BaseModel):
     current_password: str = Field(..., min_length=6, description="Current password")
     new_password: str = Field(..., min_length=6, description="New password must be at least 6 characters long")
-    @field_validator("new_password")
-    def password_length(cls, value):
-        if len(value) < 6:
-            raise ValueError("Şifre en az 6 karakter olmalıdır.")
-        return value
-    @field_validator("current_password")
-    def password_length(cls, value):
-        if len(value) < 6:
-            raise ValueError("Şifre en az 6 karakter olmalıdır.")
-        return value
 
 class Token(BaseModel):
     access_token: str

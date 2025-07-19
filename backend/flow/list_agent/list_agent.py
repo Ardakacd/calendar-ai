@@ -87,16 +87,12 @@ async def list_filter_event_agent(state: FlowState):
         response = [await model.ainvoke(state["messages"])]
         try:
             list_event_data = json.loads(response[0].content)
-            
             if isinstance(list_event_data, list):
                 events = []
                 for event_dict in list_event_data:
                     try:
-                        start_date_str = event_dict.get('startDate')
-                        end_date_str = event_dict.get('endDate')
-                        
-                        start_date = datetime.fromisoformat(start_date_str) 
-                        end_date = datetime.fromisoformat(end_date_str)
+                        start_date = datetime.fromisoformat(event_dict.get('startDate')) 
+                        end_date = datetime.fromisoformat( event_dict.get('endDate'))
                         
                         event = Event(
                             id=event_dict.get('id'),

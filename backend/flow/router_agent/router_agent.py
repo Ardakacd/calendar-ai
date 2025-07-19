@@ -31,24 +31,28 @@ async def router_agent(state: FlowState):
         route_data = json.loads(response[0].content)
         state['route'] = route_data
     except json.JSONDecodeError:
-        state['route'] = {"message": "Sorry, I couldn't understand your request. Please try again."}
+        state['route'] = {"message": "Bir hata olustu. Lutfen daha sonra tekrar deneyiniz."}
     
     return state
 
 def route_action(state: FlowState):
     if "route" in state['route']:
         route = state["route"]["route"]
-        if route == "create":
-            return "create_agent"
-        elif route == "update":
-            return "update_date_range_agent"
-        elif route == "delete":
-            return "delete_date_range_agent"
-        elif route == "list":
-            return "list_date_range_agent"
-    else:
-        return "router_message_handler"
+
+        match route:
+            case "create":
+                return "create_agent"
+            case "update":
+                return "update_date_range_agent"
+            case "delete":
+                return "delete_date_range_agent"
+            case "list":
+                return "list_date_range_agent"
+            case _:
+                return 'router_message_handler'
+    return 'router_message_handler'
         
 def router_message_handler(state: FlowState):
     """Handle cases where router returns a message instead of a route"""
-    return {"messages": [AIMessage(content=state["route"]["message"])]}
+    message  = state["route"]["message"] if 'message' in state["route"] else 'Bir hata oluştu'
+    return {"messages": [AIMessage(content=message)]}
