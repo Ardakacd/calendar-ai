@@ -7,6 +7,7 @@ from database import EventModel
 from models import EventCreate, EventUpdate, Event
 from datetime import datetime, timedelta
 from exceptions import EventNotFoundError, EventPermissionError,  DatabaseError
+from fastapi import HTTPException, status
 
 logger = logging.getLogger(__name__)
 
@@ -24,24 +25,24 @@ class EventAdapter:
     
     def _convert_to_model(self, event_model: EventModel) -> Event:
         """Convert EventModel to Event Pydantic model."""
-        # Calculate duration from startDate and endDate
+        
         
         delta = event_model.endDate - event_model.startDate
         duration = int(delta.total_seconds() / 60)
         
         return Event(
-            id=event_model.event_id,  # Use event_id (UUID) for API exposure
+            id=event_model.event_id, 
             title=event_model.title,
             startDate=event_model.startDate,
             endDate=event_model.endDate,
-            duration=duration,  # Set the computed duration
+            duration=duration,  
             location=event_model.location,
             user_id=event_model.user_id,
         )
     
     def _convert_to_db_model(self, user_id: int, event_data: EventCreate) -> EventModel:
         """Convert EventCreate Pydantic model to EventModel."""
-        # Calculate endDate from startDate + duration if duration is provided
+        
         end_date = None
         if event_data.duration and event_data.duration > 0:
             end_date = event_data.startDate + timedelta(minutes=event_data.duration)
@@ -274,15 +275,21 @@ class EventAdapter:
             
             # Handle endDate and duration logic
             logger.info(f"Update event {event_id}: duration={event_data.duration}, startDate={event_data.startDate}")
-            
+            start_date = event_data.startDate if event_data.startDate is not None else db_event.startDate
             if event_data.duration is not None or event_data.startDate is not None:
-                start_date = event_data.startDate if event_data.startDate is not None else db_event.startDate
-                duration = event_data.duration if event_data.duration is not None else db_event.duration
-
-                
+                duration = event_data.duration if event_data.duration is not None else 0
                 update_data['endDate'] = start_date + timedelta(minutes=duration)
             
             if update_data:
+                if update_data.get('endDate') is not None:
+                    conflict_event = await self.check_event_conflict(user_id, start_date, update_data.get('endDate'), event_id)
+            
+                if conflict_event:
+                    logger.warning(f"EventService: Conflict detected for user {user_id}")
+                    raise HTTPException(
+                        status_code=status.HTTP_409_CONFLICT,
+                        detail=f"Etkinlik mevcut bir etkinlikle çakışıyor: {conflict_event.title}"
+                    )
                 stmt = update(EventModel).where(EventModel.event_id == event_id).values(**update_data).returning(EventModel)
                 result = await self.db.execute(stmt)
                 db_event = result.scalar_one_or_none()
@@ -296,7 +303,7 @@ class EventAdapter:
                 # No changes to make, return the original event
                 return self._convert_to_model(db_event)
                 
-        except (EventNotFoundError, EventPermissionError):
+        except (EventNotFoundError, EventPermissionError, HTTPException):
             raise
         except SQLAlchemyError as e:
             logger.error(f"Database error updating event {event_id}: {e}")

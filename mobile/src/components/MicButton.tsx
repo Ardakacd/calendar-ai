@@ -9,7 +9,7 @@ import {
 import { Text } from 'react-native-paper';
 import { Audio } from 'expo-av';
 import { MaterialIcons } from '@expo/vector-icons';
-import { showErrorToast } from '../common/toast-message';
+import { showErrorToast } from '../common/toast/toast-message';
 
 interface MicButtonProps {
   onRecordingComplete: (audioUri: string) => void;

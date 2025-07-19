@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { calendarAPI } from '../services/api';
-import { showInfoToast } from '../common/toast-message';
+import { showInfoToast } from '../common/toast/toast-message';
 
 interface User {
   name: string;

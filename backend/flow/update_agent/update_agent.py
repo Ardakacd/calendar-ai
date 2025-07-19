@@ -5,7 +5,6 @@ from .update_data_range_agent_prompt import UPDATE_DATE_RANGE_AGENT_PROMPT
 from ..llm import model
 from tenacity import retry, stop_after_attempt, wait_random_exponential, retry_if_exception_type
 from openai import OpenAIError, RateLimitError
-from langgraph.graph import END
 import json
 from typing import List
 from adapter.event_adapter import EventAdapter
@@ -68,7 +67,6 @@ async def get_events_for_update(state: FlowState) -> List[Event]:
             end_date = event_args.get('endDate')
             
             state['update_date_range_filtered_events'] = await adapter.get_events_by_date_range(state['user_id'], start_date, end_date)
-            
             return state
     except Exception as e:
         state['update_date_range_filtered_events'] = []
@@ -98,19 +96,16 @@ async def update_filter_event_agent(state: FlowState):
                 events = []
                 for event_dict in update_event_data:
                     try:
-                        start_date_str = event_dict.get('startDate')
-                        end_date_str = event_dict.get('endDate')
-                        
-                        start_date = datetime.fromisoformat(start_date_str) 
-                        end_date = datetime.fromisoformat(end_date_str)
+                        start_date = datetime.fromisoformat(event_dict.get('startDate')) 
+                        end_date = datetime.fromisoformat(event_dict.get('endDate'))
                         
                         event = Event(
                             id=event_dict.get('id'),
                             title=event_dict.get('title'),
                             startDate=start_date,
                             endDate=end_date,
-                            duration=event_dict.get('duration', None),
-                            location=event_dict.get('location', None),
+                            duration=event_dict.get('duration'),
+                            location=event_dict.get('location'),
                             user_id=state['user_id']
                         )
                         events.append(event)
@@ -123,9 +118,8 @@ async def update_filter_event_agent(state: FlowState):
                 if len(events) == 0:
                     state['messages'].append(AIMessage(content="Güncellenecek herhangi bir etkinlik bulunamadı"))
                 else:
-                    # Check for conflicts if startDate is being updated
                     update_args = state['update_arguments']
-                    if 'startDate' in update_args:
+                    if 'startDate' in update_args: # important: no need to add duration
                         try:
                             async with get_async_db_context_manager() as db:
                                 adapter = EventAdapter(db)

@@ -31,13 +31,11 @@ class FlowBuilder:
         graph_builder.add_node("get_events_for_update", get_events_for_update)
         graph_builder.add_node("update_filter_event_agent", update_filter_event_agent)
 
-        
-
         # Add edges
         graph_builder.add_edge(START, "router_agent")
         graph_builder.add_conditional_edges("router_agent", route_action)
         graph_builder.add_edge("router_message_handler", END)
-        # TODO: Add edges from agents to END
+
         graph_builder.add_conditional_edges("create_agent", create_action)
         graph_builder.add_edge("create_message_handler", END)
         graph_builder.add_conditional_edges("check_event_conflict", create_conflict_action)
@@ -47,9 +45,6 @@ class FlowBuilder:
         graph_builder.add_edge("list_message_handler", END)
         graph_builder.add_edge("list_event_by_date_range", "list_filter_event_agent")
         graph_builder.add_edge("list_filter_event_agent", END)
-
-
-        
 
         graph_builder.add_conditional_edges("delete_date_range_agent", delete_action)
         graph_builder.add_edge("delete_message_handler", END)

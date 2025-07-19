@@ -28,5 +28,4 @@ class FlowState(TypedDict):
     update_date_range_filtered_events: List[Event]
     update_final_filtered_events: List[Event]
     update_arguments: dict
-    
     is_success: Annotated[bool, merge_is_success]

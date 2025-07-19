@@ -13,6 +13,7 @@ import CalendarScreen from './src/screens/CalendarScreen';
 import SignupScreen from './src/screens/SignupScreen';
 import ProfileScreen from './src/screens/ProfileScreen';
 import Toast from 'react-native-toast-message';
+import {toastConfig} from './src/common/toast/ToastConfig';
 import 'intl';
 import 'intl/locale-data/jsonp/en';
 
@@ -89,7 +90,7 @@ export default function App() {
                     <AppContent/>
                 </AuthProvider>
             </PaperProvider>
-            <Toast />
+            <Toast config={toastConfig} />
         </GestureHandlerRootView>
     );
 }

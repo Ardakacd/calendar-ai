@@ -38,8 +38,8 @@ async def create_agent(state: FlowState):
         state["messages"].insert(0, SystemMessage(content=prompt_text))
     try:
         response = [await model.ainvoke(state["messages"])]
-        route_data = json.loads(response[0].content)
-        state['create_event_data'] = route_data
+        create_event_data = json.loads(response[0].content)
+        state['create_event_data'] = create_event_data
     except Exception as e:
         state['create_event_data'] = {"message": "Bir hata olustu. Lutfen daha sonra tekrar deneyiniz."}
     
@@ -52,7 +52,8 @@ def create_action(state: FlowState):
         return "create_message_handler"
         
 def create_message_handler(state: FlowState):
-        return {"messages": [AIMessage(content="Bir hata olustu. Lutfen daha sonra tekrar deneyiniz.")]}
+    message = state['create_event_data'].get('message', 'Bir hata olustu. Lutfen daha sonra tekrar deneyiniz.')
+    return {"messages": [AIMessage(content=message)]}
 
 async def check_event_conflict(state: FlowState) -> Optional[Event]:
     """
@@ -62,7 +63,7 @@ async def check_event_conflict(state: FlowState) -> Optional[Event]:
         async with get_async_db_context_manager() as db:
             adapter = EventAdapter(db)
             start_date = datetime.fromisoformat(state['create_event_data']['arguments']['startDate'])
-            duration = state['create_event_data']['arguments']['duration'] if state['create_event_data']['arguments'].get('duration') else 0
+            duration = state['create_event_data']['arguments'].get('duration', 0)
             end_date = start_date + timedelta(minutes=duration)
             conflict_event = await adapter.check_event_conflict(state['user_id'], start_date, end_date)
             state['create_conflict_event'] = conflict_event

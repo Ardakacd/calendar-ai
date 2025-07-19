@@ -59,8 +59,8 @@ async def delete_event_by_date_range(state: FlowState) -> List[Event]:
     try:
         async with get_async_db_context_manager() as db:
             adapter = EventAdapter(db)
-            start_date = state['delete_date_range_data']['arguments']['startDate']
-            end_date = state['delete_date_range_data']['arguments']['endDate']
+            start_date = state['delete_date_range_data']['arguments'].get('startDate')
+            end_date = state['delete_date_range_data']['arguments'].get('endDate')
             state['delete_date_range_filtered_events'] = await adapter.get_events_by_date_range(state['user_id'], start_date, end_date)
             return state
     except Exception as e:
@@ -91,11 +91,8 @@ async def delete_filter_event_agent(state: FlowState):
                 events = []
                 for event_dict in delete_event_data:
                     try:
-                        start_date_str = event_dict.get('startDate')
-                        end_date_str = event_dict.get('endDate')
-                        
-                        start_date = datetime.fromisoformat(start_date_str) 
-                        end_date = datetime.fromisoformat(end_date_str)
+                        start_date = datetime.fromisoformat(event_dict.get('startDate')) 
+                        end_date = datetime.fromisoformat(event_dict.get('endDate'))
                         
                         event = Event(
                             id=event_dict.get('id'),

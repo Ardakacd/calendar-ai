@@ -16,7 +16,6 @@ security = HTTPBearer()
 @router.post("", response_model=Event)
 async def create_event(
         event_data: EventCreate,
-        conflict_check: bool = Query(True, description="Determine whether to check for conflicts"),
         credentials: HTTPAuthorizationCredentials = Depends(security),
         event_service: EventService = Depends(get_event_service)
 ):
@@ -28,10 +27,9 @@ async def create_event(
     logger.info(f"Creating event with title: {event_data.title}")
     try:
         token = credentials.credentials
-        if conflict_check:
-            result = await event_service.create_event_with_conflict_check(token, event_data)
-        else:
-            result = await event_service.create_event_without_conflict_check(token, event_data)
+        
+        result = await event_service.create_event(token, event_data)
+        
         logger.info(f"Event created successfully: {result.id}")
         return result
 
@@ -42,7 +40,7 @@ async def create_event(
         logger.error(f"Unexpected error during event creation: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Internal server error"
+            detail="Bir hata oluştu. Lütfen daha sonra tekrar deneyiniz."
         )
 
 
@@ -71,7 +69,7 @@ async def get_event(
         logger.error(f"Unexpected error during event retrieval: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Internal server error"
+            detail="Bir hata oluştu. Lütfen daha sonra tekrar deneyiniz."
         )
 
 
@@ -101,7 +99,7 @@ async def get_user_events(
         logger.error(f"Unexpected error during events retrieval: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Internal server error"
+            detail="Bir hata oluştu. Lütfen daha sonra tekrar deneyiniz."
         )
 
 
@@ -131,7 +129,7 @@ async def get_events_by_date_range(
         logger.error(f"Unexpected error during date range events retrieval: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Internal server error"
+            detail="Bir hata oluştu. Lütfen daha sonra tekrar deneyiniz."
         )
 
 
@@ -161,7 +159,7 @@ async def update_event(
         logger.error(f"Unexpected error during event update: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Internal server error"
+            detail="Bir hata oluştu. Lütfen daha sonra tekrar deneyiniz."
         )
 
 
@@ -190,7 +188,7 @@ async def delete_event(
         logger.error(f"Unexpected error during event deletion: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Internal server error"
+            detail="Bir hata oluştu. Lütfen daha sonra tekrar deneyiniz."
         )
 
 
@@ -219,7 +217,7 @@ async def delete_multiple_events(
         logger.error(f"Unexpected error during bulk event deletion: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Internal server error"
+            detail="Bir hata oluştu. Lütfen daha sonra tekrar deneyiniz."
         )
 
 
@@ -248,7 +246,7 @@ async def search_events(
         logger.error(f"Unexpected error during event search: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Internal server error"
+            detail="Bir hata oluştu. Lütfen daha sonra tekrar deneyiniz."
         )
 
 
@@ -276,5 +274,5 @@ async def get_events_count(
         logger.error(f"Unexpected error during events count retrieval: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Internal server error"
+            detail="Bir hata oluştu. Lütfen daha sonra tekrar deneyiniz."
         )

@@ -2,7 +2,7 @@ import logging
 from typing import List, Optional, Dict, Any
 from datetime import datetime, timedelta
 from adapter.event_adapter import EventAdapter
-from exceptions import EventNotFoundError, DatabaseError, ValidationError, EventPermissionError
+from exceptions import EventNotFoundError, DatabaseError, EventPermissionError
 from database.config import get_async_db
 from fastapi import Depends, HTTPException, status
 from models import EventUpdate, Event, EventCreate
@@ -16,7 +16,7 @@ class EventService:
     def __init__(self, event_adapter: EventAdapter):
         self.event_adapter = event_adapter
 
-    async def create_event_with_conflict_check(self, token: str, event_data: EventCreate) -> Event:
+    async def create_event(self, token: str, event_data: EventCreate) -> Event:
         """
         Create a new event for the authenticated user with conflict checking.
         
@@ -41,7 +41,6 @@ class EventService:
             duration = event_data.duration or 0
             end_date = start_date + timedelta(minutes=duration)
             
-            # Check for conflicts using adapter directly
             conflict_event = await self.event_adapter.check_event_conflict(user_id, start_date, end_date)
             
             if conflict_event:
@@ -51,7 +50,6 @@ class EventService:
                     detail=f"Etkinlik mevcut bir etkinlikle çakışıyor: {conflict_event.title}"
                 )
             
-            # Create the event if no conflicts
             result = await self.event_adapter.create_event(user_id, event_data)
 
             logger.info(f"EventService: Event created successfully for user {user_id}")
@@ -59,65 +57,13 @@ class EventService:
 
         except HTTPException:
             raise
-        except ValidationError as e:
-            logger.warning(f"EventService: Validation error creating event: {e}")
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=str(e)
-            )
-        except DatabaseError as e:
-            logger.error(f"EventService: Database error creating event: {e}")
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Etkinlik oluşturulamadı, veritabanı hatası"
-            )
         except Exception as e:
             logger.error(f"EventService: Unexpected error creating event: {str(e)}", exc_info=True)
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Sunucu hatası"
+                detail="Etkinlik oluşturulamadı, lütfen daha sonra tekrar deneyiniz."
             )
-    
-    async def create_event_without_conflict_check(self, token: str, event_data: EventCreate) -> Event:
-        """
-        Create a new event for the authenticated user.
-        
-        Args:
-            token: JWT token for user authentication
-        """
-
-        try:
-            # Extract user_id from token
-            user_id = get_user_id_from_token(token)
-
-            logger.info(f"EventService: Creating event without conflict check for user {user_id}")
-            
-            result = await self.event_adapter.create_event(user_id, event_data)
-
-            logger.info(f"EventService: Event created successfully for user {user_id}")
-            return result
-
-        except HTTPException:
-            raise
-        except ValidationError as e:
-            logger.warning(f"EventService: Validation error creating event: {e}")
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=str(e)
-            )
-        except DatabaseError as e:
-            logger.error(f"EventService: Database error creating event: {e}")
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Etkinlik oluşturulamadı, veritabanı hatası"
-            )
-        except Exception as e:
-            logger.error(f"EventService: Unexpected error creating event: {str(e)}", exc_info=True)
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Sunucu hatası"
-            )
-    
+     
     async def get_event(self, token: str, event_id: str) -> Event:
         """
         Get a specific event by ID.
@@ -158,19 +104,13 @@ class EventService:
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Etkinlik bulunamadı"
             )
-        except DatabaseError as e:
-            logger.error(f"EventService: Database error getting event {event_id}: {e}")
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Etkinlik veritabanından alınamadı"
-            )
         except HTTPException:
             raise
         except Exception as e:
             logger.error(f"EventService: Unexpected error getting event {event_id}: {str(e)}", exc_info=True)
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Sunucu hatası"
+                detail="Bir hata oluştu, lütfen daha sonra tekrar deneyiniz."
             )
 
     async def get_user_events(self, token: str, limit: Optional[int] = None, offset: Optional[int] = None) -> List[
@@ -206,7 +146,7 @@ class EventService:
             logger.error(f"EventService: Unexpected error getting events: {str(e)}", exc_info=True)
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Sunucu hatası"
+                detail="Bir hata oluştu, lütfen daha sonra tekrar deneyiniz."
             )
 
     async def get_events_by_date_range(self, token: str, start_date: datetime, end_date: datetime) -> List[Event]:
@@ -235,19 +175,13 @@ class EventService:
             logger.info(f"EventService: Retrieved {len(result)} events in date range for user {user_id}")
             return result
 
-        except DatabaseError as e:
-            logger.error(f"EventService: Database error getting events by date range: {e}")
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Etkinlik veritabanından alınamadı"
-            )
         except HTTPException:
             raise
         except Exception as e:
             logger.error(f"EventService: Unexpected error getting events by date range: {str(e)}", exc_info=True)
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Sunucu hatası"
+                detail="Bir hata oluştu, lütfen daha sonra tekrar deneyiniz."
             )
 
     async def update_event(self, token: str, event_id: str, event_data: EventUpdate) -> Dict[str, Any]:
@@ -297,17 +231,11 @@ class EventService:
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Bu etkinliği güncellemek için yetkiniz yok"
             )
-        except DatabaseError as e:
-            logger.error(f"EventService: Database error updating event {event_id}: {e}")
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Etkinlik veritabanından güncellenemedi"
-            )
         except Exception as e:
             logger.error(f"EventService: Unexpected error updating event {event_id}: {str(e)}", exc_info=True)
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Sunucu hatası"
+                detail="Etkinlik güncellenemedi, lütfen daha sonra tekrar deneyiniz."
             )
 
     async def delete_event(self, token: str, event_id: str) -> Dict[str, str]:
@@ -348,7 +276,7 @@ class EventService:
             logger.error(f"EventService: Unexpected error deleting event {event_id}: {str(e)}", exc_info=True)
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Sunucu hatası"
+                detail="Etkinlik silinemedi, lütfen daha sonra tekrar deneyiniz."
             )
 
     async def delete_multiple_events(self, token: str, event_ids: List[str]) -> Dict[str, str]:
@@ -395,7 +323,7 @@ class EventService:
             logger.error(f"EventService: Unexpected error in bulk delete: {str(e)}", exc_info=True)
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Sunucu hatası"
+                detail="Etkinlik silinemedi, lütfen daha sonra tekrar deneyiniz."
             )
 
     async def search_events(self, token: str, query: str) -> List[Event]:
@@ -429,7 +357,7 @@ class EventService:
             logger.error(f"EventService: Unexpected error searching events: {str(e)}", exc_info=True)
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Sunucu hatası"
+                detail="Bir hata oluştu, lütfen daha sonra tekrar deneyiniz."
             )
 
     async def get_events_count(self, token: str) -> Dict[str, Any]:
@@ -462,7 +390,7 @@ class EventService:
             logger.error(f"EventService: Unexpected error getting event count: {str(e)}", exc_info=True)
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Sunucu hatası"
+                detail="Bir hata oluştu, lütfen daha sonra tekrar deneyiniz."
             )
 
 

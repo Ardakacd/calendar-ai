@@ -14,7 +14,7 @@ import UpdateEventModal from '../components/UpdateEventModal';
 import AddEventModal from '../components/AddEventModal';
 import { Event, EventCreate } from '../models/event';
 import { formatDuration, formatLocation } from '../common/formatting';
-import { showErrorToast, showSuccessToast } from '../common/toast-message';
+import { showErrorToast, showSuccessToast } from '../common/toast/toast-message';
 
 interface MarkedDates {
   [date: string]: {
@@ -188,7 +188,6 @@ export default function CalendarScreen() {
     try {
       const addedEvent = await addEvent(newEvent);
       
-      // Add to local state
       const updatedEvents = [...events, addedEvent];
       setEvents(updatedEvents);
     } catch (error) {

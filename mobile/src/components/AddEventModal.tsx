@@ -18,7 +18,7 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import { MaterialIcons } from '@expo/vector-icons';
 import NumericInput from './NumericInput';
 import { EventCreate } from '../models/event';
-import { showErrorToast, showSuccessToast } from '../common/toast-message';
+import { showErrorToast, showSuccessToast } from '../common/toast/toast-message';
 interface AddEventModalProps {
   visible: boolean;
   onDismiss: () => void;
@@ -60,12 +60,17 @@ export default function AddEventModal({
   }, [initialEvent, mode, visible]);
 
   const handleSubmit = async () => {
-    if (!title.trim()) {
+    const trimmedTitle = title.trim();
+    if (!trimmedTitle) {
       showErrorToast('Başlık gereklidir');
       return;
     }
 
-    // Duration is optional, but if provided, it must be valid
+    if (trimmedTitle.length > 255) {
+      showErrorToast('Başlık 255 karakterden uzun olamaz');
+      return;
+    }
+
     let durationMinutes: number | undefined;
     if (duration) {
       durationMinutes = parseInt(duration);
@@ -76,7 +81,7 @@ export default function AddEventModal({
     }
 
     const eventData: EventCreate = {
-      title: title.trim(),
+      title: trimmedTitle,
       location: location.trim() || undefined,
       duration: durationMinutes,
       startDate: datetime.toISOString(),
@@ -99,8 +104,8 @@ export default function AddEventModal({
       setDatetime(new Date());
       
       onDismiss();
-    } catch (error) {
-      showErrorToast(mode === 'edit' ? 'Etkinlik güncellenemedi' : 'Etkinlik eklenemedi');
+    } catch (error : any) {
+      showErrorToast(error.response?.data?.detail || 'Etkinlik eklenemedi');
     } finally {
       setLoading(false);
     }
@@ -124,7 +129,7 @@ export default function AddEventModal({
         onDismiss={onDismiss}
         contentContainerStyle={styles.modalContainer}
       >
-        <Card>
+        <Card style={styles.card}>
           <Card.Content>
             <Title style={styles.title}>
               {mode === 'edit' ? 'Etkinlik Düzenle' : 'Yeni Etkinlik Ekle'}
@@ -165,17 +170,17 @@ export default function AddEventModal({
               <View style={styles.inputContainer}>
                 <View style={styles.labelContainer}>
                   <MaterialIcons name="schedule" size={20} color="#6200ee" />
-                  <Text style={styles.label}>Süre (dakika)</Text>
+                  <Text style={styles.label}>Süre</Text>
                 </View>
                 <NumericInput
                   mode="outlined"
                   value={duration}
                   onValueChange={setDuration}
-                  placeholder="Dakika cinsinden süre giriniz"
+                  placeholder="Etkinlik suresini dakika cinsinden giriniz (opsiyonel)"
                   style={styles.input}
                 />
                 <Text style={styles.helperText}>
-                  Süre dakika cinsinden giriniz (örn: 30 dakika) - Opsiyonel
+                  Süre dakika cinsinden giriniz (örn: 30 dakika)
                 </Text>
               </View>
 
@@ -224,8 +229,23 @@ const styles = StyleSheet.create({
   modalContainer: {
     flex: 1,
     justifyContent: 'center',
+    alignItems: 'center',
     padding: 20,
-    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    backgroundColor: 'transparent',
+  },
+  card: {
+    width: '100%',
+    maxWidth: 400,
+    borderRadius: 16,
+    elevation: 8,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 4,
+    },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    backgroundColor: '#ffffff',
   },
   title: {
     textAlign: 'center',

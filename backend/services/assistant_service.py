@@ -25,7 +25,7 @@ class AssistantService:
                 "weekday": weekday, 
                 "days_in_month": days_in_month
             })
-            route = response["route"]["route"]
+            route = response["route"].get('route')
             is_success = response["is_success"]
 
             if is_success:

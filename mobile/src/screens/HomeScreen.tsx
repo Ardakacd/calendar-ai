@@ -71,7 +71,7 @@ export default function HomeScreen() {
   const [isThinking, setIsThinking] = useState(false);
   const [hasUncompletedComponent, setHasUncompletedComponent] = useState(false);
   const { transcribeAudio, addEvent, processText, deleteMultipleEvents, updateEvent } = useCalendarAPI();
-  const { user, logout } = useAuth();
+  const { user } = useAuth();
   const scrollViewRef = useRef<ScrollView>(null);
   const inputRef = useRef<TextInput>(null);
   
@@ -176,11 +176,12 @@ export default function HomeScreen() {
 
   const handleCreateEvent = async (eventData: EventCreate) => {
     try {
-      await addEvent(eventData, false);
+      await addEvent(eventData);
       addMessage('ai', 'Etkinlik başarıyla oluşturuldu!', undefined, undefined, 'text');
       scrollToBottom();
-    } catch (error) {
-      addMessage('ai', 'Etkinlik oluşturulamadı. Lütfen tekrar deneyin.', undefined, undefined, 'text');
+    } catch (error: any) {
+      const message = error.response?.data?.detail || 'Etkinlik oluşturulamadı. Lütfen tekrar deneyin.'
+      addMessage('ai', message, undefined, undefined, 'text');
       scrollToBottom();
     }
   };
@@ -190,8 +191,9 @@ export default function HomeScreen() {
       await updateEvent(eventId, updatedEvent);
       addMessage('ai', 'Etkinlik başarıyla güncellendi!', undefined, undefined, 'text');
       scrollToBottom();
-    } catch (error) {
-      addMessage('ai', 'Etkinlik güncellenemedi. Lütfen tekrar deneyin.', undefined, undefined, 'text');
+    } catch (error: any) {
+      const message = error.response?.data?.detail || 'Etkinlik güncellenemedi. Lütfen tekrar deneyin.'
+      addMessage('ai', message, undefined, undefined, 'text');
       scrollToBottom();
     }
   };
