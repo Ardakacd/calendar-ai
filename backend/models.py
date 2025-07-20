@@ -1,6 +1,7 @@
-from pydantic import BaseModel, EmailStr, Field, computed_field
 from typing import Optional, List
 from datetime import datetime as dt
+from pydantic import BaseModel, EmailStr, Field, field_validator
+
 
 # User Models
 class UserBase(BaseModel):
@@ -33,18 +34,9 @@ class User(UserBase):
 class EventBase(BaseModel):
     title: str
     startDate: dt  # Use proper datetime type with timezone support
-    endDate: Optional[dt] = None  # End date (nullable)
+    endDate: dt  # End date
     duration: Optional[int] = None  # Duration in minutes for input
     location: Optional[str] = None
-
-    @computed_field
-    @property
-    def computed_duration(self) -> Optional[int]:
-        """Calculate duration in minutes from startDate and endDate"""
-        if self.startDate and self.endDate:
-            delta = self.endDate - self.startDate
-            return int(delta.total_seconds() / 60)
-        return None
 
     class Config:
         json_encoders = {
@@ -55,9 +47,7 @@ class EventCreate(BaseModel):
     title: str
     startDate: dt
     duration: Optional[int] = None  # Duration in minutes for input
-    endDate: Optional[dt] = None  # End date (nullable) - can be provided directly
     location: Optional[str] = None
-    user_id: int  # References internal user.id
 
     class Config:
         json_encoders = {
@@ -68,7 +58,6 @@ class EventUpdate(BaseModel):
     title: Optional[str] = None
     startDate: Optional[dt] = None
     duration: Optional[int] = None  # Duration in minutes for input
-    endDate: Optional[dt] = None  # End date (nullable) - can be provided directly
     location: Optional[str] = None
 
     class Config:
@@ -79,7 +68,6 @@ class EventUpdate(BaseModel):
 class Event(EventBase):
     id: str  # This is the event_id (UUID) for API exposure
     user_id: int  # References internal user.id
-    created_at: str
 
     class Config:
         from_attributes = True
@@ -97,6 +85,10 @@ class UserLogin(BaseModel):
     email: EmailStr
     password: str = Field(..., min_length=6, description="Password must be at least 6 characters long")
 
+class PasswordChangeRequest(BaseModel):
+    current_password: str = Field(..., min_length=6, description="Current password")
+    new_password: str = Field(..., min_length=6, description="New password must be at least 6 characters long")
+
 class Token(BaseModel):
     access_token: str
     refresh_token: str
@@ -113,21 +105,33 @@ class RefreshTokenRequest(BaseModel):
 class TranscribeRequest(BaseModel):
     audio_data: str  # Base64 encoded audio
 
-class TranscribeResponse(BaseModel):
+
+class TranscribeMessage(BaseModel):
     message: str
-    action: str  # "create", "delete", "update", "query", "none"
-    requires_confirmation: bool = False
-    confirmation_data: Optional[dict] = None  # Contains the fields for confirmation modal
-    event_id: Optional[str] = None
 
-# Confirmation Models for the frontend
-class EventConfirmationData(BaseModel):
-    title: str
-    startDate: str  # ISO format string
-    duration: Optional[int] = None  # Duration in minutes
-    location: Optional[str] = None
-    event_id: Optional[str] = None  # For update/delete operations
+class ProcessInput(BaseModel):
+    text: str
+    current_datetime: str
+    weekday: str
+    days_in_month: int
 
-class ConfirmationRequest(BaseModel):
-    action: str  # "create", "update", "delete"
-    event_data: EventConfirmationData 
+class SuccessfulListResponse(BaseModel):
+    type: str = "list"
+    message: str
+    events: List[Event]
+
+class SuccessfulDeleteResponse(BaseModel):
+    type: str = "delete"
+    message: str
+    events: List[Event]
+
+class SuccessfulCreateResponse(BaseModel):
+    type: str = "create"
+    message: str
+    event: EventCreate
+
+class SuccessfulUpdateResponse(BaseModel):
+    type: str = "update"
+    message: str
+    events: List[Event]
+    update_arguments: dict

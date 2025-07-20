@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {NavigationContainer} from '@react-navigation/native';
 import {createStackNavigator} from '@react-navigation/stack';
 import {Provider as PaperProvider} from 'react-native-paper';
@@ -11,6 +11,9 @@ import LoginScreen from './src/screens/LoginScreen';
 import HomeScreen from './src/screens/HomeScreen';
 import CalendarScreen from './src/screens/CalendarScreen';
 import SignupScreen from './src/screens/SignupScreen';
+import ProfileScreen from './src/screens/ProfileScreen';
+import Toast from 'react-native-toast-message';
+import {toastConfig} from './src/common/toast/ToastConfig';
 import 'intl';
 import 'intl/locale-data/jsonp/en';
 
@@ -18,6 +21,7 @@ const Stack = createStackNavigator();
 
 const AppContent: React.FC = () => {
     const {isAuthenticated, isLoading} = useAuth();
+    const [showSignup, setShowSignup] = useState(false);
 
     if (isLoading) {
         return (
@@ -27,6 +31,21 @@ const AppContent: React.FC = () => {
         );
     }
 
+    // If not authenticated, show auth screens without navigation stack
+    if (!isAuthenticated) {
+        return (
+            <View style={{ flex: 1 }}>
+                <StatusBar style="auto"/>
+                {showSignup ? (
+                    <SignupScreen setShowSignup={setShowSignup} />
+                ) : (
+                    <LoginScreen setShowSignup={setShowSignup} />
+                )}
+            </View>
+        );
+    }
+
+    // If authenticated, show main app with navigation
     return (
         <NavigationContainer>
             <StatusBar style="auto"/>
@@ -43,33 +62,21 @@ const AppContent: React.FC = () => {
                     },
                 }}
             >
-                {!isAuthenticated ? (
-                    <>
-                        <Stack.Screen
-                            name="Login"
-                            component={LoginScreen}
-                            options={{headerShown: false}}
-                        />
-                        <Stack.Screen
-                            name="Signup"
-                            component={SignupScreen}
-                            options={{headerShown: false}}
-                        />
-                    </>
-                ) : (
-                    <>
-                        <Stack.Screen
-                            name="Home"
-                            component={HomeScreen}
-                            options={{headerShown: false}}
-                        />
-                        <Stack.Screen
-                            name="Calendar"
-                            component={CalendarScreen}
-                            options={{title: 'Calendar'}}
-                        />
-                    </>
-                )}
+                <Stack.Screen
+                    name="Home"
+                    component={HomeScreen}
+                    options={{headerShown: false}}
+                />
+                <Stack.Screen
+                    name="Calendar"
+                    component={CalendarScreen}
+                    options={{title: 'Calendar'}}
+                />
+                <Stack.Screen
+                    name="Profile"
+                    component={ProfileScreen}
+                    options={{title: 'Profile'}}
+                />
             </Stack.Navigator>
         </NavigationContainer>
     );
@@ -83,6 +90,7 @@ export default function App() {
                     <AppContent/>
                 </AuthProvider>
             </PaperProvider>
+            <Toast config={toastConfig} />
         </GestureHandlerRootView>
     );
 }

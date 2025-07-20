@@ -5,24 +5,16 @@ import {
   ScrollView,
   Alert,
 } from 'react-native';
-import { Text, Card, Button, FAB, ActivityIndicator, IconButton } from 'react-native-paper';
+import { Text, Card, FAB, ActivityIndicator, IconButton } from 'react-native-paper';
 import { Calendar, DateData } from 'react-native-calendars';
-import { useNavigation } from '@react-navigation/native';
 import { MaterialIcons } from '@expo/vector-icons';
 import * as Localization from 'expo-localization';
-
 import { useCalendarAPI } from '../services/api';
 import UpdateEventModal from '../components/UpdateEventModal';
 import AddEventModal from '../components/AddEventModal';
-
-interface Event {
-  id: string;
-  title: string;
-  startDate: string;
-  endDate?: string;
-  duration?: number;
-  location?: string;
-}
+import { Event, EventCreate } from '../models/event';
+import { formatDuration, formatLocation } from '../common/formatting';
+import { showErrorToast, showSuccessToast } from '../common/toast/toast-message';
 
 interface MarkedDates {
   [date: string]: {
@@ -37,7 +29,6 @@ interface MarkedDates {
 }
 
 export default function CalendarScreen() {
-  const navigation = useNavigation();
   const [events, setEvents] = useState<Event[]>([]);
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
   const [markedDates, setMarkedDates] = useState<MarkedDates>({});
@@ -47,18 +38,23 @@ export default function CalendarScreen() {
   const [addModalVisible, setAddModalVisible] = useState(false);
   const { getEvents, updateEvent, deleteEvent, addEvent } = useCalendarAPI();
 
+  console.log(events);
+
   useEffect(() => {
     loadEvents();
   }, []);
+
+  useEffect(() => {
+    updateMarkedDates(events, selectedDate);
+  }, [events, selectedDate]);
 
   const loadEvents = async () => {
     try {
       setLoading(true);
       const fetchedEvents = await getEvents();
       setEvents(fetchedEvents);
-      updateMarkedDates(fetchedEvents, selectedDate);
     } catch (error) {
-      Alert.alert('Error', 'Failed to load events');
+      showErrorToast('Etkinlikler yüklenemedi');
     } finally {
       setLoading(false);
     }
@@ -100,11 +96,9 @@ export default function CalendarScreen() {
   const onDayPress = (day: DateData) => {
     const dateString = day.dateString;
     setSelectedDate(dateString);
-    updateMarkedDates(events, dateString);
   };
 
   const getEventsForDate = (date: string) => {
-    console.log("EVENTS:" , events);
     const filteredEvents = events.filter(event => {
       return event.startDate.split('T')[0] === date
     });
@@ -140,34 +134,19 @@ export default function CalendarScreen() {
 
   const handleUpdateEventSubmit = async (eventId: string, updatedEvent: Partial<Event>) => {
     try {
-      // Duration is already a number from UpdateEventModal, no need to parse again
-      const apiEvent = {
-        ...updatedEvent,
-        // Only include duration if it's provided and valid
-        ...(updatedEvent.duration !== undefined && { duration: updatedEvent.duration })
-      };
+      const response = await updateEvent(eventId, updatedEvent);
 
-      const response = await updateEvent(eventId, apiEvent);
+      if (response) {
+        // Update the events list with the updated event
+        setEvents(prevEvents => 
+          prevEvents.map(event => 
+            event.id === eventId ? response : event
+          )
+        );
+        
+      }
       
-      console.log('Updated event response:', response);
-      
-      // Extract the actual event data from the response
-      const updatedEventData = response.event;
-      
-      // Update the events list with the updated event
-      setEvents(prevEvents => 
-        prevEvents.map(event => 
-          event.id === eventId ? updatedEventData : event
-        )
-      );
-      
-      // Update marked dates with the new events list
-      const updatedEventsList = events.map(event =>
-        event.id === eventId ? updatedEventData : event
-      );
-      console.log("updatedEventsList: ", updatedEventsList);
-      updateMarkedDates(updatedEventsList, selectedDate);
-      
+
     } catch (error) {
       console.error('Error updating event:', error);
       throw error;
@@ -176,15 +155,15 @@ export default function CalendarScreen() {
 
   const handleDeleteEvent = (eventId: string) => {
     Alert.alert(
-      'Delete Event',
-      'Are you sure you want to delete this event?',
+      'Etkinliği Sil',
+      'Bu etkinliği silmek istediğinizden emin misiniz?',
       [
         {
-          text: 'Cancel',
+          text: 'İptal',
           style: 'cancel',
         },
         {
-          text: 'Delete',
+          text: 'Sil',
           style: 'destructive',
           onPress: async () => {
             try {
@@ -193,12 +172,11 @@ export default function CalendarScreen() {
               // Remove from local state
               const updatedEvents = events.filter(event => event.id !== eventId);
               setEvents(updatedEvents);
-              updateMarkedDates(updatedEvents, selectedDate);
               
-              Alert.alert('Success', 'Event deleted successfully');
+              showSuccessToast('Etkinlik başarıyla silindi');
             } catch (error) {
               console.error('Error deleting event:', error);
-              Alert.alert('Error', 'Failed to delete event');
+              showErrorToast('Etkinlik silinemedi');
             }
           },
         },
@@ -206,15 +184,12 @@ export default function CalendarScreen() {
     );
   };
 
-  const handleAddEvent = async (newEvent: Omit<Event, 'id'>) => {
+  const handleAddEvent = async (newEvent: EventCreate) => {
     try {
       const addedEvent = await addEvent(newEvent);
       
-      // Add to local state
       const updatedEvents = [...events, addedEvent];
       setEvents(updatedEvents);
-      updateMarkedDates(updatedEvents, selectedDate);
-      
     } catch (error) {
       console.error('Error adding event:', error);
       throw error;
@@ -287,19 +262,19 @@ export default function CalendarScreen() {
                    
                   <View style={styles.eventBottomContainer}>
                     <View style={styles.eventDetailsContainer}>
-                    {event.location && (
+                    
+                      <View style={styles.eventDetailRow}>
+                        <MaterialIcons name="timer" size={16} color="#666" />
+                        <Text style={styles.eventDetailText}>{formatDuration(event.duration)}</Text>
+                      </View>
+
+                      
                       <View style={styles.eventDetailRow}>
                         <MaterialIcons name="location-on" size={16} color="#666" />
-                        <Text style={styles.eventDetailText}>{event.location}</Text>
+                        <Text style={styles.eventDetailText}>{formatLocation(event.location)}</Text>
                       </View>
-                    )}
                     
-                    {event.duration && (
-                      <View style={styles.eventDetailRow}>
-                        <MaterialIcons name="schedule" size={16} color="#666" />
-                        <Text style={styles.eventDetailText}>{event.duration} minutes</Text>
-                      </View>
-                    )}
+                    
                     </View>
                   
                   <View style={styles.eventActions}>

@@ -3,11 +3,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import SQLAlchemyError, IntegrityError
 from sqlalchemy import select, delete, update
 import logging
-from fastapi import Depends
-from database import get_async_db     
 from database import UserModel
 from models import UserCreate, UserUpdate, User
-
+from fastapi import HTTPException
 logger = logging.getLogger(__name__)
 
 
@@ -52,18 +50,18 @@ class UserAdapter:
             operation: Operation being performed (create, update)
             
         Raises:
-            ValueError: With specific error message
+            HTTPException: With specific error message
         """
         error_msg = str(e).lower()
         
         if "email" in error_msg and "unique" in error_msg:
-            raise ValueError("Email already exists")
+            raise HTTPException(status_code=400, detail="Bu e-posta adresi zaten kullanımda")
         elif "password" in error_msg and "length" in error_msg:
-            raise ValueError("Password must be at least 6 characters long")
+            raise HTTPException(status_code=400, detail="Şifre en az 6 karakter olmalıdır")
         elif "email" in error_msg and "format" in error_msg:
-            raise ValueError("Invalid email format")
+            raise HTTPException(status_code=400, detail="Geçersiz e-posta formatı")
         else:
-            raise ValueError(f"Data validation failed during {operation}")
+            raise HTTPException(status_code=500, detail=f"Veri doğrulama hatası: {operation}")
     
     async def create_user(self, user_data: UserCreate) -> Optional[User]:
         """
@@ -91,8 +89,8 @@ class UserAdapter:
             
             return self._convert_to_model(db_user)
             
-        except ValueError as e:
-            logger.error(f"UserAdapter: Validation error creating user {user_data.email}: {e}")
+        except HTTPException as e:
+            logger.error(f"UserAdapter: Http error creating user {user_data.email}: {e}")
             raise
         except IntegrityError as e:
             logger.error(f"UserAdapter: Integrity error creating user {user_data.email}: {e}")
@@ -178,7 +176,7 @@ class UserAdapter:
         """
         try:
             # Build update data
-            update_data = user_data.dict(exclude_unset=True)
+            update_data = user_data.model_dump(exclude_unset=True)
             if not update_data:
                 logger.warning(f"No fields to update for user {user_id}")
                 return await self.get_user_by_id(user_id)
@@ -197,19 +195,19 @@ class UserAdapter:
             
             return await self.get_user_by_id(user_id)
             
-        except ValueError as e:
-            logger.error(f"Validation error updating user {user_id}: {e}")
+        except HTTPException as e:
+            logger.error(f"UserAdapter: Http error updating user {user_id}: {e}")
             raise
         except IntegrityError as e:
-            logger.error(f"Integrity error updating user {user_id}: {e}")
+            logger.error(f"UserAdapter: Integrity error updating user {user_id}: {e}")
             await self.db.rollback()
             self._handle_integrity_error(e, "update")
         except SQLAlchemyError as e:
-            logger.error(f"Database error updating user {user_id}: {e}")
+            logger.error(f"UserAdapter: Database error updating user {user_id}: {e}")
             await self.db.rollback()
             return None
         except Exception as e:
-            logger.error(f"Unexpected error updating user {user_id}: {e}")
+            logger.error(f"UserAdapter: Unexpected error updating user {user_id}: {e}", exc_info=True)
             await self.db.rollback()
             return None
     

@@ -9,15 +9,18 @@ import {
 import { Text } from 'react-native-paper';
 import { Audio } from 'expo-av';
 import { MaterialIcons } from '@expo/vector-icons';
+import { showErrorToast } from '../common/toast/toast-message';
 
 interface MicButtonProps {
   onRecordingComplete: (audioUri: string) => void;
   isProcessing?: boolean;
+  disabled?: boolean;
 }
 
 export default function MicButton({ 
   onRecordingComplete, 
   isProcessing = false, 
+  disabled = false,
 }: MicButtonProps) {
   const [recording, setRecording] = useState<Audio.Recording | null>(null);
   const [isRecording, setIsRecording] = useState(false);
@@ -51,7 +54,7 @@ export default function MicButton({
       setHasPermission(status === 'granted');
       
       if (status !== 'granted') {
-        Alert.alert('Permission required', 'Microphone permission is required to record voice commands.');
+        showErrorToast('Ses komutları kaydetmek için mikrofon izni gereklidir.');
       }
     })();
   }, []);
@@ -89,7 +92,7 @@ export default function MicButton({
 
   const startRecording = async () => {
     if (!hasPermission) {
-      Alert.alert('Permission required', 'Please grant microphone permission in settings.');
+      showErrorToast('Ses komutları kaydetmek için mikrofon izni gereklidir.');
       return;
     }
 
@@ -114,7 +117,7 @@ export default function MicButton({
       }).start();
     } catch (err) {
       console.error('Failed to start recording', err);
-      Alert.alert('Error', 'Failed to start recording. Please try again.');
+      showErrorToast('Kayıt başlatılamadı. Lütfen tekrar deneyin.');
     }
   };
   
@@ -137,8 +140,7 @@ export default function MicButton({
         onRecordingComplete(uri);
       }
     } catch (err) {
-      console.error('Failed to stop recording', err);
-      Alert.alert('Error', 'Failed to stop recording. Please try again.');
+      showErrorToast('Kayıt durdurulamadı. Lütfen tekrar deneyin.');
     }
   };
 
@@ -174,10 +176,11 @@ export default function MicButton({
             styles.micButton,
             isRecording && styles.recording,
             isProcessing && styles.processing,
+            disabled && styles.disabled,
           ]}
           onPressIn={handlePressIn}
           onPressOut={handlePressOut}
-          disabled={isProcessing}
+          disabled={isProcessing || disabled}
           activeOpacity={0.8}
         >
           <Animated.View
@@ -208,7 +211,6 @@ export default function MicButton({
 const styles = StyleSheet.create({
   container: {
     alignItems: 'center',
-    height: 60,
     justifyContent: 'center',
   },
   micButton: {
@@ -232,6 +234,10 @@ const styles = StyleSheet.create({
   },
   processing: {
     backgroundColor: 'rgba(98, 0, 238, 0.6)',
+  },
+  disabled: {
+    opacity: 0.5,
+    backgroundColor: 'rgba(255, 255, 255, 0.3)',
   },
   instructionText: {
     marginTop: 15,

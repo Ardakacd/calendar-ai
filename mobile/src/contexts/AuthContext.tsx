@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { calendarAPI } from '../services/api';
+import { showInfoToast } from '../common/toast/toast-message';
 
 interface User {
   name: string;
@@ -41,7 +42,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       const { accessToken, refreshToken } = await calendarAPI.getStoredTokens();
       
       if (!accessToken || !refreshToken) {
-        // No tokens stored, user is not authenticated
         setUser(null);
         return;
       }
@@ -68,35 +68,33 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     refreshAuth();
   }, []);
 
+  useEffect(() => {
+    // Set up callback for when API detects auth failure
+    calendarAPI.setAuthFailureCallback(() => {
+      setUser(null);
+      showInfoToast('Oturum suresi doldu, lütfen tekrar giriş yapınız.');
+    });
+  }, []);
+
   const login = async (email: string, password: string) => {
     try {
-      setIsLoading(true);
       const response = await calendarAPI.login({ email, password });
-      // Use user data from login response instead of making another API call
       setUser({
         name: response.user_name,
       });
     } catch (error) {
-      console.error('Login error:', error);
       throw error;
-    } finally {
-      setIsLoading(false);
     }
   };
 
   const register = async (name: string, email: string, password: string) => {
     try {
-      setIsLoading(true);
       const response = await calendarAPI.register({ name, email, password });
-      // Use user data from register response instead of making another API call
       setUser({
         name: response.user_name,
       });
     } catch (error) {
-      console.error('Register error:', error);
       throw error;
-    } finally {
-      setIsLoading(false);
     }
   };
 
@@ -107,7 +105,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       setUser(null);
     } catch (error) {
       console.error('Logout error:', error);
-      // Clear user state even if logout fails
       setUser(null);
     } finally {
       setIsLoading(false);

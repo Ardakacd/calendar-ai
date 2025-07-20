@@ -1,6 +1,7 @@
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { getUserDateTime } from '../../utils/datetime/get_current_time';
+import { getUserDateTime } from '../utils/datetime/get_current_time';
+import { Event, EventCreate } from '../models/event';
 
 const API_BASE_URL = 'http://localhost:8000';
 
@@ -8,37 +9,8 @@ const API_BASE_URL = 'http://localhost:8000';
 const ACCESS_TOKEN_KEY = 'access_token';
 const REFRESH_TOKEN_KEY = 'refresh_token';
 
-interface TranscribeResponse {
+interface TranscribeMessage {
   message: string;
-  action: 'create' | 'delete' | 'update' | 'query' | 'none';
-  requires_confirmation: boolean;
-  confirmation_data?: {
-    title: string;
-    startDate: string;
-    duration?: number;
-    location?: string;
-    event_id?: string;
-  };
-  event?: {
-    id: string;
-    title: string;
-    date: string;
-    time: string;
-  };
-}
-
-interface Event {
-  id: string;
-  title: string;
-  startDate: string;
-  endDate?: string;
-  duration?: number;
-  location?: string;
-}
-
-interface EventUpdateResponse {
-  message: string;
-  event: Event;
 }
 
 interface User {
@@ -57,6 +29,11 @@ interface RegisterData {
   password: string;
 }
 
+interface PasswordChangeRequest {
+  current_password: string;
+  new_password: string;
+}
+
 interface TokenResponse {
   access_token: string;
   refresh_token: string;
@@ -66,27 +43,20 @@ interface TokenResponse {
   expires_in: number;
 }
 
-interface EventConfirmationData {
-  title: string;
-  startDate: string;
-  duration?: number;
-  location?: string;
-  event_id?: string;
-}
-
-interface ConfirmationRequest {
-  action: 'create' | 'update' | 'delete';
-  event_data: EventConfirmationData;
-}
-
 class CalendarAPI {
   private api = axios.create({
     baseURL: API_BASE_URL,
     timeout: 30000,
   });
 
+  private onAuthFailure?: () => void;
+
   constructor() {
     this.setupInterceptors();
+  }
+
+  setAuthFailureCallback(callback: () => void) {
+    this.onAuthFailure = callback;
   }
 
   private setupInterceptors() {
@@ -114,14 +84,13 @@ class CalendarAPI {
         // 1. Status is 401 (Unauthorized)
         // 2. Request hasn't been retried yet
         // 3. This is not already a refresh request
-        // 4. The error indicates token expiration (check WWW-Authenticate header or specific error message)
+        // 4. The error indicates token expiration (check WWW-Authenticate header)
         if (error.response?.status === 401 && 
             !originalRequest._retry && 
             !originalRequest.url?.includes('/auth/refresh')) {
-          
+              
           // Check if this is likely a token expiration error
           const isTokenExpired = this.isTokenExpiredError(error);
-          
           if (isTokenExpired) {
             originalRequest._retry = true;
 
@@ -138,6 +107,10 @@ class CalendarAPI {
             } catch (refreshError) {
               // Refresh failed, clear tokens and redirect to login
               await this.clearTokens();
+              // Notify AuthContext that authentication failed
+              if (this.onAuthFailure) {
+                this.onAuthFailure();
+              }
               throw refreshError;
             }
           }
@@ -157,8 +130,7 @@ class CalendarAPI {
       await this.storeTokens(tokenData);
       return tokenData;
     } catch (error) {
-      console.error('Error logging in:', error);
-      throw new Error('Failed to login');
+      throw error;
     }
   }
 
@@ -170,8 +142,7 @@ class CalendarAPI {
       await this.storeTokens(tokenData);
       return tokenData;
     } catch (error) {
-      console.error('Error registering:', error);
-      throw new Error('Failed to register');
+      throw error;
     }
   }
 
@@ -183,7 +154,7 @@ class CalendarAPI {
       return response.data;
     } catch (error) {
       console.error('Error refreshing token:', error);
-      throw new Error('Failed to refresh token');
+      throw new Error('Token yenilenemedi');
     }
   }
 
@@ -203,7 +174,17 @@ class CalendarAPI {
       return response.data;
     } catch (error) {
       console.error('Error getting current user:', error);
-      throw new Error('Failed to get current user');
+      throw new Error('Mevcut kullanıcı alınamadı');
+    }
+  }
+
+  async changePassword(passwordRequest: PasswordChangeRequest): Promise<{message: string}> {
+    try {
+      const response = await this.api.patch('/auth/change-password', passwordRequest);
+      return response.data;
+    } catch (error) {
+      console.error('Error changing password:', error);
+      throw new Error('Şifre değiştirilemedi');
     }
   }
 
@@ -231,7 +212,7 @@ class CalendarAPI {
   }
 
   // Calendar methods
-  async transcribeAudio(audioUri: string): Promise<TranscribeResponse> {
+  async transcribeAudio(audioUri: string): Promise<TranscribeMessage> {
     try {
       // Create FormData for multipart upload
       const formData = new FormData();
@@ -240,15 +221,7 @@ class CalendarAPI {
         type: 'audio/m4a', // Adjust based on your audio format
         name: 'audio.m4a'
       } as any);
-      
-
-      const { currentDateTime, weekday, daysInMonth } = getUserDateTime()
-
-
-      formData.append('current_datetime', currentDateTime.toISO());   // e.g. "2025-06-28T13:45:00+03:00"
-      formData.append('weekday', weekday);
-      formData.append('days_in_month', String(daysInMonth));
-
+    
       const response = await this.api.post('/transcribe', formData, {
         headers: {
           'Content-Type': 'multipart/form-data',
@@ -259,7 +232,7 @@ class CalendarAPI {
       
     } catch (error) {
       console.error('Error transcribing audio:', error);
-      throw new Error('Failed to transcribe audio');
+      throw new Error('Ses işlenemedi');
     }
   }
 
@@ -270,66 +243,75 @@ class CalendarAPI {
       return response.data;
     } catch (error) {
       console.error('Error fetching events:', error);
-      throw new Error('Failed to fetch events');
+      throw new Error('Etkinlikler alınamadı');
     }
   }
 
-  async addEvent(event: Omit<Event, 'id'>): Promise<Event> {
+  async addEvent(event: EventCreate): Promise<Event> {
     try {
       const response = await this.api.post('/events', event);
       return response.data;
     } catch (error) {
       console.error('Error adding event:', error);
-      throw new Error('Failed to add event');
+      throw error;
     }
   }
 
-  async updateEvent(id: string, event: Partial<Event>): Promise<EventUpdateResponse> {
+  async updateEvent(id: string, event: Partial<Event>): Promise<Event | null> {
     try {
-      const response = await this.api.put(`/events/${id}`, event);
+      const response = await this.api.patch(`/events/${id}`, event);
       return response.data;
     } catch (error) {
       console.error('Error updating event:', error);
-      throw new Error('Failed to update event');
+      throw error;
     }
   }
 
-  async deleteEvent(eventId: string): Promise<void> {
+  async deleteEvent(eventId: string): Promise<{message: string}> {
     try {
-      await this.api.delete(`/events/${eventId}`);
-    } catch (error) {
-      console.error('Error deleting event:', error);
-      throw new Error('Failed to delete event');
-    }
-  }
-
-  async confirmAction(confirmationRequest: ConfirmationRequest): Promise<{ message: string }> {
-    try {
-      const response = await this.api.post('/transcribe/confirm', confirmationRequest);
+      const response = await this.api.delete(`/events/${eventId}`);
       return response.data;
     } catch (error) {
-      console.error('Error confirming action:', error);
-      throw new Error('Failed to confirm action');
+      console.error('Error deleting event:', error);
+      throw new Error('Etkinlik silinemedi');
+    }
+  }
+
+  async deleteMultipleEvents(eventIds: string[]): Promise<{message: string}> {
+    try {
+      console.log(eventIds);
+      const response = await this.api.delete('/events/bulk/', {
+        params: { event_ids: eventIds },
+        paramsSerializer: {
+          indexes: null
+        }
+      });
+      return response.data;
+    } catch (error) {
+      console.error('Error deleting multiple events:', error);
+      throw new Error('Etkinlikler silinemedi');
+    }
+  }
+
+  async processText(text: string): Promise<any> {
+    try {
+      const {currentDateTime: current_datetime, weekday, daysInMonth: days_in_month} = getUserDateTime()
+      
+      const response = await this.api.post('/assistant', { text, 
+        current_datetime, 
+        weekday, 
+        days_in_month });
+      return response.data;
+    } catch (error) {
+      console.error('Error processing text:', error);
+      throw new Error('Metin işlenemedi');
     }
   }
 
   private isTokenExpiredError(error: any): boolean {
-    // Check if the error response indicates token expiration
-    if (error.response?.data?.detail) {
-      const detail = error.response.data.detail.toLowerCase();
-      return detail.includes('invalid token') || 
-             detail.includes('token has expired');
-    }
-    
-    // Check WWW-Authenticate header for token expiration indication
-    if (error.response?.headers?.['www-authenticate']) {
-      const authHeader = error.response.headers['www-authenticate'].toLowerCase();
-      return authHeader.includes('expired') || authHeader.includes('invalid_token');
-    }
-    
-    // If we can't determine the specific cause, assume it's not a token expiration
-    // This prevents unnecessary refresh attempts for other 401 errors
-    return false;
+    // Check if this is an authentication error by looking for the WWW-Authenticate header
+    // This is set by the backend for all token-related issues (expired, invalid, etc.)
+    return error.response?.headers?.['www-authenticate']?.includes('Bearer');
   }
 }
 
@@ -344,6 +326,7 @@ export const useCalendarAPI = () => {
     logout: calendarAPI.logout.bind(calendarAPI),
     refreshToken: calendarAPI.refreshToken.bind(calendarAPI),
     getCurrentUser: calendarAPI.getCurrentUser.bind(calendarAPI),
+    changePassword: calendarAPI.changePassword.bind(calendarAPI),
     isAuthenticated: calendarAPI.isAuthenticated.bind(calendarAPI),
     getStoredTokens: calendarAPI.getStoredTokens.bind(calendarAPI),
     
@@ -353,6 +336,7 @@ export const useCalendarAPI = () => {
     addEvent: calendarAPI.addEvent.bind(calendarAPI),
     updateEvent: calendarAPI.updateEvent.bind(calendarAPI),
     deleteEvent: calendarAPI.deleteEvent.bind(calendarAPI),
-    confirmAction: calendarAPI.confirmAction.bind(calendarAPI),
+    deleteMultipleEvents: calendarAPI.deleteMultipleEvents.bind(calendarAPI),
+    processText: calendarAPI.processText.bind(calendarAPI),
   };
 }; 

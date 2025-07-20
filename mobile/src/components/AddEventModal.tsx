@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   StyleSheet,
@@ -17,26 +17,24 @@ import {
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { MaterialIcons } from '@expo/vector-icons';
 import NumericInput from './NumericInput';
-
-interface Event {
-  id: string;
-  title: string;
-  startDate: string;
-  endDate?: string;
-  duration?: number;
-  location?: string;
-}
-
+import { EventCreate } from '../models/event';
+import { showErrorToast, showSuccessToast } from '../common/toast/toast-message';
 interface AddEventModalProps {
   visible: boolean;
   onDismiss: () => void;
-  onAdd: (event: Omit<Event, 'id'>) => Promise<void>;
+  onAdd: (event: EventCreate) => Promise<void>;
+  onEdit?: (event: EventCreate) => Promise<void>;
+  initialEvent?: EventCreate;
+  mode?: 'add' | 'edit';
 }
 
 export default function AddEventModal({
   visible,
   onDismiss,
   onAdd,
+  onEdit,
+  initialEvent,
+  mode = 'add',
 }: AddEventModalProps) {
   const [title, setTitle] = useState('');
   const [location, setLocation] = useState('');
@@ -45,30 +43,59 @@ export default function AddEventModal({
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [loading, setLoading] = useState(false);
 
-  const handleAdd = async () => {
-    if (!title.trim()) {
-      Alert.alert('Error', 'Title is required');
+  // Initialize form with initial values when editing
+  useEffect(() => {
+    if (initialEvent && mode === 'edit') {
+      setTitle(initialEvent.title);
+      setLocation(initialEvent.location || '');
+      setDuration(initialEvent.duration ? initialEvent.duration.toString() : '');
+      setDatetime(new Date(initialEvent.startDate));
+    } else {
+      // Reset form for add mode
+      setTitle('');
+      setLocation('');
+      setDuration('');
+      setDatetime(new Date());
+    }
+  }, [initialEvent, mode, visible]);
+
+  const handleSubmit = async () => {
+    const trimmedTitle = title.trim();
+    if (!trimmedTitle) {
+      showErrorToast('Başlık gereklidir');
       return;
     }
 
-    // Duration is optional, but if provided, it must be valid
+    if (trimmedTitle.length > 255) {
+      showErrorToast('Başlık 255 karakterden uzun olamaz');
+      return;
+    }
+
     let durationMinutes: number | undefined;
     if (duration) {
       durationMinutes = parseInt(duration);
       if (durationMinutes <= 0) {
-        Alert.alert('Error', 'Duration must be a positive number in minutes');
+        showErrorToast('Süre 0\'dan büyük olmalıdır');
         return;
       }
     }
 
+    const eventData: EventCreate = {
+      title: trimmedTitle,
+      location: location.trim() || undefined,
+      duration: durationMinutes,
+      startDate: datetime.toISOString(),
+    };
+
     try {
       setLoading(true);
-      await onAdd({
-        title: title.trim(),
-        location: location.trim() || undefined,
-        duration: durationMinutes,
-        startDate: datetime.toISOString(),
-      });
+      
+      if (mode === 'edit' && onEdit && initialEvent) {
+        await onEdit(eventData);
+      } else {
+        await onAdd(eventData);
+        showSuccessToast('Etkinlik başarıyla eklendi');
+      }
       
       // Reset form
       setTitle('');
@@ -77,10 +104,8 @@ export default function AddEventModal({
       setDatetime(new Date());
       
       onDismiss();
-      Alert.alert('Success', 'Event added successfully');
-    } catch (error) {
-      console.error('Error adding event:', error);
-      Alert.alert('Error', 'Failed to add event');
+    } catch (error : any) {
+      showErrorToast(error.response?.data?.detail || 'Etkinlik eklenemedi');
     } finally {
       setLoading(false);
     }
@@ -104,24 +129,26 @@ export default function AddEventModal({
         onDismiss={onDismiss}
         contentContainerStyle={styles.modalContainer}
       >
-        <Card>
+        <Card style={styles.card}>
           <Card.Content>
-            <Title style={styles.title}>Add New Event</Title>
+            <Title style={styles.title}>
+              {mode === 'edit' ? 'Etkinlik Düzenle' : 'Yeni Etkinlik Ekle'}
+            </Title>
             
             <ScrollView>
               <View style={styles.inputContainer}>
-                <Text style={styles.label}>Title *</Text>
+                <Text style={styles.label}>Başlık *</Text>
                 <TextInput
                   mode="outlined"
                   value={title}
                   onChangeText={setTitle}
-                  placeholder="Enter event title"
+                  placeholder="Etkinlik başlığını girin"
                   style={styles.input}
                 />
               </View>
 
               <View style={styles.inputContainer}>
-                <Text style={styles.label}>Date & Time *</Text>
+                <Text style={styles.label}>Tarih & Saat *</Text>
                 <Button
                   mode="outlined"
                   onPress={() => setShowDatePicker(true)}
@@ -143,30 +170,30 @@ export default function AddEventModal({
               <View style={styles.inputContainer}>
                 <View style={styles.labelContainer}>
                   <MaterialIcons name="schedule" size={20} color="#6200ee" />
-                  <Text style={styles.label}>Duration (minutes)</Text>
+                  <Text style={styles.label}>Süre</Text>
                 </View>
                 <NumericInput
                   mode="outlined"
                   value={duration}
                   onValueChange={setDuration}
-                  placeholder="Enter duration in minutes"
+                  placeholder="Etkinlik suresini dakika cinsinden giriniz (opsiyonel)"
                   style={styles.input}
                 />
                 <Text style={styles.helperText}>
-                  Enter the duration in minutes (e.g., 30 for 30 minutes) - Optional
+                  Süre dakika cinsinden giriniz (örn: 30 dakika)
                 </Text>
               </View>
 
               <View style={styles.inputContainer}>
                 <View style={styles.labelContainer}>
                   <MaterialIcons name="location-on" size={20} color="#6200ee" />
-                  <Text style={styles.label}>Location</Text>
+                  <Text style={styles.label}>Konum</Text>
                 </View>
                 <TextInput
                   mode="outlined"
                   value={location}
                   onChangeText={setLocation}
-                  placeholder="Enter event location (optional)"
+                  placeholder="Etkinlik konumunu girin (opsiyonel)"
                   style={styles.input}
                 />
               </View>
@@ -179,16 +206,16 @@ export default function AddEventModal({
                 style={[styles.button, styles.cancelButton]}
                 disabled={loading}
               >
-                Cancel
+                İptal Et
               </Button>
               <Button
                 mode="contained"
-                onPress={handleAdd}
+                onPress={handleSubmit}
                 style={[styles.button, styles.addButton]}
                 loading={loading}
                 disabled={loading}
               >
-                Add Event
+                {mode === 'edit' ? 'Etkinlik Güncelle' : 'Etkinlik Ekle'}
               </Button>
             </View>
           </Card.Content>
@@ -202,8 +229,23 @@ const styles = StyleSheet.create({
   modalContainer: {
     flex: 1,
     justifyContent: 'center',
+    alignItems: 'center',
     padding: 20,
-    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    backgroundColor: 'transparent',
+  },
+  card: {
+    width: '100%',
+    maxWidth: 400,
+    borderRadius: 16,
+    elevation: 8,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 4,
+    },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    backgroundColor: '#ffffff',
   },
   title: {
     textAlign: 'center',

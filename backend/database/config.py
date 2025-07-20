@@ -8,6 +8,7 @@ from sqlalchemy_utils import create_database, database_exists
 from sqlalchemy.exc import SQLAlchemyError
 from .models.event import Base
 from config import settings
+from contextlib import asynccontextmanager
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -89,7 +90,21 @@ async def get_async_db():
             await session.rollback()
             raise
         except Exception as e:
-            print(e)
+            logger.error(f"Unexpected async database error: {e}")
+            await session.rollback()
+            raise
+
+@asynccontextmanager
+async def get_async_db_context_manager():
+    """Get async database session with automatic cleanup and error handling"""
+    async with AsyncSessionLocal() as session:
+        try:
+            yield session
+        except SQLAlchemyError as e:
+            logger.error(f"Async database error: {e}")
+            await session.rollback()
+            raise
+        except Exception as e:
             logger.error(f"Unexpected async database error: {e}")
             await session.rollback()
             raise
@@ -118,13 +133,6 @@ def init_db():
             logger.info("Tables created successfully")
         else:
             logger.info("Tables already exist, skipping creation")
-        
-        # Run datetime column migration if needed
-        try:
-            from .migrate_datetime import migrate_datetime_column
-            migrate_datetime_column()
-        except Exception as e:
-            logger.warning(f"Datetime migration failed (this might be expected): {e}")
         
         # Log pool status
         pool_status = get_pool_status()
