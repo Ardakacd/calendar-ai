@@ -49,7 +49,39 @@ class EventService:
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Etkinlik oluşturulamadı, lütfen daha sonra tekrar deneyiniz."
             )
-     
+    async def create_events(self, token: str, event_data: List[EventCreate]) -> List[Event]:
+        """
+        Create multiple events for the authenticated user.
+        
+        Args:
+            token: JWT token for user authentication    
+            event_data: List of event data to create
+            
+        Returns:
+            List of created events
+            
+        Raises:
+            HTTPException: If user not authenticated, conflict found, or creation fails
+        """
+        try:
+            # Extract user_id from token
+            user_id = get_user_id_from_token(token)
+
+            logger.info(f"EventService: Creating multiple events for user {user_id}")
+
+            result = await self.event_adapter.create_events(user_id, event_data)
+
+            logger.info(f"EventService: Events created successfully for user {user_id}")
+            return result
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"EventService: Unexpected error creating events: {str(e)}", exc_info=True)
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Etkinlikler oluşturulamadı, lütfen daha sonra tekrar deneyiniz."
+            )
+    
     async def get_event(self, token: str, event_id: str) -> Event:
         """
         Get a specific event by ID.

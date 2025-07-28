@@ -17,7 +17,7 @@ class FlowState(TypedDict):
     user_id: int
     route: dict
     create_event_data: dict
-    create_conflict_event: Optional[Event]
+    create_conflict_events: Optional[List[Event]]
     list_date_range_data: dict
     list_date_range_filtered_events: List[Event]
     list_final_filtered_events: List[Event]

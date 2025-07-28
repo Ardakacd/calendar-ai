@@ -42,6 +42,34 @@ async def create_event(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Bir hata oluştu. Lütfen daha sonra tekrar deneyiniz."
         )
+    
+@router.post("/bulk", response_model=List[Event])
+async def create_events(
+        event_data: List[EventCreate],
+        credentials: HTTPAuthorizationCredentials = Depends(security),
+        event_service: EventService = Depends(get_event_service)
+):
+    """
+    Create multiple events for the authenticated user.
+    
+    Returns the created event details.
+    """
+    try:
+        token = credentials.credentials
+        
+        result = await event_service.create_events(token, event_data)
+        
+        return result
+
+    except HTTPException as e:
+        logger.error(f"HTTP error during event creation: {e.detail}")
+        raise
+    except Exception as e:
+        logger.error(f"Unexpected error during event creation: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Bir hata oluştu. Lütfen daha sonra tekrar deneyiniz."
+        )
 
 
 @router.get("/{event_id}", response_model=Event)

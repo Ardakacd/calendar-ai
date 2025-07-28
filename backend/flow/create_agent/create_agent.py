@@ -5,15 +5,12 @@ from .prompt import CREATE_EVENT_AGENT_PROMPT
 from ..llm import model
 from tenacity import retry, stop_after_attempt, wait_random_exponential, retry_if_exception_type
 from openai import OpenAIError, RateLimitError
-from langgraph.graph import END
 import json
 from typing import Optional
 from adapter.event_adapter import EventAdapter
 from database import get_async_db_context_manager
 from models import Event
-import traceback
-from datetime import timedelta, datetime, timezone
-from zoneinfo import ZoneInfo
+from datetime import timedelta, datetime
 
 retryable_exceptions = (OpenAIError, RateLimitError)
 
@@ -41,19 +38,18 @@ async def create_agent(state: FlowState):
         create_event_data = json.loads(response[0].content)
         state['create_event_data'] = create_event_data
     except Exception as e:
-        state['create_event_data'] = {"message": "Bir hata olustu. Lutfen daha sonra tekrar deneyiniz."}
+        state['create_event_data'] = None
     
     return state
 
 def create_action(state: FlowState):
-    if "function" in state['create_event_data'] and "arguments" in state['create_event_data']:
+    if isinstance(state['create_event_data'], list):
         return "check_event_conflict"
     else:
         return "create_message_handler"
         
 def create_message_handler(state: FlowState):
-    message = state['create_event_data'].get('message', 'Bir hata olustu. Lutfen daha sonra tekrar deneyiniz.')
-    return {"messages": [AIMessage(content=message)]}
+    return {"messages": [AIMessage(content='Bir hata olustu. Lutfen daha sonra tekrar deneyiniz.')]}
 
 async def check_event_conflict(state: FlowState) -> Optional[Event]:
     """
@@ -62,11 +58,16 @@ async def check_event_conflict(state: FlowState) -> Optional[Event]:
     try:
         async with get_async_db_context_manager() as db:
             adapter = EventAdapter(db)
-            start_date = datetime.fromisoformat(state['create_event_data']['arguments']['startDate'])
-            duration = state['create_event_data']['arguments'].get('duration', 0)
-            end_date = start_date + timedelta(minutes=duration)
-            conflict_event = await adapter.check_event_conflict(state['user_id'], start_date, end_date)
-            state['create_conflict_event'] = conflict_event
+            conflict_events = []
+            for event_data in state['create_event_data']:
+                start_date = datetime.fromisoformat(event_data.get('arguments', {}).get('startDate'))
+                duration = event_data.get('arguments', {}).get('duration', 0)
+                end_date = start_date + timedelta(minutes=duration)
+                if start_date:
+                    conflict_event = await adapter.check_event_conflict(state['user_id'], start_date, end_date)
+                    if conflict_event:
+                        conflict_events.append(conflict_event)
+            state['create_conflict_events'] = conflict_events
             state['is_success'] = True    
             state['messages'].append(AIMessage(content="Asagidaki etkinligi olusturmak istediginize emin misiniz?"))
             return state

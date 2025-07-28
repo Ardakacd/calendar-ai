@@ -257,6 +257,16 @@ class CalendarAPI {
     }
   }
 
+  async addEvents(events: EventCreate[]): Promise<Event[]> {
+    try {
+      const response = await this.api.post('/events/bulk', events);
+      return response.data;
+    } catch (error) {
+      console.error('Error adding events:', error);
+      throw error;
+    }
+  }
+
   async updateEvent(id: string, event: Partial<Event>): Promise<Event | null> {
     try {
       const response = await this.api.patch(`/events/${id}`, event);
@@ -334,6 +344,7 @@ export const useCalendarAPI = () => {
     transcribeAudio: calendarAPI.transcribeAudio.bind(calendarAPI),
     getEvents: calendarAPI.getEvents.bind(calendarAPI),
     addEvent: calendarAPI.addEvent.bind(calendarAPI),
+    addEvents: calendarAPI.addEvents.bind(calendarAPI),
     updateEvent: calendarAPI.updateEvent.bind(calendarAPI),
     deleteEvent: calendarAPI.deleteEvent.bind(calendarAPI),
     deleteMultipleEvents: calendarAPI.deleteMultipleEvents.bind(calendarAPI),

@@ -91,6 +91,33 @@ class EventAdapter:
             logger.error(f"Unexpected error creating event: {e}")
             await self.db.rollback()
             raise DatabaseError(f"Unexpected error creating event: {e}")
+        
+    async def create_events(self, user_id: int, event_data: List[EventCreate]) -> List[Event]:
+        """
+        Create multiple events.
+        
+        Args:
+            event_data: List of event data to create
+        
+        Returns:
+            List of created events
+            
+        Raises:
+            DatabaseError: If there's a database error
+        """
+        try:
+            db_events = [self._convert_to_db_model(user_id, event) for event in event_data]
+            self.db.add_all(db_events)
+            await self.db.commit()
+            
+            return [self._convert_to_model(db_event) for db_event in db_events] 
+        
+        except SQLAlchemyError as e:
+            logger.error(f"Database error creating events: {e}")
+            await self.db.rollback()
+            raise DatabaseError(f"Failed to create events: {e}")
+        except Exception as e:
+            logger.error(f"Unexpected error creating events: {e}")
     
     async def get_event_by_event_id(self, event_id: str) -> Event:
         """
