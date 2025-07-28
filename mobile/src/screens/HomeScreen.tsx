@@ -75,7 +75,6 @@ export default function HomeScreen() {
   const scrollViewRef = useRef<ScrollView>(null);
   const inputRef = useRef<TextInput>(null);
   
-
   const addMessage = (type: 'user' | 'ai', content: string, eventData?: EventCreate[] | EventCreate, events?: Event[], responseType: 'text' | 'list' | 'delete' | 'create' | 'update' = 'text', updateArguments?: any, conflictEvent?: Event) => {
     const newMessage: ChatMessage = {
       id: Date.now().toString(),

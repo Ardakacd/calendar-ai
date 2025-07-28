@@ -64,7 +64,7 @@ export default function CreateComponent({ eventData, onCreate, onCompleted, conf
     
     return startFormatted;
   };
-
+      
   const handleEdit = (index: number) => {
     setEditingIndex(index);
     setShowEditModal(true);
@@ -270,6 +270,8 @@ export default function CreateComponent({ eventData, onCreate, onCompleted, conf
           </Card.Content>
         </Card>
       ))}
+
+      
 
       <View style={styles.actionButtons}>
         <Button
