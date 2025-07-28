@@ -17,7 +17,7 @@ class FlowState(TypedDict):
     user_id: int
     route: dict
     create_event_data: dict
-    create_conflict_event: Optional[Event] | bool
+    create_conflict_event: Optional[Event]
     list_date_range_data: dict
     list_date_range_filtered_events: List[Event]
     list_final_filtered_events: List[Event]
@@ -28,4 +28,5 @@ class FlowState(TypedDict):
     update_date_range_filtered_events: List[Event]
     update_final_filtered_events: List[Event]
     update_arguments: dict
+    update_conflict_event: Optional[Event]
     is_success: Annotated[bool, merge_is_success]

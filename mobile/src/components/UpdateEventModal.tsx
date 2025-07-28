@@ -98,14 +98,20 @@ export default function UpdateEventModal({
   };
 
   const onDateChange = (event: any, selectedDate?: Date) => {
-    setShowDatePicker(false);
     if (selectedDate) {
       setDatetime(selectedDate);
     }
   };
 
   const formatDateTime = (date: Date) => {
-    return date.toLocaleString();
+    return date.toLocaleString('tr-TR', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false
+    });
   };
 
   return (
@@ -146,6 +152,7 @@ export default function UpdateEventModal({
                     value={datetime}
                     mode="datetime"
                     display="default"
+                    locale="tr-TR"
                     onChange={onDateChange}
                   />
                 )}
@@ -171,7 +178,7 @@ export default function UpdateEventModal({
               <View style={styles.inputContainer}>
                 <View style={styles.labelContainer}>
                   <MaterialIcons name="location-on" size={20} color="#6200ee" />
-                  <Text style={styles.label}>Konu</Text>
+                  <Text style={styles.label}>Konum</Text>
                 </View>
                 <TextInput
                   mode="outlined"

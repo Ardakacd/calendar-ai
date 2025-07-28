@@ -51,6 +51,7 @@ interface ChatMessage {
   events?: Event[];
   updateArguments?: any;
   responseType?: 'text' | 'list' | 'delete' | 'create' | 'update';
+  conflictEvent?: Event; // Add conflict event
 }
 
 export default function HomeScreen() {
@@ -76,7 +77,7 @@ export default function HomeScreen() {
   const inputRef = useRef<TextInput>(null);
   
 
-  const addMessage = (type: 'user' | 'ai', content: string, eventData?: EventCreate, events?: Event[], responseType: 'text' | 'list' | 'delete' | 'create' | 'update' = 'text', updateArguments?: any) => {
+  const addMessage = (type: 'user' | 'ai', content: string, eventData?: EventCreate, events?: Event[], responseType: 'text' | 'list' | 'delete' | 'create' | 'update' = 'text', updateArguments?: any, conflictEvent?: Event) => {
     const newMessage: ChatMessage = {
       id: Date.now().toString(),
       type,
@@ -86,6 +87,7 @@ export default function HomeScreen() {
       events,
       updateArguments,
       responseType,
+      conflictEvent,
     };
     setMessages(prev => [...prev, newMessage]);
   };
@@ -123,10 +125,10 @@ export default function HomeScreen() {
         addMessage('ai', response.message || 'Silinecek etkinlikleri seçin:', undefined, response.events, 'delete')
         setHasUncompletedComponent(true);
       } else if (response && typeof response === 'object' && response.type === 'create' && response.event) {
-        addMessage('ai', response.message || 'Lütfen etkinlik detaylarını gözden geçirin:', response.event, undefined, 'create')
+        addMessage('ai', response.message || 'Lütfen etkinlik detaylarını gözden geçirin:', response.event, undefined, 'create', undefined, response.conflict_event)
         setHasUncompletedComponent(true);
       } else if (response && typeof response === 'object' && response.type === 'update' && response.events) {
-        addMessage('ai', response.message || 'Güncellenecek etkinlikleri seçin:', undefined, response.events, 'update', response.update_arguments)
+        addMessage('ai', response.message || 'Güncellenecek etkinlikleri seçin:', undefined, response.events, 'update', response.update_arguments, response.update_conflict_event)
         setHasUncompletedComponent(true);
       } else {
         // Handle string responses or other types
@@ -232,6 +234,7 @@ export default function HomeScreen() {
               eventData={message.eventData}
               onCreate={handleCreateEvent}
               onCompleted={markComponentAsCompleted}
+              conflictEvent={message.conflictEvent}
             />
           )}
 
@@ -241,6 +244,7 @@ export default function HomeScreen() {
               updateArguments={message.updateArguments || {}}
               onUpdate={handleUpdateEvent}
               onCompleted={markComponentAsCompleted}
+              conflictEvent={message.conflictEvent}
             />
           )}
 

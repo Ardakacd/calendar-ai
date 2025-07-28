@@ -67,30 +67,9 @@ async def check_event_conflict(state: FlowState) -> Optional[Event]:
             end_date = start_date + timedelta(minutes=duration)
             conflict_event = await adapter.check_event_conflict(state['user_id'], start_date, end_date)
             state['create_conflict_event'] = conflict_event
-            if conflict_event is None:  
-                state['is_success'] = True    
-                state['messages'].append(AIMessage(content="Asagidaki etkinligi olusturmak istediginize emin misiniz?"))
+            state['is_success'] = True    
+            state['messages'].append(AIMessage(content="Asagidaki etkinligi olusturmak istediginize emin misiniz?"))
             return state
     except Exception as e:
-        state['create_conflict_event'] = True # when there is an error, we return True to indicate an error
+        state['messages'].append(AIMessage(content="Bir hata olustu. Lutfen daha sonra tekrar deneyiniz."))
         return state
-    
-def create_conflict_action(state: FlowState):
-    if state['create_conflict_event'] is None:
-        return END
-    else:
-        return "create_conflict_message_handler"
-    
-def create_conflict_message_handler(state: FlowState):
-    conflict_event = state['create_conflict_event']
-    if conflict_event == True:
-        return {"messages": [AIMessage(content="Bir hata olustu. Lutfen daha sonra tekrar deneyiniz.")]}
-    else:
-        startDate_local = conflict_event.startDate.astimezone(ZoneInfo("Europe/Istanbul"))
-        start_date_str = startDate_local.strftime("%d.%m.%Y %H:%M")
-        endDate_local = conflict_event.endDate.astimezone(ZoneInfo("Europe/Istanbul"))
-        end_date_str = endDate_local.strftime("%d.%m.%Y %H:%M")
-        
-        message = f"Bu zaman aralığında çakışan bir etkinliğiniz var: '{conflict_event.title}' ({start_date_str} - {end_date_str})"
-        
-        return {"messages": [AIMessage(content=message)]}

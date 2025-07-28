@@ -136,16 +136,7 @@ async def update_filter_event_agent(state: FlowState):
                                     end_date,
                                     exclude_event_id=event_ids_to_exclude[0] if len(event_ids_to_exclude) == 1 else None
                                 )
-                                
-                                if conflict_event:
-                                    startDate_local = conflict_event.startDate.astimezone(ZoneInfo("Europe/Istanbul"))
-                                    start_date_str = startDate_local.strftime("%d.%m.%Y %H:%M")
-                                    endDate_local = conflict_event.endDate.astimezone(ZoneInfo("Europe/Istanbul"))
-                                    end_date_str = endDate_local.strftime("%d.%m.%Y %H:%M")
-                                    
-                                    message = f"Bu zaman aralığında çakışan bir etkinliğiniz var: '{conflict_event.title}' ({start_date_str} - {end_date_str})"
-                                    state['messages'].append(AIMessage(content=message))
-                                    return state
+                                state['update_conflict_event'] = conflict_event
                         except Exception as e:
                             state['messages'].append(AIMessage(content="Bir hata oluştu. Lütfen daha sonra tekrar deneyiniz."))
                             return state

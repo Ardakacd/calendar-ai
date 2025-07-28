@@ -32,6 +32,7 @@ export default function DeleteComponent({ events, onDelete, onCompleted }: Delet
       day: 'numeric',
       hour: '2-digit',
       minute: '2-digit',
+      hour12: false
     });
   };
 

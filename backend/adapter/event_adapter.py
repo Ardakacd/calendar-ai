@@ -275,21 +275,13 @@ class EventAdapter:
             
             # Handle endDate and duration logic
             logger.info(f"Update event {event_id}: duration={event_data.duration}, startDate={event_data.startDate}")
-            start_date = event_data.startDate if event_data.startDate is not None else db_event.startDate
+            
             if event_data.duration is not None or event_data.startDate is not None:
+                start_date = event_data.startDate if event_data.startDate is not None else db_event.startDate
                 duration = event_data.duration if event_data.duration is not None else 0
                 update_data['endDate'] = start_date + timedelta(minutes=duration)
             
             if update_data:
-                if update_data.get('endDate') is not None:
-                    conflict_event = await self.check_event_conflict(user_id, start_date, update_data.get('endDate'), event_id)
-            
-                if conflict_event:
-                    logger.warning(f"EventService: Conflict detected for user {user_id}")
-                    raise HTTPException(
-                        status_code=status.HTTP_409_CONFLICT,
-                        detail=f"Etkinlik mevcut bir etkinlikle çakışıyor: {conflict_event.title}"
-                    )
                 stmt = update(EventModel).where(EventModel.event_id == event_id).values(**update_data).returning(EventModel)
                 result = await self.db.execute(stmt)
                 db_event = result.scalar_one_or_none()
@@ -442,7 +434,7 @@ class EventAdapter:
             if exclude_event_id:
                 conditions.append(EventModel.event_id != exclude_event_id)
             
-            stmt = select(EventModel).where(*conditions).order_by(EventModel.startDate.asc())
+            stmt = select(EventModel).where(*conditions).limit(1)
             result = await self.db.execute(stmt)
             conflicting_event = result.scalar_one_or_none()
             

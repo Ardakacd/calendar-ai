@@ -2,11 +2,11 @@ import React, { useState, useEffect } from 'react';
 import {
   View,
   StyleSheet,
-  ScrollView,
   Alert,
+  ScrollView,
 } from 'react-native';
-import { Text, Card, FAB, ActivityIndicator, IconButton } from 'react-native-paper';
-import { Calendar, DateData } from 'react-native-calendars';
+import { Text, FAB, ActivityIndicator, IconButton } from 'react-native-paper';
+import { Agenda, DateData, LocaleConfig } from 'react-native-calendars';
 import { MaterialIcons } from '@expo/vector-icons';
 import * as Localization from 'expo-localization';
 import { useCalendarAPI } from '../services/api';
@@ -16,22 +16,42 @@ import { Event, EventCreate } from '../models/event';
 import { formatDuration, formatLocation } from '../common/formatting';
 import { showErrorToast, showSuccessToast } from '../common/toast/toast-message';
 
-interface MarkedDates {
-  [date: string]: {
-    marked: boolean;
-    dotColor?: string;
-    textColor?: string;
-    backgroundColor?: string;
-    selected?: boolean;
-    selectedColor?: string;
-    selectedTextColor?: string;
-  };
+// Configure Turkish locale for calendar
+LocaleConfig.locales['tr'] = {
+  monthNames: [
+    'Ocak',
+    'Şubat', 
+    'Mart',
+    'Nisan',
+    'Mayıs',
+    'Haziran',
+    'Temmuz',
+    'Ağustos',
+    'Eylül',
+    'Ekim',
+    'Kasım',
+    'Aralık'
+  ],
+  monthNamesShort: ['Oca', 'Şub', 'Mar', 'Nis', 'May', 'Haz', 'Tem', 'Ağu', 'Eyl', 'Eki', 'Kas', 'Ara'],
+  dayNames: ['Pazar', 'Pazartesi', 'Salı', 'Çarşamba', 'Perşembe', 'Cuma', 'Cumartesi'],
+  dayNamesShort: ['Paz', 'Pzt', 'Sal', 'Çar', 'Per', 'Cum', 'Cmt'],
+  today: 'Bugün'
+};
+LocaleConfig.defaultLocale = 'tr';
+
+interface AgendaItems {
+  [date: string]: Event[];
+}
+
+interface TimeSlot {
+  hour: number;
+  events: Event[];
 }
 
 export default function CalendarScreen() {
   const [events, setEvents] = useState<Event[]>([]);
-  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
-  const [markedDates, setMarkedDates] = useState<MarkedDates>({});
+  const [agendaItems, setAgendaItems] = useState<AgendaItems>({});
+  const [allEventsByDate, setAllEventsByDate] = useState<AgendaItems>({}); // Store all events by date for timeline
   const [loading, setLoading] = useState(true);
   const [updateModalVisible, setUpdateModalVisible] = useState(false);
   const [selectedEvent, setSelectedEvent] = useState<Event | null>(null);
@@ -45,8 +65,8 @@ export default function CalendarScreen() {
   }, []);
 
   useEffect(() => {
-    updateMarkedDates(events, selectedDate);
-  }, [events, selectedDate]);
+    updateAgendaItems(events);
+  }, [events]);
 
   const loadEvents = async () => {
     try {
@@ -60,66 +80,96 @@ export default function CalendarScreen() {
     }
   };
 
-  const updateMarkedDates = (eventList: Event[], selectedDateToUse: string) => {
-    const marked: MarkedDates = {};
+  const updateAgendaItems = (eventList: Event[]) => {
+    const items: AgendaItems = {};
     
-    // First, mark all dates with events
+    // Group events by date
     eventList.forEach(event => {
       const dateKey = event.startDate.split('T')[0];
-      if (marked[dateKey]) {
-        marked[dateKey].marked = true;
-      } else {
-        marked[dateKey] = {
-          marked: true,
-          dotColor: '#6200ee',
-        };
+      if (!items[dateKey]) {
+        items[dateKey] = [];
+      }
+      items[dateKey].push(event);
+    });
+
+    // Sort events within each date by start time
+    Object.keys(items).forEach(dateKey => {
+      items[dateKey].sort((a, b) => {
+        return new Date(a.startDate).getTime() - new Date(b.startDate).getTime();
+      });
+    });
+
+    // Store all events by date for timeline rendering
+    setAllEventsByDate(items);
+
+    // Create timeline items - one item per day that represents the full timeline
+    const timelineItems: AgendaItems = {};
+    Object.keys(items).forEach(dateKey => {
+      if (items[dateKey].length > 0) {
+        // Use the first event as the representative item for the day
+        // The renderTimelineItem function will get all events for the day
+        timelineItems[dateKey] = [items[dateKey][0]];
       }
     });
 
-    // Always highlight the selected date, regardless of whether it has events
-    if (marked[selectedDateToUse]) {
-      marked[selectedDateToUse].selected = true;
-      marked[selectedDateToUse].selectedColor = '#6200ee';
-      marked[selectedDateToUse].selectedTextColor = '#ffffff';
-    } else {
-      marked[selectedDateToUse] = {
-        selected: true,
-        selectedColor: '#6200ee',
-        selectedTextColor: '#ffffff',
-        marked: false,
-      };
+    // Add empty arrays for dates in current month and next/previous months to prevent loading issues
+    const today = new Date();
+    const currentYear = today.getFullYear();
+    const currentMonth = today.getMonth() + 1;
+    
+    // Generate empty dates for current month and 2 months before/after
+    for (let monthOffset = -2; monthOffset <= 2; monthOffset++) {
+      const date = new Date(currentYear, currentMonth - 1 + monthOffset, 1);
+      const year = date.getFullYear();
+      const month = date.getMonth() + 1;
+      const daysInMonth = new Date(year, month, 0).getDate();
+      
+      for (let day = 1; day <= daysInMonth; day++) {
+        const dateKey = `${year}-${month.toString().padStart(2, '0')}-${day.toString().padStart(2, '0')}`;
+        if (!timelineItems[dateKey]) {
+          timelineItems[dateKey] = [];
+        }
+      }
     }
 
-    setMarkedDates(marked);
+    // Store the timeline items for Agenda
+    setAgendaItems(timelineItems);
   };
 
-  const onDayPress = (day: DateData) => {
-    const dateString = day.dateString;
-    setSelectedDate(dateString);
+  const loadItemsForMonth = (month: any) => {
+    // This function is called by Agenda to load items for a specific month
+    // We need to ensure that for any date without events, we add an empty array
+    // to prevent infinite loading
+    
+    const year = month.year;
+    const monthNum = month.month;
+    const daysInMonth = new Date(year, monthNum, 0).getDate();
+    
+    setTimeout(() => {
+      const newItems = { ...agendaItems };
+      
+      // Add empty arrays for all dates in the month that don't have events
+      for (let day = 1; day <= daysInMonth; day++) {
+        const dateKey = `${year}-${monthNum.toString().padStart(2, '0')}-${day.toString().padStart(2, '0')}`;
+        if (!newItems[dateKey]) {
+          newItems[dateKey] = [];
+        }
+      }
+      
+      setAgendaItems(newItems);
+    }, 100);
   };
 
-  const getEventsForDate = (date: string) => {
-    const filteredEvents = events.filter(event => {
-      return event.startDate.split('T')[0] === date
-    });
-    
-    // Sort events by startDate in ascending order
-    const sortedEvents = filteredEvents.sort((a, b) => {
-      return new Date(a.startDate).getTime() - new Date(b.startDate).getTime();
-    });
-    
-    return sortedEvents;
-  };
   const formatTime = (datetime: string) => {
     try {
       const date = new Date(datetime);
       if (isNaN(date.getTime())) {
         return 'Invalid time';
       }
-      return date.toLocaleTimeString(Localization.locale || 'en-US', {
+      return date.toLocaleTimeString('tr-TR', {
         hour: '2-digit',
         minute: '2-digit',
-        hour12: true
+        hour12: false
       });
     } catch (error) {
       console.error('Error formatting time:', error, datetime);
@@ -143,10 +193,7 @@ export default function CalendarScreen() {
             event.id === eventId ? response : event
           )
         );
-        
       }
-      
-
     } catch (error) {
       console.error('Error updating event:', error);
       throw error;
@@ -196,114 +243,153 @@ export default function CalendarScreen() {
     }
   };
 
-  const selectedDateEvents = getEventsForDate(selectedDate);
+  const renderTimelineItem = (item: Event) => {
+    // We'll render all events for the day in a timeline format
+    // This function will be called once per day, so we need to get all events for that day
+    const dateKey = item.startDate.split('T')[0];
+    const dayEvents = allEventsByDate[dateKey] || []; // Use allEventsByDate for timeline rendering
+    
+    // Create timeline with hour slots
+    const timelineSlots = Array.from({ length: 24 }, (_, hour) => {
+      const eventsAtThisHour = dayEvents.filter(event => {
+        const eventHour = new Date(event.startDate).getHours();
+        return eventHour === hour;
+      });
+      
+      return {
+        hour,
+        events: eventsAtThisHour
+      };
+    });
+    
+    return (
+      <View style={styles.timelineContainer}>
+        <ScrollView style={styles.timelineScroll} showsVerticalScrollIndicator={false}>
+          {timelineSlots.map(slot => (
+            <View key={slot.hour} style={styles.timeSlot}>
+              {/* Hour label */}
+              <View style={styles.hourLabelContainer}>
+                <Text style={styles.hourLabel}>
+                  {slot.hour.toString().padStart(2, '0')}:00
+                </Text>
+              </View>
+              
+              {/* Events for this hour */}
+              <View style={styles.eventsContainer}>
+                {slot.events.length === 0 ? (
+                  <View style={styles.emptyHourSlot} />
+                ) : (
+                  slot.events.map(event => {
+                    const startDate = new Date(event.startDate);
+                    // Don't add default duration - use actual duration or 0
+                    const durationInMinutes = event.duration || 0;
+                    const endDate = new Date(startDate.getTime() + durationInMinutes * 60000);
+                    
+                    return (
+                      <View key={event.id} style={styles.eventCard}>
+                        <View style={styles.eventHeader}>
+                          <View style={styles.eventTitleContainer}>
+                            <Text style={styles.eventTitle}>{event.title}</Text>
+                            <View style={styles.eventTimeContainer}>
+                              <MaterialIcons name="access-time" size={14} color="#6200ee" />
+                              <Text style={styles.eventTime}>
+                                {durationInMinutes > 0 
+                                  ? `${formatTime(event.startDate)} - ${formatTime(endDate.toISOString())}`
+                                  : formatTime(event.startDate)
+                                }
+                              </Text>
+                            </View>
+                          </View>
+                          <View style={styles.eventActions}>
+                            <IconButton
+                              icon={() => <MaterialIcons name="edit" size={18} color="#6200ee" />}
+                              onPress={() => handleUpdateEvent(event)}
+                              style={styles.actionButton}
+                            />
+                            <IconButton
+                              icon={() => <MaterialIcons name="delete" size={18} color="#ff4444" />}
+                              onPress={() => handleDeleteEvent(event.id)}
+                              style={styles.actionButton}
+                            />
+                          </View>
+                        </View>
+                        
+                        <View style={styles.eventDetails}>
+                          <View style={styles.eventDetailRow}>
+                            <MaterialIcons name="timer" size={16} color="#666" />
+                            <Text style={styles.eventDetailText}>{formatDuration(event.duration)}</Text>
+                          </View>
+
+                          <View style={styles.eventDetailRow}>
+                            <MaterialIcons name="location-on" size={16} color="#666" />
+                            <Text style={styles.eventDetailText}>{formatLocation(event.location)}</Text>
+                          </View>
+                        </View>
+                      </View>
+                    );
+                  })
+                )}
+              </View>
+            </View>
+          ))}
+        </ScrollView>
+      </View>
+    );
+  };
+
+  const renderEmptyDate = () => {
+    return (
+      <View style={styles.emptyDateContainer}>
+        <MaterialIcons name="event-busy" size={48} color="#ccc" style={styles.emptyIcon} />
+        <Text style={styles.emptyText}>Bu tarih için planlanmış etkinlik yok</Text>
+      </View>
+    );
+  };
 
   return (
     <View style={styles.container}>
-      <Calendar
-        onDayPress={onDayPress}
-        markedDates={markedDates}
-        theme={{
-          todayTextColor: '#6200ee',
-          dayTextColor: '#2d4150',
-          textDisabledColor: '#d9e1e8',
-          dotColor: '#6200ee',
-          selectedDotColor: '#ffffff',
-          arrowColor: '#6200ee',
-          monthTextColor: '#2d4150',
-          indicatorColor: '#6200ee',
-          textDayFontWeight: '300',
-          textMonthFontWeight: 'bold',
-          textDayHeaderFontWeight: '300',
-          textDayFontSize: 16,
-          textMonthFontSize: 16,
-          textDayHeaderFontSize: 13,
-        }}
-      />
-
-      <ScrollView style={styles.eventsContainer}>
-        <View style={styles.dateHeader}>
-          <Text style={styles.dateText}>
-            {new Date(selectedDate).toLocaleDateString(Localization.locale || 'en-US', {
-              weekday: 'long',
-              year: 'numeric',
-              month: 'long',
-              day: 'numeric',
-            })}
-          </Text>
-          <Text style={styles.eventCount}>
-            {selectedDateEvents.length} event{selectedDateEvents.length !== 1 ? 's' : ''}
-          </Text>
+      {loading ? (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator animating={loading} color="#6200ee" size="large" />
         </View>
-
-        {loading ? (
-          <ActivityIndicator animating={loading} color="#6200ee" style={styles.loadingIndicator} />
-        ) : selectedDateEvents.length === 0 ? (
-          <Card style={styles.emptyCard}>
-            <Card.Content style={styles.emptyCardContent}>
-              <MaterialIcons name="event-busy" size={48} color="#ccc" style={styles.emptyIcon} />
-              <Text style={styles.emptyText}>No events scheduled for this date</Text>
-              <Text style={styles.emptySubtext}>Tap the + button to add an event</Text>
-            </Card.Content>
-          </Card>
-        ) : (
-          <>
-            {selectedDateEvents.map(event => (
-              <Card key={event.id} style={styles.eventCard}>
-                <Card.Content>
-                  <View style={styles.eventHeader}>
-                    <Text style={styles.eventTitle}>{event.title}</Text>
-                    <View style={styles.eventTimeContainer}>
-                      <MaterialIcons name="access-time" size={16} color="#6200ee" />
-                      <Text style={styles.eventTime}>{formatTime(event.startDate)}</Text>
-                    </View>
-                  </View>
-                 
-                   
-                  <View style={styles.eventBottomContainer}>
-                    <View style={styles.eventDetailsContainer}>
-                    
-                      <View style={styles.eventDetailRow}>
-                        <MaterialIcons name="timer" size={16} color="#666" />
-                        <Text style={styles.eventDetailText}>{formatDuration(event.duration)}</Text>
-                      </View>
-
-                      
-                      <View style={styles.eventDetailRow}>
-                        <MaterialIcons name="location-on" size={16} color="#666" />
-                        <Text style={styles.eventDetailText}>{formatLocation(event.location)}</Text>
-                      </View>
-                    
-                    
-                    </View>
-                  
-                  <View style={styles.eventActions}>
-                    <IconButton
-                      icon={() => <MaterialIcons name="edit" size={20} color="#6200ee" />}
-                      onPress={() => handleUpdateEvent(event)}
-                      style={styles.actionButton}
-                    />
-                    <IconButton
-                      icon={() => <MaterialIcons name="delete" size={20} color="#ff4444" />}
-                      onPress={() => handleDeleteEvent(event.id)}
-                      style={styles.actionButton}
-                    />
-                  </View>
-                  </View>
-                </Card.Content>
-              </Card>
-            ))}
-            <View style={styles.bottomSpacer} />
-          </>
-        )}
-      </ScrollView>
+      ) : (
+        <Agenda
+          items={agendaItems}
+          selected={new Date().toISOString().split('T')[0]}
+          renderItem={renderTimelineItem}
+          renderEmptyDate={renderEmptyDate}
+          showClosingKnob={true}
+          refreshControl={null}
+          refreshing={false}
+          loadItemsForMonth={loadItemsForMonth}
+          showOnlySelectedDayItems={true}
+          theme={{
+            todayTextColor: '#6200ee',
+            dayTextColor: '#2d4150',
+            textDisabledColor: '#d9e1e8',
+            dotColor: '#6200ee',
+            selectedDotColor: '#ffffff',
+            arrowColor: '#6200ee',
+            monthTextColor: '#2d4150',
+            indicatorColor: '#6200ee',
+            textDayFontWeight: '300',
+            textMonthFontWeight: 'bold',
+            textDayHeaderFontWeight: '300',
+            textDayFontSize: 16,
+            textMonthFontSize: 16,
+            textDayHeaderFontSize: 13,
+            backgroundColor: '#f5f5f5',
+            calendarBackground: '#ffffff',
+          }}
+        />
+      )}
 
       <FAB
         style={styles.fab}
         icon={() => <MaterialIcons name="add" size={24} color="white" />}
         color="white"
         onPress={() => setAddModalVisible(true)}
-        label="Add Event"
+        label="Etkinlik Ekle"
       />
 
       <UpdateEventModal
@@ -330,47 +416,18 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#f5f5f5',
   },
-  eventsContainer: {
+  loadingContainer: {
     flex: 1,
-    padding: 16,
-    backgroundColor: '#f5f5f5',
-  },
-  dateHeader: {
-    marginBottom: 16,
-  },
-  dateText: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#333',
-    marginBottom: 4,
-  },
-  eventCount: {
-    fontSize: 14,
-    color: '#666',
-  },
-  emptyCard: {
-    backgroundColor: '#fff',
-    marginBottom: 16,
-  },
-  emptyCardContent: {
+    justifyContent: 'center',
     alignItems: 'center',
-  },
-  emptyIcon: {
-    marginBottom: 16,
-  },
-  emptyText: {
-    textAlign: 'center',
-    color: '#666',
-    fontSize: 16,
-    fontStyle: 'italic',
-  },
-  emptySubtext: {
-    color: '#999',
-    fontSize: 14,
+    backgroundColor: '#f5f5f5',
   },
   eventCard: {
     backgroundColor: '#fff',
-    marginBottom: 12,
+    marginHorizontal: 16,
+    marginTop: 17,
+    padding: 16,
+    borderRadius: 8,
     elevation: 3,
     shadowColor: '#000',
     shadowOffset: {
@@ -379,7 +436,6 @@ const styles = StyleSheet.create({
     },
     shadowOpacity: 0.1,
     shadowRadius: 4,
-    borderRadius: 8,
   },
   eventHeader: {
     flexDirection: 'row',
@@ -387,37 +443,59 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     marginBottom: 8,
   },
+  eventTitleContainer: {
+    flex: 1,
+    marginRight: 12,
+  },
   eventTitle: {
     fontSize: 18,
     fontWeight: '600',
     color: '#333',
-    flex: 1,
-    marginRight: 12,
   },
   eventTimeContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#f0f0ff',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
+    marginTop: 4,
   },
   eventTime: {
     fontSize: 14,
-    color: '#6200ee',
-    fontWeight: '500',
+    color: '#666',
     marginLeft: 4,
+  },
+  eventActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+  },
+  actionButton: {
+    marginLeft: -8,
+  },
+  eventDetails: {
+    marginTop: 8,
   },
   eventDetailRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 6,
+    marginBottom: 4,
   },
   eventDetailText: {
-    fontSize: 13,
+    fontSize: 14,
     color: '#666',
     marginLeft: 8,
+  },
+  emptyDateContainer: {
     flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  emptyIcon: {
+    marginBottom: 10,
+  },
+  emptyText: {
+    fontSize: 16,
+    color: '#999',
+    textAlign: 'center',
   },
   fab: {
     position: 'absolute',
@@ -426,31 +504,32 @@ const styles = StyleSheet.create({
     bottom: 0,
     backgroundColor: '#6200ee',
   },
-  bottomSpacer: {
-    height: 32,
+  timelineContainer: {
+    flex: 1,
+    backgroundColor: '#f5f5f5',
   },
-  eventActions: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    alignItems: 'center',
-  },
-  eventBottomContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginTop: 8,
-    paddingTop: 8,
-    borderTopWidth: 1,
-    borderTopColor: '#f0f0f0',
-  },
-  eventDetailsContainer: {
+  timelineScroll: {
     flex: 1,
   },
-  loadingIndicator: {
-    marginTop: 16,
-    marginBottom: 16,
+  timeSlot: {
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee',
   },
-  actionButton: {
-    marginLeft: -8,
+  hourLabelContainer: {
+    marginBottom: 10,
+  },
+  hourLabel: {
+    fontSize: 12,
+    color: '#666',
+    fontWeight: 'bold',
+  },
+  eventsContainer: {
+    // This container will hold all events for the current hour
+    // Events will be positioned relative to this container
+  },
+  emptyHourSlot: {
+    height: 60, // Space for hour label and potential future events
   },
 }); 

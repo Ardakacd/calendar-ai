@@ -24,6 +24,7 @@ async def router_agent(state: FlowState):
         state["messages"][0] = SystemMessage(content=prompt_text)
     else:
         state["messages"].insert(0, SystemMessage(content=prompt_text))
+    
     response = [await model.ainvoke(state["messages"])]
     
     # Parse the JSON response
@@ -31,12 +32,12 @@ async def router_agent(state: FlowState):
         route_data = json.loads(response[0].content)
         state['route'] = route_data
     except json.JSONDecodeError:
-        state['route'] = {"message": "Bir hata olustu. Lutfen daha sonra tekrar deneyiniz."}
+        state['route'] = response[0].content
     
     return state
 
 def route_action(state: FlowState):
-    if "route" in state['route']:
+    if isinstance(state['route'], dict) and "route" in state['route']:
         route = state["route"]["route"]
 
         match route:
@@ -54,5 +55,5 @@ def route_action(state: FlowState):
         
 def router_message_handler(state: FlowState):
     """Handle cases where router returns a message instead of a route"""
-    message  = state["route"]["message"] if 'message' in state["route"] else 'Bir hata oluştu'
-    return {"messages": [AIMessage(content=message)]}
+    state['is_success'] = True
+    return {"messages": [AIMessage(content=state['route'])]}

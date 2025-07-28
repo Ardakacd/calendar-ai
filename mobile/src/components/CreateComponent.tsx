@@ -11,16 +11,17 @@ import {
 } from 'react-native-paper';
 import { MaterialIcons } from '@expo/vector-icons';
 import AddEventModal from './AddEventModal';
-import { EventCreate } from '../models/event';
+import { EventCreate, Event } from '../models/event';
 import { formatDuration, formatLocation } from '../common/formatting';
 
 interface CreateComponentProps {
   eventData: EventCreate;
   onCreate: (eventData: EventCreate) => Promise<void>;
   onCompleted: () => void;
+  conflictEvent?: Event; // Add conflict event prop
 }
 
-export default function CreateComponent({ eventData, onCreate, onCompleted }: CreateComponentProps) {
+export default function CreateComponent({ eventData, onCreate, onCompleted, conflictEvent }: CreateComponentProps) {
   const [showEditModal, setShowEditModal] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
   const [isCompleted, setIsCompleted] = useState(false);
@@ -34,7 +35,33 @@ export default function CreateComponent({ eventData, onCreate, onCompleted }: Cr
       day: 'numeric',
       hour: '2-digit',
       minute: '2-digit',
+      hour12: false
     });
+  };
+
+  const formatConflictEventDate = (dateString: string, duration?: number) => {
+    const startDate = new Date(dateString);
+    const endDate = duration ? new Date(startDate.getTime() + duration * 60000) : startDate;
+    
+    const startFormatted = startDate.toLocaleDateString('tr-TR', {
+      weekday: 'short',
+      month: 'short', 
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false
+    });
+    
+    if (duration && duration > 0) {
+      const endFormatted = endDate.toLocaleTimeString('tr-TR', {
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false
+      });
+      return `${startFormatted} - ${endFormatted}`;
+    }
+    
+    return startFormatted;
   };
 
   const handleEdit = () => {
@@ -147,6 +174,26 @@ export default function CreateComponent({ eventData, onCreate, onCompleted }: Cr
 
   return (
     <View style={styles.container}>
+        
+      {conflictEvent && (
+        <Card style={styles.conflictCard}>
+          <Card.Content>
+            <View style={styles.conflictHeader}>
+              <MaterialIcons name="warning" size={20} color="#ff4444" />
+              <Text style={styles.conflictWarning}>Bu etkinlik ile çakışma var</Text>
+            </View>
+            <View style={styles.conflictDetails}>
+              <Text style={styles.conflictEventTitle}>{conflictEvent.title}</Text>
+              <Text style={styles.conflictEventTime}>
+                {formatConflictEventDate(conflictEvent.startDate, conflictEvent.duration)}
+              </Text>
+              {conflictEvent.location && (
+                <Text style={styles.conflictEventLocation}>{conflictEvent.location}</Text>
+              )}
+            </View>
+          </Card.Content>
+        </Card>
+      )}
       <Card style={styles.eventCard}>
         <Card.Content>
           <View style={styles.eventHeader}>
@@ -188,6 +235,8 @@ export default function CreateComponent({ eventData, onCreate, onCompleted }: Cr
           </View>
         </Card.Content>
       </Card>
+
+      
 
       <View style={styles.actionButtons}>
         <Button
@@ -306,5 +355,42 @@ const styles = StyleSheet.create({
   disabledButton: {
     backgroundColor: 'rgba(255, 255, 255, 0.05)',
     borderColor: 'rgba(255, 255, 255, 0.05)',
+  },
+  conflictCard: {
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.05)',
+    marginTop: 16,
+    marginBottom: 16,
+  },
+  conflictHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  conflictWarning: {
+    fontSize: 14,
+    color: '#ff4444',
+    fontWeight: '600',
+    marginLeft: 8,
+  },
+  conflictDetails: {
+    marginLeft: 24,
+  },
+  conflictEventTitle: {
+    fontSize: 14,
+    color: 'white',
+    fontWeight: '600',
+    marginBottom: 4,
+  },
+  conflictEventTime: {
+    fontSize: 12,
+    color: 'rgba(255, 255, 255, 0.7)',
+    marginBottom: 4,
+  },
+  conflictEventLocation: {
+    fontSize: 12,
+    color: 'rgba(255, 255, 255, 0.7)',
   },
 }); 
