@@ -21,6 +21,7 @@ interface UpdateComponentProps {
   updateArguments: any;
   onUpdate: (eventId: string, updatedEvent: any) => Promise<void>;
   onCompleted: () => void;
+  conflictEvent?: Event; // Add conflict event prop
 }
 
 export default function UpdateComponent({
@@ -28,6 +29,7 @@ export default function UpdateComponent({
   updateArguments,
   onUpdate,
   onCompleted,
+  conflictEvent,
 }: UpdateComponentProps) {
   const [selectedEvent, setSelectedEvent] = useState<Event | null>(null);
   const [modalVisible, setModalVisible] = useState(false);
@@ -66,10 +68,36 @@ export default function UpdateComponent({
         day: '2-digit',
         hour: '2-digit',
         minute: '2-digit',
+        hour12: false
       });
     } catch (error) {
       return 'Geçersiz tarih';
     }
+  };
+
+  const formatConflictEventDate = (dateString: string, duration?: number) => {
+    const startDate = new Date(dateString);
+    const endDate = duration ? new Date(startDate.getTime() + duration * 60000) : startDate;
+    
+    const startFormatted = startDate.toLocaleDateString('tr-TR', {
+      weekday: 'short',
+      month: 'short', 
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false
+    });
+    
+    if (duration && duration > 0) {
+      const endFormatted = endDate.toLocaleTimeString('tr-TR', {
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false
+      });
+      return `${startFormatted} - ${endFormatted}`;
+    }
+    
+    return startFormatted;
   };
 
   const renderEventCard = (event: Event) => (
@@ -118,6 +146,26 @@ export default function UpdateComponent({
       <Text style={styles.headerText}>
         Güncellemek istediğiniz etkinliği seçin:
       </Text>
+
+      {conflictEvent && (
+        <Card style={styles.conflictCard}>
+          <Card.Content>
+            <View style={styles.conflictHeader}>
+              <MaterialIcons name="warning" size={20} color="#ff4444" />
+              <Text style={styles.conflictWarning}>Bu etkinlik ile çakışma var</Text>
+            </View>
+            <View style={styles.conflictDetails}>
+              <Text style={styles.conflictEventTitle}>{conflictEvent.title}</Text>
+              <Text style={styles.conflictEventTime}>
+                {formatConflictEventDate(conflictEvent.startDate, conflictEvent.duration)}
+              </Text>
+              {conflictEvent.location && (
+                <Text style={styles.conflictEventLocation}>{conflictEvent.location}</Text>
+              )}
+            </View>
+          </Card.Content>
+        </Card>
+      )}
 
       {Object.keys(updateArguments).length > 0 && (
             <View style={styles.updatePreview}>
@@ -279,5 +327,42 @@ const styles = StyleSheet.create({
   },
   buttonContent: {
     paddingVertical: 4,
+  },
+  conflictCard: {
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    borderRadius: 12,
+    marginTop: 8,
+    marginBottom: 8,
+    borderColor: '#ff4444',
+    borderWidth: 1,
+  },
+  conflictHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  conflictWarning: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#ff4444',
+    marginLeft: 8,
+  },
+  conflictDetails: {
+    marginLeft: 20,
+  },
+  conflictEventTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: 'white',
+    marginBottom: 4,
+  },
+  conflictEventTime: {
+    fontSize: 12,
+    color: 'rgba(255, 255, 255, 0.7)',
+    marginBottom: 4,
+  },
+  conflictEventLocation: {
+    fontSize: 12,
+    color: 'rgba(255, 255, 255, 0.7)',
   },
 }); 

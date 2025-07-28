@@ -28,6 +28,9 @@ class Settings(BaseSettings):
     DB_POOL_TIMEOUT: int = Field(default=30, description="Database pool timeout")
     DB_POOL_RECYCLE: int = Field(default=3600, description="Database pool recycle time")
     DB_POOL_PRE_PING: bool = Field(default=True, description="Database pool pre-ping")
+
+    # Redis settings
+    REDIS_URL: str = Field(default="redis://localhost:6379", description="Redis connection URI")
     
     # SSL settings
     DB_SSL_MODE: Optional[str] = Field(default=None, description="Database SSL mode")
@@ -42,7 +45,6 @@ class Settings(BaseSettings):
     # Server settings
     HOST: str = Field(default="0.0.0.0", description="Server host")
     PORT: int = Field(default=8000, description="Server port")
-    
 
     # LLM settings
     OPENAI_API_KEY: Optional[str] = Field(default=None, description="OpenAI API key")
@@ -92,6 +94,14 @@ class Settings(BaseSettings):
             return self.PORT
         else:
             raise ValueError("PORT must be provided")
+        
+    @property
+    def redis_url(self) -> str:
+        """Get the Redis URL."""
+        if self.REDIS_URL:
+            return self.REDIS_URL
+        else:
+            raise ValueError("REDIS_URL must be provided")
     
     @property
     def logging_config(self) -> dict:

@@ -43,9 +43,11 @@ export default function UpdateAgentEventModal({
 
   useEffect(() => {
     if (event) {
+      console.log(updateArguments);
+      console.log(event);
       setTitle(updateArguments.title || event.title);
       setLocation(updateArguments.location || event.location || '');
-      setDuration(updateArguments.duration ? updateArguments.duration.toString() : (event.duration?.toString() || ''));
+      setDuration(updateArguments.duration ? updateArguments.duration.toString() : (event.duration ? event.duration.toString() : ''));
       
       // Use update arguments startDate if available, otherwise use current event startDate
       const startDate = updateArguments.startDate ? new Date(updateArguments.startDate) : new Date(event.startDate);
@@ -100,14 +102,20 @@ export default function UpdateAgentEventModal({
   };
 
   const onDateChange = (event: any, selectedDate?: Date) => {
-    setShowDatePicker(false);
     if (selectedDate) {
       setDatetime(selectedDate);
     }
   };
 
   const formatDateTime = (date: Date) => {
-    return date.toLocaleString('tr-TR');
+    return date.toLocaleString('tr-TR', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false
+    });
   };
 
   const renderFieldWithPreviousValue = (
@@ -180,6 +188,7 @@ export default function UpdateAgentEventModal({
                   value={datetime}
                   mode="datetime"
                   display="default"
+                  locale="tr-TR"
                   onChange={onDateChange}
                 />
               )}

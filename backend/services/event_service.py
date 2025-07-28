@@ -35,21 +35,7 @@ class EventService:
             user_id = get_user_id_from_token(token)
 
             logger.info(f"EventService: Creating event with conflict check for user {user_id}")
-            
-            # Calculate end date from start date and duration
-            start_date = event_data.startDate
-            duration = event_data.duration or 0
-            end_date = start_date + timedelta(minutes=duration)
-            
-            conflict_event = await self.event_adapter.check_event_conflict(user_id, start_date, end_date)
-            
-            if conflict_event:
-                logger.warning(f"EventService: Conflict detected for user {user_id}")
-                raise HTTPException(
-                    status_code=status.HTTP_409_CONFLICT,
-                    detail=f"Etkinlik mevcut bir etkinlikle çakışıyor: {conflict_event.title}"
-                )
-            
+             
             result = await self.event_adapter.create_event(user_id, event_data)
 
             logger.info(f"EventService: Event created successfully for user {user_id}")
