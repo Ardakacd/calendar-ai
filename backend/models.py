@@ -128,8 +128,8 @@ class SuccessfulDeleteResponse(BaseModel):
 class SuccessfulCreateResponse(BaseModel):
     type: str = "create"
     message: str
-    event: EventCreate
-    conflict_event: Optional[Event] = None
+    events: List[EventCreate]
+    conflict_events: Optional[List[Event]] = None
 
 class SuccessfulUpdateResponse(BaseModel):
     type: str = "update"

@@ -3,16 +3,14 @@ import {
   View,
   StyleSheet,
   ScrollView,
-  Alert,
   KeyboardAvoidingView,
   TextInput,
   Platform,
   TouchableOpacity,
 } from 'react-native';
-import { Text, Button, Card, Avatar, IconButton } from 'react-native-paper';
+import { Text, Avatar, IconButton } from 'react-native-paper';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useNavigation } from '@react-navigation/native';
-
 import MicButton from '../components/MicButton';
 import ListComponent from '../components/ListComponent';
 import DeleteComponent from '../components/DeleteComponent';
@@ -21,6 +19,7 @@ import UpdateComponent from '../components/UpdateComponent';
 import { useCalendarAPI } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
 import { Event, EventCreate } from '../models/event';
+
 
 // Animated thinking dots component
 const ThinkingDots = () => {
@@ -47,11 +46,11 @@ interface ChatMessage {
   type: 'user' | 'ai';
   content: string;
   timestamp: Date;
-  eventData?: EventCreate;
+  eventData?: EventCreate[] | EventCreate;
   events?: Event[];
   updateArguments?: any;
   responseType?: 'text' | 'list' | 'delete' | 'create' | 'update';
-  conflictEvent?: Event; // Add conflict event
+  conflictEvent?: Event[] | Event;
 }
 
 export default function HomeScreen() {
@@ -71,13 +70,12 @@ export default function HomeScreen() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [isThinking, setIsThinking] = useState(false);
   const [hasUncompletedComponent, setHasUncompletedComponent] = useState(false);
-  const { transcribeAudio, addEvent, processText, deleteMultipleEvents, updateEvent } = useCalendarAPI();
+  const { transcribeAudio, addEvents, processText, deleteMultipleEvents, updateEvent } = useCalendarAPI();
   const { user } = useAuth();
   const scrollViewRef = useRef<ScrollView>(null);
   const inputRef = useRef<TextInput>(null);
   
-
-  const addMessage = (type: 'user' | 'ai', content: string, eventData?: EventCreate, events?: Event[], responseType: 'text' | 'list' | 'delete' | 'create' | 'update' = 'text', updateArguments?: any, conflictEvent?: Event) => {
+  const addMessage = (type: 'user' | 'ai', content: string, eventData?: EventCreate[] | EventCreate, events?: Event[], responseType: 'text' | 'list' | 'delete' | 'create' | 'update' = 'text', updateArguments?: any, conflictEvent?: Event) => {
     const newMessage: ChatMessage = {
       id: Date.now().toString(),
       type,
@@ -124,8 +122,8 @@ export default function HomeScreen() {
       } else if (response && typeof response === 'object' && response.type === 'delete' && response.events) {
         addMessage('ai', response.message || 'Silinecek etkinlikleri seçin:', undefined, response.events, 'delete')
         setHasUncompletedComponent(true);
-      } else if (response && typeof response === 'object' && response.type === 'create' && response.event) {
-        addMessage('ai', response.message || 'Lütfen etkinlik detaylarını gözden geçirin:', response.event, undefined, 'create', undefined, response.conflict_event)
+      } else if (response && typeof response === 'object' && response.type === 'create' && response.events) {
+        addMessage('ai', response.message || 'Lütfen etkinlik detaylarını gözden geçirin:', response.events, undefined, 'create', undefined, response.conflict_events)
         setHasUncompletedComponent(true);
       } else if (response && typeof response === 'object' && response.type === 'update' && response.events) {
         addMessage('ai', response.message || 'Güncellenecek etkinlikleri seçin:', undefined, response.events, 'update', response.update_arguments, response.update_conflict_event)
@@ -176,9 +174,9 @@ export default function HomeScreen() {
     }
   };
 
-  const handleCreateEvent = async (eventData: EventCreate) => {
+  const handleCreateEvent = async (eventData: EventCreate[]) => {
     try {
-      await addEvent(eventData);
+      await addEvents(eventData);
       addMessage('ai', 'Etkinlik başarıyla oluşturuldu!', undefined, undefined, 'text');
       scrollToBottom();
     } catch (error: any) {
@@ -231,10 +229,10 @@ export default function HomeScreen() {
 
           {message.responseType === 'create' && message.eventData && (
             <CreateComponent 
-              eventData={message.eventData}
+              eventData={message.eventData as unknown as EventCreate[]}
               onCreate={handleCreateEvent}
               onCompleted={markComponentAsCompleted}
-              conflictEvent={message.conflictEvent}
+              conflictEvents={message.conflictEvent as any}
             />
           )}
 
@@ -244,7 +242,7 @@ export default function HomeScreen() {
               updateArguments={message.updateArguments || {}}
               onUpdate={handleUpdateEvent}
               onCompleted={markComponentAsCompleted}
-              conflictEvent={message.conflictEvent}
+              conflictEvent={message.conflictEvent as any}
             />
           )}
 

@@ -33,17 +33,17 @@ class AssistantService:
 
             if is_success:
                 if route == "create":
-                    arguments = response["create_event_data"]["arguments"]
-                    event = EventCreate(
-                        title=arguments.get("title"),
-                        startDate=arguments.get("startDate"),
-                        duration=arguments.get("duration"),
-                        location=arguments.get("location")
-                    )
+                    create_event_data = response["create_event_data"]
+                    events = [EventCreate(
+                        title=event_data.get("arguments").get("title"),
+                        startDate=event_data.get("arguments").get("startDate"),
+                        duration=event_data.get("arguments", {}).get("duration"),
+                        location=event_data.get("arguments", {}).get("location")
+                    ) for event_data in create_event_data]
                     create_response = SuccessfulCreateResponse(
                         message=response["messages"][-1].content, 
-                        event=event,
-                        conflict_event=response["create_conflict_event"]
+                        events=events,
+                        conflict_events=response["create_conflict_events"]
                     )
                     return create_response.model_dump()
                 elif route == "update":

@@ -15,17 +15,18 @@ import { EventCreate, Event } from '../models/event';
 import { formatDuration, formatLocation } from '../common/formatting';
 
 interface CreateComponentProps {
-  eventData: EventCreate;
-  onCreate: (eventData: EventCreate) => Promise<void>;
+  eventData: EventCreate[];
+  onCreate: (eventData: EventCreate[]) => Promise<void>;
   onCompleted: () => void;
-  conflictEvent?: Event; // Add conflict event prop
+  conflictEvents?: Event[]; 
 }
 
-export default function CreateComponent({ eventData, onCreate, onCompleted, conflictEvent }: CreateComponentProps) {
+export default function CreateComponent({ eventData, onCreate, onCompleted, conflictEvents }: CreateComponentProps) {
   const [showEditModal, setShowEditModal] = useState(false);
+  const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [isCreating, setIsCreating] = useState(false);
   const [isCompleted, setIsCompleted] = useState(false);
-  const [currentEventData, setCurrentEventData] = useState<EventCreate>(eventData);
+  const [currentEventData, setCurrentEventData] = useState<EventCreate[]>(eventData);
   
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
@@ -63,9 +64,15 @@ export default function CreateComponent({ eventData, onCreate, onCompleted, conf
     
     return startFormatted;
   };
-
-  const handleEdit = () => {
+      
+  const handleEdit = (index: number) => {
+    setEditingIndex(index);
     setShowEditModal(true);
+  };
+
+  const handleDelete = (index: number) => {
+    const updatedEvents = currentEventData.filter((_, i) => i !== index);
+    setCurrentEventData(updatedEvents);
   };
 
   const handleCreate = async () => {
@@ -75,7 +82,7 @@ export default function CreateComponent({ eventData, onCreate, onCompleted, conf
       setIsCompleted(true); 
       onCompleted();
     } catch (error) {
-      console.error('Error creating event:', error);
+      console.error('Error creating events:', error);
     } finally {
       setIsCreating(false);
     }
@@ -88,10 +95,11 @@ export default function CreateComponent({ eventData, onCreate, onCompleted, conf
 
   const handleModalDismiss = () => {
     setShowEditModal(false);
+    setEditingIndex(null);
   };
 
   const handleModalAdd = async (event: Omit<any, 'id' | 'endDate'>) => {
-    // Update the current event data with the edited values
+    // This shouldn't be called in edit mode, but keeping for compatibility
     const updatedEventData: EventCreate = {
       title: event.title,
       startDate: event.startDate,
@@ -99,54 +107,60 @@ export default function CreateComponent({ eventData, onCreate, onCompleted, conf
       location: event.location,
     };
     
-    setCurrentEventData(updatedEventData);
+    setCurrentEventData([...currentEventData, updatedEventData]);
     setShowEditModal(false);
+    setEditingIndex(null);
   };
 
   const handleModalEdit = async (event: EventCreate) => {
-    setCurrentEventData(event);
+    if (editingIndex !== null) {
+      const updatedEvents = [...currentEventData];
+      updatedEvents[editingIndex] = event;
+      setCurrentEventData(updatedEvents);
+    }
     setShowEditModal(false);
+    setEditingIndex(null);
   };
 
   if (isCompleted) {
     return (
       <View style={styles.container}>
-        <Card style={[styles.eventCard, styles.disabledCard]}>
-          <Card.Content>
-            <View style={styles.eventHeader}>
-              <View style={styles.titleContainer}>
-                <Text style={[styles.eventTitle, styles.disabledText]} numberOfLines={2}>
-                  {currentEventData.title}
-                </Text>
-              </View>
-            </View>
-
-            <View style={styles.eventDetails}>
-              <View style={styles.detailRow}>
-                <MaterialIcons name="schedule" size={16} color="rgba(255, 255, 255, 0.3)" />
-                <Text style={[styles.detailText, styles.disabledText]}>
-                  {formatDate(currentEventData.startDate)}
-                </Text>
+        {currentEventData.map((event, index) => (
+          <Card key={index} style={[styles.eventCard, styles.disabledCard, index > 0 && styles.cardSpacing]}>
+            <Card.Content>
+              <View style={styles.eventHeader}>
+                <View style={styles.titleContainer}>
+                  <Text style={[styles.eventTitle, styles.disabledText]} numberOfLines={2}>
+                    {event.title}
+                  </Text>
+                </View>
               </View>
 
-              <View style={styles.detailRow}>
-                <MaterialIcons name="timer" size={16} color="rgba(255, 255, 255, 0.3)" />
-                <Text style={[styles.detailText, styles.disabledText]}>
-                  {formatDuration(currentEventData.duration)}
-                </Text>
-              </View>
+              <View style={styles.eventDetails}>
+                <View style={styles.detailRow}>
+                  <MaterialIcons name="schedule" size={16} color="rgba(255, 255, 255, 0.3)" />
+                  <Text style={[styles.detailText, styles.disabledText]}>
+                    {formatDate(event.startDate)}
+                  </Text>
+                </View>
 
-              
+                <View style={styles.detailRow}>
+                  <MaterialIcons name="timer" size={16} color="rgba(255, 255, 255, 0.3)" />
+                  <Text style={[styles.detailText, styles.disabledText]}>
+                    {formatDuration(event.duration)}
+                  </Text>
+                </View>
+
                 <View style={styles.detailRow}>
                   <MaterialIcons name="location-on" size={16} color="rgba(255, 255, 255, 0.3)" />
                   <Text style={[styles.detailText, styles.disabledText]} numberOfLines={1}>
-                    {formatLocation(currentEventData.location)}
+                    {formatLocation(event.location)}
                   </Text>
                 </View>
-              
-            </View>
-          </Card.Content>
-        </Card>
+              </View>
+            </Card.Content>
+          </Card>
+        ))}
 
         <View style={styles.actionButtons}>
           <Button
@@ -165,7 +179,7 @@ export default function CreateComponent({ eventData, onCreate, onCompleted, conf
             labelStyle={[styles.createButtonText, styles.disabledText]}
             icon="check"
           >
-            Olustur
+            Olustur ({currentEventData.length})
           </Button>
         </View>
       </View>
@@ -175,66 +189,87 @@ export default function CreateComponent({ eventData, onCreate, onCompleted, conf
   return (
     <View style={styles.container}>
         
-      {conflictEvent && (
+      {conflictEvents && conflictEvents.length > 0 && (
         <Card style={styles.conflictCard}>
           <Card.Content>
             <View style={styles.conflictHeader}>
               <MaterialIcons name="warning" size={20} color="#ff4444" />
-              <Text style={styles.conflictWarning}>Bu etkinlik ile çakışma var</Text>
-            </View>
-            <View style={styles.conflictDetails}>
-              <Text style={styles.conflictEventTitle}>{conflictEvent.title}</Text>
-              <Text style={styles.conflictEventTime}>
-                {formatConflictEventDate(conflictEvent.startDate, conflictEvent.duration)}
+              <Text style={styles.conflictWarning}>
+                {conflictEvents.length === 1 
+                  ? "Bu etkinlik ile çakışma var" 
+                  : `${conflictEvents.length} etkinlik ile çakışma var`
+                }
               </Text>
-              {conflictEvent.location && (
-                <Text style={styles.conflictEventLocation}>{conflictEvent.location}</Text>
-              )}
             </View>
+            {conflictEvents.map((conflictEvent, index) => (
+              <View key={conflictEvent.id || index} style={[styles.conflictDetails, index > 0 && styles.conflictDetailsSpacing]}>
+                <Text style={styles.conflictEventTitle}>{conflictEvent.title}</Text>
+                <Text style={styles.conflictEventTime}>
+                  {formatConflictEventDate(conflictEvent.startDate, conflictEvent.duration)}
+                </Text>
+                {conflictEvent.location && (
+                  <Text style={styles.conflictEventLocation}>{conflictEvent.location}</Text>
+                )}
+              </View>
+            ))}
           </Card.Content>
         </Card>
       )}
-      <Card style={styles.eventCard}>
-        <Card.Content>
-          <View style={styles.eventHeader}>
-            <View style={styles.titleContainer}>
-              <Text style={styles.eventTitle} numberOfLines={2}>
-                {currentEventData.title}
-              </Text>
-            </View>
-            <IconButton
-              icon="pencil"
-              size={20}
-              onPress={handleEdit}
-              style={styles.editButton}
-              iconColor="#667eea"
-            />
-          </View>
 
-          <View style={styles.eventDetails}>
-            <View style={styles.detailRow}>
-              <MaterialIcons name="schedule" size={16} color="rgba(255, 255, 255, 0.7)" />
-              <Text style={styles.detailText}>
-                {formatDate(currentEventData.startDate)}
-              </Text>
-            </View>
-
-            <View style={styles.detailRow}>
-              <MaterialIcons name="timer" size={16} color="rgba(255, 255, 255, 0.7)" />
-              <Text style={styles.detailText}>
-                {formatDuration(currentEventData.duration)}
-              </Text>
+      {currentEventData.map((event, index) => (
+        <Card key={index} style={[styles.eventCard, index > 0 && styles.cardSpacing]}>
+          <Card.Content>
+            <View style={styles.eventHeader}>
+              <View style={styles.titleContainer}>
+                <Text style={styles.eventTitle} numberOfLines={2}>
+                  {event.title}
+                </Text>
+              </View>
+              <View style={styles.actionButtonsHeader}>
+                <IconButton
+                  icon="pencil"
+                  size={18}
+                  onPress={() => handleEdit(index)}
+                  style={styles.editButton}
+                  iconColor="#667eea"
+                />
+                {currentEventData.length > 1 && (
+                  <IconButton
+                    icon="delete"
+                    size={18}
+                    onPress={() => handleDelete(index)}
+                    style={styles.deleteButton}
+                    iconColor="#ff4444"
+                  />
+                )}
+              </View>
             </View>
 
-            <View style={styles.detailRow}>
-              <MaterialIcons name="location-on" size={16} color="rgba(255, 255, 255, 0.7)" />
-              <Text style={styles.detailText} numberOfLines={1}>
-                  {formatLocation(currentEventData.location)}
-              </Text>
+            <View style={styles.eventDetails}>
+              <View style={styles.detailRow}>
+                <MaterialIcons name="schedule" size={16} color="rgba(255, 255, 255, 0.7)" />
+                <Text style={styles.detailText}>
+                  {formatDate(event.startDate)}
+                </Text>
+              </View>
+
+              <View style={styles.detailRow}>
+                <MaterialIcons name="timer" size={16} color="rgba(255, 255, 255, 0.7)" />
+                <Text style={styles.detailText}>
+                  {formatDuration(event.duration)}
+                </Text>
+              </View>
+
+              <View style={styles.detailRow}>
+                <MaterialIcons name="location-on" size={16} color="rgba(255, 255, 255, 0.7)" />
+                <Text style={styles.detailText} numberOfLines={1}>
+                    {formatLocation(event.location)}
+                </Text>
+              </View>
             </View>
-          </View>
-        </Card.Content>
-      </Card>
+          </Card.Content>
+        </Card>
+      ))}
 
       
 
@@ -253,12 +288,12 @@ export default function CreateComponent({ eventData, onCreate, onCompleted, conf
           mode="contained"
           onPress={handleCreate}
           loading={isCreating}
-          disabled={isCreating}
+          disabled={isCreating || currentEventData.length === 0}
           style={styles.createButton}
           labelStyle={styles.createButtonText}
           icon="plus"
         >
-          Olustur
+          Olustur ({currentEventData.length})
         </Button>
       </View>
 
@@ -267,12 +302,12 @@ export default function CreateComponent({ eventData, onCreate, onCompleted, conf
         onDismiss={handleModalDismiss}
         onAdd={handleModalAdd}
         onEdit={handleModalEdit}
-        initialEvent={{
-          title: currentEventData.title,
-          startDate: currentEventData.startDate,
-          duration: currentEventData.duration,
-          location: currentEventData.location,
-        }}
+        initialEvent={editingIndex !== null ? {
+          title: currentEventData[editingIndex].title,
+          startDate: currentEventData[editingIndex].startDate,
+          duration: currentEventData[editingIndex].duration,
+          location: currentEventData[editingIndex].location,
+        } : undefined}
         mode="edit"
       />
     </View>
@@ -289,6 +324,9 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.1)',
     marginBottom: 16,
+  },
+  cardSpacing: {
+    marginTop: 8,
   },
   disabledCard: {
     backgroundColor: 'rgba(255, 255, 255, 0.05)',
@@ -316,9 +354,18 @@ const styles = StyleSheet.create({
   disabledText: {
     color: 'rgba(255, 255, 255, 0.3)',
   },
+  actionButtonsHeader: {
+    flexDirection: 'row',
+  },
   editButton: {
     backgroundColor: 'rgba(255, 255, 255, 0.1)',
     margin: 0,
+    marginLeft: 4,
+  },
+  deleteButton: {
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    margin: 0,
+    marginLeft: 4,
   },
   eventDetails: {
     gap: 8,
@@ -392,5 +439,11 @@ const styles = StyleSheet.create({
   conflictEventLocation: {
     fontSize: 12,
     color: 'rgba(255, 255, 255, 0.7)',
+  },
+  conflictDetailsSpacing: {
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255, 255, 255, 0.1)',
   },
 }); 
