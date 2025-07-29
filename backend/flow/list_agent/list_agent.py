@@ -30,13 +30,11 @@ async def list_date_range_agent(state: FlowState):
             days_in_month=state['days_in_month']
         )
     
-    if state["messages"] and isinstance(state["messages"][0], SystemMessage):
-        state["messages"][0] = SystemMessage(content=prompt_text)
-    else:
-        state["messages"].insert(0, SystemMessage(content=prompt_text))
+    if not isinstance(state["list_messages"][0], SystemMessage):
+        state["list_messages"].insert(0, SystemMessage(content=prompt_text))
     
     try:
-        response = [await model.ainvoke(state["messages"])]
+        response = [await model.ainvoke(state["list_messages"])]
         route_data = json.loads(response[0].content)
         state['list_date_range_data'] = route_data
     except Exception as e:
@@ -51,7 +49,7 @@ def list_action(state: FlowState):
         return "list_message_handler"
         
 def list_message_handler(_: FlowState):
-        return {"messages": [AIMessage(content="Listelerken bir hata olustu. Lutfen daha sonra tekrar deneyiniz.")]}
+        return {"list_messages": [AIMessage(content="Listelerken bir hata olustu. Lutfen daha sonra tekrar deneyiniz.")]}
 
 async def list_event_by_date_range(state: FlowState) -> List[Event]:
     """
@@ -80,11 +78,11 @@ async def list_filter_event_agent(state: FlowState):
         prompt_text = template.format(
                 user_events=state['list_date_range_filtered_events']
             )
-        if state["messages"] and isinstance(state["messages"][0], SystemMessage):
-            state["messages"][0] = SystemMessage(content=prompt_text)
+        if state["list_messages"] and isinstance(state["list_messages"][0], SystemMessage):
+            state["list_messages"][0] = SystemMessage(content=prompt_text)
         else:
-            state["messages"].insert(0, SystemMessage(content=prompt_text))
-        response = [await model.ainvoke(state["messages"])]
+            state["list_messages"].insert(0, SystemMessage(content=prompt_text))
+        response = [await model.ainvoke(state["list_messages"])]
         try:
             list_event_data = json.loads(response[0].content)
             if isinstance(list_event_data, list):
@@ -110,15 +108,15 @@ async def list_filter_event_agent(state: FlowState):
                 state['list_final_filtered_events'] = events
                 
                 if len(events) == 0:
-                    state['messages'].append(AIMessage(content="Herhangi bir etkinlik bulunamadı"))
+                    state['list_messages'].append(AIMessage(content="Herhangi bir etkinlik bulunamadı"))
                 else:
-                    state['messages'].append(AIMessage(content="Etkinlikleri asagida gorebilirsiniz"))
+                    state['list_messages'].append(AIMessage(content="Etkinlikleri asagida gorebilirsiniz"))
                     state['is_success'] = True
             else:
-                state['messages'].append(AIMessage(content="Bir hata olustu. Lutfen daha sonra tekrar deneyiniz."))
+                state['list_messages'].append(AIMessage(content="Bir hata olustu. Lutfen daha sonra tekrar deneyiniz."))
         except Exception as e:
-            state['messages'].append(AIMessage(content="Bir hata olustu. Lutfen daha sonra tekrar deneyiniz."))
+            state['list_messages'].append(AIMessage(content="Bir hata olustu. Lutfen daha sonra tekrar deneyiniz."))
     else:
-        state['messages'].append(AIMessage(content="Listelemek istediginiz bir etkinlik bulunamadı"))
+        state['list_messages'].append(AIMessage(content="Listelemek istediginiz bir etkinlik bulunamadı"))
     
     return state

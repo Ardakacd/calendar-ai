@@ -5,7 +5,6 @@ from .prompt import ROUTER_AGENT_PROMPT
 from ..llm import model
 from tenacity import retry, stop_after_attempt, wait_random_exponential, retry_if_exception_type
 from openai import OpenAIError, RateLimitError
-from langgraph.graph import END
 import json
 
 retryable_exceptions = (OpenAIError, RateLimitError)
@@ -20,12 +19,12 @@ async def router_agent(state: FlowState):
     template = PromptTemplate.from_template(ROUTER_AGENT_PROMPT)
     prompt_text = template.format()
 
-    if state["messages"] and isinstance(state["messages"][0], SystemMessage):
-        state["messages"][0] = SystemMessage(content=prompt_text)
+    if state["router_messages"] and isinstance(state["router_messages"][0], SystemMessage):
+        state["router_messages"][0] = SystemMessage(content=prompt_text)
     else:
-        state["messages"].insert(0, SystemMessage(content=prompt_text))
+        state["router_messages"].insert(0, SystemMessage(content=prompt_text))
     
-    response = [await model.ainvoke(state["messages"])]
+    response = [await model.ainvoke(state["router_messages"])]
     
     # Parse the JSON response
     try:
@@ -56,4 +55,4 @@ def route_action(state: FlowState):
 def router_message_handler(state: FlowState):
     """Handle cases where router returns a message instead of a route"""
     state['is_success'] = True
-    return {"messages": [AIMessage(content=state['route'])]}
+    return {"router_messages": [AIMessage(content=state['route'])]}

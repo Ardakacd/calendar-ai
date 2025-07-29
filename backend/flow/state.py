@@ -9,7 +9,11 @@ def merge_is_success(old: bool, new: bool) -> bool:
 
 
 class FlowState(TypedDict):
-    messages: Annotated[list[BaseMessage], add_messages]
+    router_messages: Annotated[list[BaseMessage], add_messages]
+    create_messages: Annotated[list[BaseMessage], add_messages]
+    delete_messages: Annotated[list[BaseMessage], add_messages]
+    list_messages: Annotated[list[BaseMessage], add_messages]
+    update_messages: Annotated[list[BaseMessage], add_messages]
     input_text: str
     current_datetime: str
     weekday: str
