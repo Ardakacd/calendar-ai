@@ -31,13 +31,13 @@ async def update_date_range_agent(state: FlowState):
             days_in_month=state['days_in_month']
         )
     
-    if state["messages"] and isinstance(state["messages"][0], SystemMessage):
-        state["messages"][0] = SystemMessage(content=prompt_text)
+    if state["update_messages"] and isinstance(state["update_messages"][0], SystemMessage):
+        state["update_messages"][0] = SystemMessage(content=prompt_text)
     else:
-        state["messages"].insert(0, SystemMessage(content=prompt_text))
+        state["update_messages"].insert(0, SystemMessage(content=prompt_text))
     
     try:
-        response = [await model.ainvoke(state["messages"])]
+        response = [await model.ainvoke(state["update_messages"])]
         route_data = json.loads(response[0].content)
         state['update_date_range_data'] = route_data
     except Exception as e:
@@ -52,7 +52,7 @@ def update_action(state: FlowState):
         return "update_message_handler"
         
 def update_message_handler(_: FlowState):
-        return {"messages": [AIMessage(content="Bir hata olustu. Lutfen daha sonra tekrar deneyiniz.")]}
+        return {"update_messages": [AIMessage(content="Bir hata olustu. Lutfen daha sonra tekrar deneyiniz.")]}
 
 async def get_events_for_update(state: FlowState) -> List[Event]:
     """
@@ -84,11 +84,11 @@ async def update_filter_event_agent(state: FlowState):
         prompt_text = template.format(
                 user_events=state['update_date_range_filtered_events']
             )
-        if state["messages"] and isinstance(state["messages"][0], SystemMessage):
-            state["messages"][0] = SystemMessage(content=prompt_text)
+        if state["update_messages"] and isinstance(state["update_messages"][0], SystemMessage):
+            state["update_messages"][0] = SystemMessage(content=prompt_text)
         else:
-            state["messages"].insert(0, SystemMessage(content=prompt_text))
-        response = [await model.ainvoke(state["messages"])]
+            state["update_messages"].insert(0, SystemMessage(content=prompt_text))
+        response = [await model.ainvoke(state["update_messages"])]
         try:
             update_event_data = json.loads(response[0].content)
             
@@ -116,7 +116,7 @@ async def update_filter_event_agent(state: FlowState):
                 state['update_arguments'] = state['update_date_range_data']['arguments'].get('update_arguments', {})
                 
                 if len(events) == 0:
-                    state['messages'].append(AIMessage(content="Güncellenecek herhangi bir etkinlik bulunamadı"))
+                    state['update_messages'].append(AIMessage(content="Güncellenecek herhangi bir etkinlik bulunamadı"))
                 else:
                     update_args = state['update_arguments']
                     if 'startDate' in update_args: # important: no need to add duration
@@ -138,16 +138,16 @@ async def update_filter_event_agent(state: FlowState):
                                 )
                                 state['update_conflict_event'] = conflict_event
                         except Exception as e:
-                            state['messages'].append(AIMessage(content="Bir hata oluştu. Lütfen daha sonra tekrar deneyiniz."))
+                            state['update_messages'].append(AIMessage(content="Bir hata oluştu. Lütfen daha sonra tekrar deneyiniz."))
                             return state
                     
-                    state['messages'].append(AIMessage(content="Güncellenmesini istediğiniz etkinlikleri aşağıda görebilirsiniz. Lütfen güncellemek istediğiniz etkinliği seçiniz."))
+                    state['update_messages'].append(AIMessage(content="Güncellenmesini istediğiniz etkinlikleri aşağıda görebilirsiniz. Lütfen güncellemek istediğiniz etkinliği seçiniz."))
                     state['is_success'] = True
             else:
-                state['messages'].append(AIMessage(content="Bir hata olustu. Lutfen daha sonra tekrar deneyiniz."))
+                state['update_messages'].append(AIMessage(content="Bir hata olustu. Lutfen daha sonra tekrar deneyiniz."))
         except Exception as e:
-            state['messages'].append(AIMessage(content="Bir hata olustu. Lutfen daha sonra tekrar deneyiniz."))
+            state['update_messages'].append(AIMessage(content="Bir hata olustu. Lutfen daha sonra tekrar deneyiniz."))
     else:
-        state['messages'].append(AIMessage(content="Güncellenecek herhangi bir etkinlik bulunamadı"))
+        state['update_messages'].append(AIMessage(content="Güncellenecek herhangi bir etkinlik bulunamadı"))
     
     return state 

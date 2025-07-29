@@ -1,4 +1,4 @@
-from langchain_core.messages import SystemMessage, AIMessage
+from langchain_core.messages import SystemMessage, AIMessage, HumanMessage
 from langchain_core.prompts import PromptTemplate
 from ..state import FlowState
 from .delete_data_range_agent_prompt import DELETE_DATE_RANGE_AGENT_PROMPT
@@ -29,12 +29,13 @@ async def delete_date_range_agent(state: FlowState):
             days_in_month=state['days_in_month']
         )
     
-    if state["messages"] and isinstance(state["messages"][0], SystemMessage):
-        state["messages"][0] = SystemMessage(content=prompt_text)
-    else:
-        state["messages"].insert(0, SystemMessage(content=prompt_text))
+    if not isinstance(state["delete_messages"][0], SystemMessage):
+        state["delete_messages"].insert(0, SystemMessage(content=prompt_text))
+
+    state["delete_messages"].append(HumanMessage(content=state["input_text"]))
+
     try:
-        response = [await model.ainvoke(state["messages"])]
+        response = [await model.ainvoke(state["delete_messages"])]
         route_data = json.loads(response[0].content)
         state['delete_date_range_data'] = route_data
     except Exception as e:
@@ -50,7 +51,7 @@ def delete_action(state: FlowState):
         
 def delete_message_handler(_: FlowState):
         """Handle cases where router returns a message instead of arguments"""
-        return {"messages": [AIMessage(content="Bir hata olustu. Lutfen daha sonra tekrar deneyiniz.")]}
+        return {"delete_messages": [AIMessage(content="Bir hata olustu. Lutfen daha sonra tekrar deneyiniz.")]}
 
 async def delete_event_by_date_range(state: FlowState) -> List[Event]:
     """
@@ -79,11 +80,12 @@ async def delete_filter_event_agent(state: FlowState):
                 user_events=state['delete_date_range_filtered_events']
             )
         
-        if state["messages"] and isinstance(state["messages"][0], SystemMessage):
-            state["messages"][0] = SystemMessage(content=prompt_text)
-        else:
-            state["messages"].insert(0, SystemMessage(content=prompt_text))
-        response = [await model.ainvoke(state["messages"])]
+        if not isinstance(state["delete_messages"][0], SystemMessage):
+            state["delete_messages"].insert(0, SystemMessage(content=prompt_text))
+
+        state["delete_messages"].append(HumanMessage(content=state["input_text"]))
+
+        response = [await model.ainvoke(state["delete_messages"])]
         try:
             delete_event_data = json.loads(response[0].content)
             
@@ -109,16 +111,16 @@ async def delete_filter_event_agent(state: FlowState):
                 
                 state['delete_final_filtered_events'] = events
                 if len(events) == 0:
-                    state['messages'].append(AIMessage(content="Silinecek herhangi bir etkinlik bulunamadı"))
+                    state['delete_messages'].append(AIMessage(content="Silinecek herhangi bir etkinlik bulunamadı"))
                 else:
-                    state['messages'].append(AIMessage(content="Silinmesini istediginiz etkinlikleri asagida gorebilirsiniz. Lutfen silmek istediginiz etkinligi seciniz."))
+                    state['delete_messages'].append(AIMessage(content=f"Asagidaki etkinlikleri silmek istediginize emin misiniz? {events}"))
                     state['is_success'] = True
             else:
-                state['messages'].append(AIMessage(content="Bir hata olustu. Lutfen daha sonra tekrar deneyiniz."))
+                state['delete_messages'].append(AIMessage(content="Bir hata olustu. Lutfen daha sonra tekrar deneyiniz."))
                 
         except Exception as e:
-            state['messages'].append(AIMessage(content="Bir hata olustu. Lutfen daha sonra tekrar deneyiniz."))
+            state['delete_messages'].append(AIMessage(content="Bir hata olustu. Lutfen daha sonra tekrar deneyiniz."))
     else:
-        state['messages'].append(AIMessage(content="Silinecek herhangi bir etkinlik bulunamadı"))
+        state['delete_messages'].append(AIMessage(content="Silinecek herhangi bir etkinlik bulunamadı"))
     
     return state
