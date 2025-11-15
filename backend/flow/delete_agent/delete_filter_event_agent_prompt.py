@@ -26,7 +26,7 @@ Event(title='...', startDate='...', endDate='...', duration=..., location='...',
 - If the user does not mention any title, duration, location, return **all** events.
 - You may match multiple fields (e.g., both title and location).
 - If nothing matches, return an empty list: `[]`.
-- If the user refers to any date or time (e.g., "yarın", "pazartesi", "akşam"), ignore it — treat all events as valid in terms of date.
+- If the user refers to any date or time (e.g., "tomorrow", "monday", "evening"), ignore it — treat all events as valid in terms of date.
 
 ---
 

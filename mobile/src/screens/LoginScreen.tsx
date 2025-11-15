@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState } from "react";
 import {
   StyleSheet,
   Alert,
@@ -6,31 +6,25 @@ import {
   Platform,
   ScrollView,
   View,
-} from 'react-native';
-import {
-  TextInput,
-  Button,
-  Card,
-  Title,
-  Paragraph,
-} from 'react-native-paper';
-import { useAuth } from '../contexts/AuthContext';
-import { showErrorToast } from '../common/toast/toast-message';
+} from "react-native";
+import { TextInput, Button, Card, Title, Paragraph } from "react-native-paper";
+import { useAuth } from "../contexts/AuthContext";
+import { showErrorToast } from "../common/toast/toast-message";
 
 interface LoginScreenProps {
   setShowSignup: (show: boolean) => void;
 }
 
 const LoginScreen: React.FC<LoginScreenProps> = ({ setShowSignup }) => {
-  const [email, setEmail] = useState<string>('');
-  const [password, setPassword] = useState<string>('');
+  const [email, setEmail] = useState<string>("");
+  const [password, setPassword] = useState<string>("");
   const [isLoading, setIsLoading] = useState(false);
 
   const { login } = useAuth();
 
   const handleLogin = async () => {
     if (!email || !password) {
-      showErrorToast('Lütfen tüm alanları doldurun');
+      showErrorToast("Please fill in all fields");
       return;
     }
 
@@ -38,8 +32,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ setShowSignup }) => {
     try {
       await login(email, password);
     } catch (error: any) {
-      console.log(error);
-      showErrorToast(error.response?.data?.detail || 'Giriş başarısız oldu');
+      showErrorToast(error.response?.data?.detail || "Login failed");
       // No navigation - user stays on login screen with their data
     } finally {
       setIsLoading(false);
@@ -53,7 +46,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ setShowSignup }) => {
   return (
     <KeyboardAvoidingView
       style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
     >
       <ScrollView contentContainerStyle={styles.scrollContainer}>
         <View style={styles.header}>
@@ -114,33 +107,33 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ setShowSignup }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f8f9fa',
+    backgroundColor: "#f8f9fa",
   },
   scrollContainer: {
     flexGrow: 1,
-    justifyContent: 'center',
+    justifyContent: "center",
     padding: 24,
   },
   header: {
-    alignItems: 'center',
+    alignItems: "center",
     marginBottom: 32,
   },
   title: {
     fontSize: 32,
-    fontWeight: 'bold',
-    color: '#1a237e',
+    fontWeight: "bold",
+    color: "#1a237e",
     marginBottom: 8,
   },
   subtitle: {
     fontSize: 16,
-    color: '#666',
-    textAlign: 'center',
+    color: "#666",
+    textAlign: "center",
     lineHeight: 22,
   },
   card: {
     borderRadius: 16,
     elevation: 8,
-    shadowColor: '#000',
+    shadowColor: "#000",
     shadowOffset: {
       width: 0,
       height: 4,
@@ -150,7 +143,7 @@ const styles = StyleSheet.create({
   },
   input: {
     marginBottom: 20,
-    backgroundColor: '#fff',
+    backgroundColor: "#fff",
   },
   button: {
     marginTop: 8,
@@ -166,4 +159,4 @@ const styles = StyleSheet.create({
   },
 });
 
-export default LoginScreen; 
+export default LoginScreen;

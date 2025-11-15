@@ -1,70 +1,37 @@
-import React, { useState } from 'react';
+import React, { useState } from "react";
+import { View, StyleSheet } from "react-native";
+import { Card, Text, Button, IconButton } from "react-native-paper";
+import { MaterialIcons } from "@expo/vector-icons";
+import AddEventModal from "./AddEventModal";
+import { EventCreate, Event } from "../models/event";
+import { formatDuration, formatLocation } from "../common/formatting";
 import {
-  View,
-  StyleSheet,
-} from 'react-native';
-import {
-  Card,
-  Text,
-  Button,
-  IconButton,
-} from 'react-native-paper';
-import { MaterialIcons } from '@expo/vector-icons';
-import AddEventModal from './AddEventModal';
-import { EventCreate, Event } from '../models/event';
-import { formatDuration, formatLocation } from '../common/formatting';
+  formatDateWithWeekday,
+  formatConflictEventDate,
+} from "../utils/datetime/dateUtils";
 
 interface CreateComponentProps {
   eventData: EventCreate[];
   onCreate: (eventData: EventCreate[]) => Promise<void>;
   onCompleted: () => void;
-  conflictEvents?: Event[]; 
+  conflictEvents?: Event[];
 }
 
-export default function CreateComponent({ eventData, onCreate, onCompleted, conflictEvents }: CreateComponentProps) {
+export default function CreateComponent({
+  eventData,
+  onCreate,
+  onCompleted,
+  conflictEvents,
+}: CreateComponentProps) {
   const [showEditModal, setShowEditModal] = useState(false);
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [isCreating, setIsCreating] = useState(false);
   const [isCompleted, setIsCompleted] = useState(false);
-  const [currentEventData, setCurrentEventData] = useState<EventCreate[]>(eventData);
-  
-  const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
-    return date.toLocaleDateString('tr-TR', {
-      weekday: 'short',
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: false
-    });
-  };
+  const [currentEventData, setCurrentEventData] =
+    useState<EventCreate[]>(eventData);
 
-  const formatConflictEventDate = (dateString: string, duration?: number) => {
-    const startDate = new Date(dateString);
-    const endDate = duration ? new Date(startDate.getTime() + duration * 60000) : startDate;
-    
-    const startFormatted = startDate.toLocaleDateString('tr-TR', {
-      weekday: 'short',
-      month: 'short', 
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: false
-    });
-    
-    if (duration && duration > 0) {
-      const endFormatted = endDate.toLocaleTimeString('tr-TR', {
-        hour: '2-digit',
-        minute: '2-digit',
-        hour12: false
-      });
-      return `${startFormatted} - ${endFormatted}`;
-    }
-    
-    return startFormatted;
-  };
-      
+  // Use imported date utility functions for consistent formatting
+
   const handleEdit = (index: number) => {
     setEditingIndex(index);
     setShowEditModal(true);
@@ -79,17 +46,17 @@ export default function CreateComponent({ eventData, onCreate, onCompleted, conf
     setIsCreating(true);
     try {
       await onCreate(currentEventData);
-      setIsCompleted(true); 
+      setIsCompleted(true);
       onCompleted();
     } catch (error) {
-      console.error('Error creating events:', error);
+      console.error("Error creating events:", error);
     } finally {
       setIsCreating(false);
     }
   };
 
   const handleCancel = () => {
-    setIsCompleted(true); 
+    setIsCompleted(true);
     onCompleted();
   };
 
@@ -98,7 +65,7 @@ export default function CreateComponent({ eventData, onCreate, onCompleted, conf
     setEditingIndex(null);
   };
 
-  const handleModalAdd = async (event: Omit<any, 'id' | 'endDate'>) => {
+  const handleModalAdd = async (event: Omit<any, "id" | "endDate">) => {
     // This shouldn't be called in edit mode, but keeping for compatibility
     const updatedEventData: EventCreate = {
       title: event.title,
@@ -106,7 +73,7 @@ export default function CreateComponent({ eventData, onCreate, onCompleted, conf
       duration: event.duration,
       location: event.location,
     };
-    
+
     setCurrentEventData([...currentEventData, updatedEventData]);
     setShowEditModal(false);
     setEditingIndex(null);
@@ -126,11 +93,21 @@ export default function CreateComponent({ eventData, onCreate, onCompleted, conf
     return (
       <View style={styles.container}>
         {currentEventData.map((event, index) => (
-          <Card key={index} style={[styles.eventCard, styles.disabledCard, index > 0 && styles.cardSpacing]}>
+          <Card
+            key={index}
+            style={[
+              styles.eventCard,
+              styles.disabledCard,
+              index > 0 && styles.cardSpacing,
+            ]}
+          >
             <Card.Content>
               <View style={styles.eventHeader}>
                 <View style={styles.titleContainer}>
-                  <Text style={[styles.eventTitle, styles.disabledText]} numberOfLines={2}>
+                  <Text
+                    style={[styles.eventTitle, styles.disabledText]}
+                    numberOfLines={2}
+                  >
                     {event.title}
                   </Text>
                 </View>
@@ -138,22 +115,37 @@ export default function CreateComponent({ eventData, onCreate, onCompleted, conf
 
               <View style={styles.eventDetails}>
                 <View style={styles.detailRow}>
-                  <MaterialIcons name="schedule" size={16} color="rgba(255, 255, 255, 0.3)" />
+                  <MaterialIcons
+                    name="schedule"
+                    size={16}
+                    color="rgba(255, 255, 255, 0.3)"
+                  />
                   <Text style={[styles.detailText, styles.disabledText]}>
-                    {formatDate(event.startDate)}
+                    {formatDateWithWeekday(event.startDate)}
                   </Text>
                 </View>
 
                 <View style={styles.detailRow}>
-                  <MaterialIcons name="timer" size={16} color="rgba(255, 255, 255, 0.3)" />
+                  <MaterialIcons
+                    name="timer"
+                    size={16}
+                    color="rgba(255, 255, 255, 0.3)"
+                  />
                   <Text style={[styles.detailText, styles.disabledText]}>
                     {formatDuration(event.duration)}
                   </Text>
                 </View>
 
                 <View style={styles.detailRow}>
-                  <MaterialIcons name="location-on" size={16} color="rgba(255, 255, 255, 0.3)" />
-                  <Text style={[styles.detailText, styles.disabledText]} numberOfLines={1}>
+                  <MaterialIcons
+                    name="location-on"
+                    size={16}
+                    color="rgba(255, 255, 255, 0.3)"
+                  />
+                  <Text
+                    style={[styles.detailText, styles.disabledText]}
+                    numberOfLines={1}
+                  >
                     {formatLocation(event.location)}
                   </Text>
                 </View>
@@ -170,7 +162,7 @@ export default function CreateComponent({ eventData, onCreate, onCompleted, conf
             labelStyle={[styles.cancelButtonText, styles.disabledText]}
             icon="close"
           >
-            Iptal
+            Cancel
           </Button>
           <Button
             mode="contained"
@@ -179,7 +171,7 @@ export default function CreateComponent({ eventData, onCreate, onCompleted, conf
             labelStyle={[styles.createButtonText, styles.disabledText]}
             icon="check"
           >
-            Olustur ({currentEventData.length})
+            Generate ({currentEventData.length})
           </Button>
         </View>
       </View>
@@ -188,27 +180,38 @@ export default function CreateComponent({ eventData, onCreate, onCompleted, conf
 
   return (
     <View style={styles.container}>
-        
       {conflictEvents && conflictEvents.length > 0 && (
         <Card style={styles.conflictCard}>
           <Card.Content>
             <View style={styles.conflictHeader}>
               <MaterialIcons name="warning" size={20} color="#ff4444" />
               <Text style={styles.conflictWarning}>
-                {conflictEvents.length === 1 
-                  ? "Bu etkinlik ile çakışma var" 
-                  : `${conflictEvents.length} etkinlik ile çakışma var`
-                }
+                {conflictEvents.length === 1
+                  ? "There is a conflict with this event"
+                  : `${conflictEvents.length} events have a conflict`}
               </Text>
             </View>
             {conflictEvents.map((conflictEvent, index) => (
-              <View key={conflictEvent.id || index} style={[styles.conflictDetails, index > 0 && styles.conflictDetailsSpacing]}>
-                <Text style={styles.conflictEventTitle}>{conflictEvent.title}</Text>
+              <View
+                key={conflictEvent.id || index}
+                style={[
+                  styles.conflictDetails,
+                  index > 0 && styles.conflictDetailsSpacing,
+                ]}
+              >
+                <Text style={styles.conflictEventTitle}>
+                  {conflictEvent.title}
+                </Text>
                 <Text style={styles.conflictEventTime}>
-                  {formatConflictEventDate(conflictEvent.startDate, conflictEvent.duration)}
+                  {formatConflictEventDate(
+                    conflictEvent.startDate,
+                    conflictEvent.duration
+                  )}
                 </Text>
                 {conflictEvent.location && (
-                  <Text style={styles.conflictEventLocation}>{conflictEvent.location}</Text>
+                  <Text style={styles.conflictEventLocation}>
+                    {conflictEvent.location}
+                  </Text>
                 )}
               </View>
             ))}
@@ -217,7 +220,10 @@ export default function CreateComponent({ eventData, onCreate, onCompleted, conf
       )}
 
       {currentEventData.map((event, index) => (
-        <Card key={index} style={[styles.eventCard, index > 0 && styles.cardSpacing]}>
+        <Card
+          key={index}
+          style={[styles.eventCard, index > 0 && styles.cardSpacing]}
+        >
           <Card.Content>
             <View style={styles.eventHeader}>
               <View style={styles.titleContainer}>
@@ -247,31 +253,41 @@ export default function CreateComponent({ eventData, onCreate, onCompleted, conf
 
             <View style={styles.eventDetails}>
               <View style={styles.detailRow}>
-                <MaterialIcons name="schedule" size={16} color="rgba(255, 255, 255, 0.7)" />
+                <MaterialIcons
+                  name="schedule"
+                  size={16}
+                  color="rgba(255, 255, 255, 0.7)"
+                />
                 <Text style={styles.detailText}>
-                  {formatDate(event.startDate)}
+                  {formatDateWithWeekday(event.startDate)}
                 </Text>
               </View>
 
               <View style={styles.detailRow}>
-                <MaterialIcons name="timer" size={16} color="rgba(255, 255, 255, 0.7)" />
+                <MaterialIcons
+                  name="timer"
+                  size={16}
+                  color="rgba(255, 255, 255, 0.7)"
+                />
                 <Text style={styles.detailText}>
                   {formatDuration(event.duration)}
                 </Text>
               </View>
 
               <View style={styles.detailRow}>
-                <MaterialIcons name="location-on" size={16} color="rgba(255, 255, 255, 0.7)" />
+                <MaterialIcons
+                  name="location-on"
+                  size={16}
+                  color="rgba(255, 255, 255, 0.7)"
+                />
                 <Text style={styles.detailText} numberOfLines={1}>
-                    {formatLocation(event.location)}
+                  {formatLocation(event.location)}
                 </Text>
               </View>
             </View>
           </Card.Content>
         </Card>
       ))}
-
-      
 
       <View style={styles.actionButtons}>
         <Button
@@ -282,7 +298,7 @@ export default function CreateComponent({ eventData, onCreate, onCompleted, conf
           labelStyle={styles.cancelButtonText}
           icon="close"
         >
-          Iptal
+          Cancel
         </Button>
         <Button
           mode="contained"
@@ -293,7 +309,7 @@ export default function CreateComponent({ eventData, onCreate, onCompleted, conf
           labelStyle={styles.createButtonText}
           icon="plus"
         >
-          Olustur ({currentEventData.length})
+          Generate ({currentEventData.length})
         </Button>
       </View>
 
@@ -302,12 +318,16 @@ export default function CreateComponent({ eventData, onCreate, onCompleted, conf
         onDismiss={handleModalDismiss}
         onAdd={handleModalAdd}
         onEdit={handleModalEdit}
-        initialEvent={editingIndex !== null ? {
-          title: currentEventData[editingIndex].title,
-          startDate: currentEventData[editingIndex].startDate,
-          duration: currentEventData[editingIndex].duration,
-          location: currentEventData[editingIndex].location,
-        } : undefined}
+        initialEvent={
+          editingIndex !== null
+            ? {
+                title: currentEventData[editingIndex].title,
+                startDate: currentEventData[editingIndex].startDate,
+                duration: currentEventData[editingIndex].duration,
+                location: currentEventData[editingIndex].location,
+              }
+            : undefined
+        }
         mode="edit"
       />
     </View>
@@ -319,51 +339,51 @@ const styles = StyleSheet.create({
     marginTop: 12,
   },
   eventCard: {
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    backgroundColor: "rgba(255, 255, 255, 0.1)",
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
+    borderColor: "rgba(255, 255, 255, 0.1)",
     marginBottom: 16,
   },
   cardSpacing: {
     marginTop: 8,
   },
   disabledCard: {
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
-    borderColor: 'rgba(255, 255, 255, 0.05)',
+    backgroundColor: "rgba(255, 255, 255, 0.05)",
+    borderColor: "rgba(255, 255, 255, 0.05)",
   },
   eventHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
     marginBottom: 12,
   },
   titleContainer: {
     flex: 1,
-    flexDirection: 'row',
-    alignItems: 'flex-start',
+    flexDirection: "row",
+    alignItems: "flex-start",
     marginRight: 8,
   },
   eventTitle: {
     fontSize: 16,
-    fontWeight: '600',
-    color: 'white',
+    fontWeight: "600",
+    color: "white",
     flex: 1,
     lineHeight: 20,
   },
   disabledText: {
-    color: 'rgba(255, 255, 255, 0.3)',
+    color: "rgba(255, 255, 255, 0.3)",
   },
   actionButtonsHeader: {
-    flexDirection: 'row',
+    flexDirection: "row",
   },
   editButton: {
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    backgroundColor: "rgba(255, 255, 255, 0.1)",
     margin: 0,
     marginLeft: 4,
   },
   deleteButton: {
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    backgroundColor: "rgba(255, 255, 255, 0.1)",
     margin: 0,
     marginLeft: 4,
   },
@@ -371,55 +391,55 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   detailRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
   },
   detailText: {
     fontSize: 14,
-    color: 'rgba(255, 255, 255, 0.8)',
+    color: "rgba(255, 255, 255, 0.8)",
     marginLeft: 8,
     flex: 1,
   },
   actionButtons: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    justifyContent: "space-between",
     gap: 12,
   },
   createButton: {
     flex: 1,
-    backgroundColor: '#667eea',
+    backgroundColor: "#667eea",
   },
   createButtonText: {
-    color: 'white',
+    color: "white",
   },
   cancelButton: {
     flex: 1,
-    borderColor: 'rgba(255, 255, 255, 0.3)',
+    borderColor: "rgba(255, 255, 255, 0.3)",
   },
   cancelButtonText: {
-    color: 'rgba(255, 255, 255, 0.8)',
+    color: "rgba(255, 255, 255, 0.8)",
   },
   disabledButton: {
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
-    borderColor: 'rgba(255, 255, 255, 0.05)',
+    backgroundColor: "rgba(255, 255, 255, 0.05)",
+    borderColor: "rgba(255, 255, 255, 0.05)",
   },
   conflictCard: {
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    backgroundColor: "rgba(255, 255, 255, 0.05)",
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.05)',
+    borderColor: "rgba(255, 255, 255, 0.05)",
     marginTop: 16,
     marginBottom: 16,
   },
   conflictHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     marginBottom: 8,
   },
   conflictWarning: {
     fontSize: 14,
-    color: '#ff4444',
-    fontWeight: '600',
+    color: "#ff4444",
+    fontWeight: "600",
     marginLeft: 8,
   },
   conflictDetails: {
@@ -427,23 +447,23 @@ const styles = StyleSheet.create({
   },
   conflictEventTitle: {
     fontSize: 14,
-    color: 'white',
-    fontWeight: '600',
+    color: "white",
+    fontWeight: "600",
     marginBottom: 4,
   },
   conflictEventTime: {
     fontSize: 12,
-    color: 'rgba(255, 255, 255, 0.7)',
+    color: "rgba(255, 255, 255, 0.7)",
     marginBottom: 4,
   },
   conflictEventLocation: {
     fontSize: 12,
-    color: 'rgba(255, 255, 255, 0.7)',
+    color: "rgba(255, 255, 255, 0.7)",
   },
   conflictDetailsSpacing: {
     marginTop: 12,
     paddingTop: 12,
     borderTopWidth: 1,
-    borderTopColor: 'rgba(255, 255, 255, 0.1)',
+    borderTopColor: "rgba(255, 255, 255, 0.1)",
   },
-}); 
+});

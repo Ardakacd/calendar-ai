@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from "react";
 import {
   View,
   StyleSheet,
@@ -6,100 +6,91 @@ import {
   Alert,
   KeyboardAvoidingView,
   Platform,
-} from 'react-native';
+} from "react-native";
+import { Text, Button, Avatar, TextInput } from "react-native-paper";
+import { LinearGradient } from "expo-linear-gradient";
+import { useAuth } from "../contexts/AuthContext";
+import { useCalendarAPI } from "../services/api";
 import {
-  Text,
-  Button,
-  Avatar,
-  TextInput,
-} from 'react-native-paper';
-import { LinearGradient } from 'expo-linear-gradient';
-import { useAuth } from '../contexts/AuthContext';
-import { useCalendarAPI } from '../services/api';
-import { showSuccessToast, showErrorToast } from '../common/toast/toast-message';
+  showSuccessToast,
+  showErrorToast,
+} from "../common/toast/toast-message";
 
 export default function ProfileScreen() {
   const { user, logout } = useAuth();
   const { changePassword } = useCalendarAPI();
   const [isChangingPassword, setIsChangingPassword] = useState(false);
-  const [currentPassword, setCurrentPassword] = useState('');
-  const [newPassword, setNewPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [showPasswordForm, setShowPasswordForm] = useState(false);
-
-  
 
   const handleChangePassword = async () => {
     if (!currentPassword || !newPassword || !confirmPassword) {
-      showErrorToast('Lütfen tüm alanları doldurun');
+      showErrorToast("Please fill in all fields");
       return;
     }
 
     if (newPassword !== confirmPassword) {
-      showErrorToast('Yeni şifreler eşleşmiyor');
+      showErrorToast("New passwords do not match");
       return;
     }
 
     if (newPassword.length < 6) {
-      showErrorToast('Yeni şifre en az 6 karakter olmalıdır');
+      showErrorToast("New password must be at least 6 characters");
       return;
     }
 
     setIsChangingPassword(true);
     try {
-      await changePassword({ 
-        current_password: currentPassword, 
-        new_password: newPassword 
+      await changePassword({
+        current_password: currentPassword,
+        new_password: newPassword,
       });
-      
-      setCurrentPassword('');
-      setNewPassword('');
-      setConfirmPassword('');
+
+      setCurrentPassword("");
+      setNewPassword("");
+      setConfirmPassword("");
       setShowPasswordForm(false);
-      showSuccessToast('Şifre başarıyla değiştirildi');
+      showSuccessToast("Password changed successfully");
     } catch (error) {
-      showErrorToast('Şifre değiştirilemedi. Lütfen tekrar deneyin.');
+      showErrorToast("Password could not be changed. Please try again.");
     } finally {
       setIsChangingPassword(false);
     }
   };
 
   const handleLogout = () => {
-    Alert.alert(
-      'Çıkış',
-      'Çıkış yapmak istediğinizden emin misiniz?',
-      [
-        { text: 'İptal', style: 'cancel' },
-        {
-          text: 'Çıkış',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await logout();
-            } catch (error) {
-              showErrorToast('Çıkış yapılırken bir hata oluştu. Lütfen daha sonra tekrar deneyin.');
-            }
-          },
+    Alert.alert("Log Out", "Are you sure you want to log out?", [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Log Out",
+        style: "destructive",
+        onPress: async () => {
+          try {
+            await logout();
+          } catch (error) {
+            showErrorToast(
+              "An error occurred while logging out. Please try again later."
+            );
+          }
         },
-      ]
-    );
+      },
+    ]);
   };
 
   const togglePasswordForm = () => {
     setShowPasswordForm(!showPasswordForm);
-    setCurrentPassword('');
-    setNewPassword('');
-    setConfirmPassword('');
+    setCurrentPassword("");
+    setNewPassword("");
+    setConfirmPassword("");
   };
 
- 
-
   return (
-    <LinearGradient colors={['#667eea', '#764ba2']} style={styles.container}>
-
+    <LinearGradient colors={["#667eea", "#764ba2"]} style={styles.container}>
       <KeyboardAvoidingView
         style={styles.content}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
       >
         <ScrollView
           style={styles.scrollView}
@@ -110,16 +101,16 @@ export default function ProfileScreen() {
             <View style={styles.avatarContainer}>
               <Avatar.Text
                 size={100}
-                label={user?.name?.charAt(0)?.toUpperCase() || 'U'}
+                label={user?.name?.charAt(0)?.toUpperCase() || "U"}
                 style={styles.profileAvatar}
               />
-              <Text style={styles.userName}>{user?.name || 'User'}</Text>
+              <Text style={styles.userName}>{user?.name || "User"}</Text>
             </View>
           </View>
 
           <View style={styles.actionSection}>
-            <Text style={styles.sectionTitle}>Güvenlik</Text>
-            
+            <Text style={styles.sectionTitle}>Security</Text>
+
             <Button
               mode="contained"
               onPress={togglePasswordForm}
@@ -129,13 +120,13 @@ export default function ProfileScreen() {
               icon="lock-outline"
               contentStyle={styles.buttonContent}
             >
-              {showPasswordForm ? 'İptal Et' : 'Şifre Değiştir'}
+              {showPasswordForm ? "Cancel" : "Change Password"}
             </Button>
 
             {showPasswordForm && (
               <View style={styles.passwordForm}>
                 <TextInput
-                  label="Mevcut Şifre"
+                  label="Current Password"
                   value={currentPassword}
                   onChangeText={setCurrentPassword}
                   mode="flat"
@@ -144,17 +135,17 @@ export default function ProfileScreen() {
                   textColor="white"
                   theme={{
                     colors: {
-                      primary: 'white',
-                      onSurface: 'white',
-                      onSurfaceVariant: 'rgba(255, 255, 255, 0.7)',
-                      surface: 'rgba(255, 255, 255, 0.15)',
-                      backdrop: 'transparent',
+                      primary: "white",
+                      onSurface: "white",
+                      onSurfaceVariant: "rgba(255, 255, 255, 0.7)",
+                      surface: "rgba(255, 255, 255, 0.15)",
+                      backdrop: "transparent",
                     },
                   }}
                 />
 
                 <TextInput
-                  label="Yeni Şifre"
+                  label="New Password"
                   value={newPassword}
                   onChangeText={setNewPassword}
                   mode="flat"
@@ -163,17 +154,17 @@ export default function ProfileScreen() {
                   textColor="white"
                   theme={{
                     colors: {
-                      primary: 'white',
-                      onSurface: 'white',
-                      onSurfaceVariant: 'rgba(255, 255, 255, 0.7)',
-                      surface: 'rgba(255, 255, 255, 0.15)',
-                      backdrop: 'transparent',
+                      primary: "white",
+                      onSurface: "white",
+                      onSurfaceVariant: "rgba(255, 255, 255, 0.7)",
+                      surface: "rgba(255, 255, 255, 0.15)",
+                      backdrop: "transparent",
                     },
                   }}
                 />
 
                 <TextInput
-                  label="Şifre Onayı"
+                  label="Password Confirmation"
                   value={confirmPassword}
                   onChangeText={setConfirmPassword}
                   mode="flat"
@@ -182,11 +173,11 @@ export default function ProfileScreen() {
                   textColor="white"
                   theme={{
                     colors: {
-                      primary: 'white',
-                      onSurface: 'white',
-                      onSurfaceVariant: 'rgba(255, 255, 255, 0.7)',
-                      surface: 'rgba(255, 255, 255, 0.15)',
-                      backdrop: 'transparent',
+                      primary: "white",
+                      onSurface: "white",
+                      onSurfaceVariant: "rgba(255, 255, 255, 0.7)",
+                      surface: "rgba(255, 255, 255, 0.15)",
+                      backdrop: "transparent",
                     },
                   }}
                 />
@@ -201,7 +192,7 @@ export default function ProfileScreen() {
                   textColor="#667eea"
                   contentStyle={styles.buttonContent}
                 >
-                  Şifreyi Kaydet
+                  Save Password
                 </Button>
               </View>
             )}
@@ -209,8 +200,8 @@ export default function ProfileScreen() {
 
           {/* Logout Section */}
           <View style={styles.actionSection}>
-            <Text style={styles.sectionTitle}>Hesap</Text>
-            
+            <Text style={styles.sectionTitle}>Account</Text>
+
             <Button
               mode="contained"
               onPress={handleLogout}
@@ -220,7 +211,7 @@ export default function ProfileScreen() {
               icon="logout"
               contentStyle={styles.buttonContent}
             >
-              Çıkış Yap
+              Log Out
             </Button>
           </View>
         </ScrollView>
@@ -234,17 +225,17 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
     paddingHorizontal: 20,
     paddingTop: 60,
     paddingBottom: 20,
   },
   headerTitle: {
     fontSize: 20,
-    fontWeight: 'bold',
-    color: 'white',
+    fontWeight: "bold",
+    color: "white",
   },
   content: {
     flex: 1,
@@ -258,50 +249,50 @@ const styles = StyleSheet.create({
   },
   loadingContainer: {
     flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
   },
   loadingText: {
-    color: 'white',
+    color: "white",
     fontSize: 16,
   },
   profileSection: {
-    alignItems: 'center',
+    alignItems: "center",
     marginBottom: 20,
   },
   avatarContainer: {
-    alignItems: 'center',
+    alignItems: "center",
     marginBottom: 10,
   },
   profileAvatar: {
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    backgroundColor: "rgba(255, 255, 255, 0.2)",
     borderRadius: 50,
   },
   userName: {
     fontSize: 20,
-    fontWeight: 'bold',
-    color: 'white',
+    fontWeight: "bold",
+    color: "white",
     marginTop: 10,
   },
   actionSection: {
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    backgroundColor: "rgba(255, 255, 255, 0.1)",
     borderRadius: 16,
     padding: 20,
     marginBottom: 16,
   },
   sectionTitle: {
     fontSize: 18,
-    fontWeight: 'bold',
-    color: 'white',
+    fontWeight: "bold",
+    color: "white",
     marginBottom: 15,
   },
   actionButton: {
-    borderColor: 'rgba(255, 255, 255, 0.5)',
+    borderColor: "rgba(255, 255, 255, 0.5)",
     borderWidth: 1,
     borderRadius: 12,
   },
   actionButtonLabel: {
-    color: 'white',
+    color: "white",
   },
   buttonContent: {
     paddingVertical: 8,
@@ -311,16 +302,16 @@ const styles = StyleSheet.create({
   },
   passwordInput: {
     marginBottom: 16,
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    backgroundColor: "rgba(255, 255, 255, 0.1)",
     borderRadius: 8,
-    overflow: 'hidden',
+    overflow: "hidden",
   },
   savePasswordButton: {
     marginTop: 10,
     borderRadius: 12,
   },
   logoutButton: {
-    width: '100%',
+    width: "100%",
     borderRadius: 12,
   },
-}); 
+});

@@ -55,13 +55,13 @@ class UserAdapter:
         error_msg = str(e).lower()
         
         if "email" in error_msg and "unique" in error_msg:
-            raise HTTPException(status_code=400, detail="Bu e-posta adresi zaten kullanımda")
+            raise HTTPException(status_code=400, detail="This email address is already in use")
         elif "password" in error_msg and "length" in error_msg:
-            raise HTTPException(status_code=400, detail="Şifre en az 6 karakter olmalıdır")
+            raise HTTPException(status_code=400, detail="Password must be at least 6 characters")
         elif "email" in error_msg and "format" in error_msg:
-            raise HTTPException(status_code=400, detail="Geçersiz e-posta formatı")
+            raise HTTPException(status_code=400, detail="Invalid email format")
         else:
-            raise HTTPException(status_code=500, detail=f"Veri doğrulama hatası: {operation}")
+            raise HTTPException(status_code=500, detail=f"Data validation error: {operation}")
     
     async def create_user(self, user_data: UserCreate) -> Optional[User]:
         """

@@ -12,6 +12,7 @@ from models import Event
 from typing import List
 from .list_filter_event_agent_prompt import LIST_FILTER_EVENT_AGENT_PROMPT
 from datetime import datetime
+from langchain_core.messages import HumanMessage
 
 retryable_exceptions = (OpenAIError, RateLimitError)
 
@@ -29,16 +30,22 @@ async def list_date_range_agent(state: FlowState):
             weekday=state['weekday'],
             days_in_month=state['days_in_month']
         )
+
+    state["list_messages"].append(HumanMessage(content=state["input_text"]))
     
-    if not isinstance(state["list_messages"][0], SystemMessage):
+    if state["list_messages"] and isinstance(state["list_messages"][0], SystemMessage):
+            state["list_messages"][0] = SystemMessage(content=prompt_text)
+    else:
         state["list_messages"].insert(0, SystemMessage(content=prompt_text))
+        
     
     try:
         response = [await model.ainvoke(state["list_messages"])]
+        
         route_data = json.loads(response[0].content)
         state['list_date_range_data'] = route_data
     except Exception as e:
-        state['list_date_range_data'] = {"message": "Bir hata olustu. Lutfen daha sonra tekrar deneyiniz."}
+        state['list_date_range_data'] = {"message": "An error occurred. Please try again later."}
     
     return state
 
@@ -49,7 +56,7 @@ def list_action(state: FlowState):
         return "list_message_handler"
         
 def list_message_handler(_: FlowState):
-        return {"list_messages": [AIMessage(content="Listelerken bir hata olustu. Lutfen daha sonra tekrar deneyiniz.")]}
+        return {"list_messages": [AIMessage(content="An error occurred. Please try again later.")]}
 
 async def list_event_by_date_range(state: FlowState) -> List[Event]:
     """
@@ -108,15 +115,15 @@ async def list_filter_event_agent(state: FlowState):
                 state['list_final_filtered_events'] = events
                 
                 if len(events) == 0:
-                    state['list_messages'].append(AIMessage(content="Herhangi bir etkinlik bulunamadı"))
+                    state['list_messages'].append(AIMessage(content="We couldn't find any events"))
                 else:
-                    state['list_messages'].append(AIMessage(content="Etkinlikleri asagida gorebilirsiniz"))
+                    state['list_messages'].append(AIMessage(content="You can see the events below"))
                     state['is_success'] = True
             else:
-                state['list_messages'].append(AIMessage(content="Bir hata olustu. Lutfen daha sonra tekrar deneyiniz."))
+                state['list_messages'].append(AIMessage(content="An error occurred. Please try again later."))
         except Exception as e:
-            state['list_messages'].append(AIMessage(content="Bir hata olustu. Lutfen daha sonra tekrar deneyiniz."))
+            state['list_messages'].append(AIMessage(content="An error occurred. Please try again later."))
     else:
-        state['list_messages'].append(AIMessage(content="Listelemek istediginiz bir etkinlik bulunamadı"))
+        state['list_messages'].append(AIMessage(content="We couldn't find any events"))
     
     return state

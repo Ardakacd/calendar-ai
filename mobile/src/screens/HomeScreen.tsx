@@ -59,7 +59,7 @@ export default function HomeScreen() {
     {
       id: Date.now().toString(),
       type: 'ai',
-      content: 'Merhaba, bugün size nasıl yardımcı olabilirim?',
+      content: 'Hello, I am your AI calendar assistant. How can I help you?',
       timestamp: new Date(),
       eventData: undefined,
       events: undefined,
@@ -118,25 +118,25 @@ export default function HomeScreen() {
       const response = await processText(text)
     
       if (response && typeof response === 'object' && response.type === 'list' && response.events) {
-        addMessage('ai', response.message || 'İşte etkinlikleriniz:', undefined, response.events, 'list')
+        addMessage('ai', response.message || 'Here are your events:', undefined, response.events, 'list')
       } else if (response && typeof response === 'object' && response.type === 'delete' && response.events) {
-        addMessage('ai', response.message || 'Silinecek etkinlikleri seçin:', undefined, response.events, 'delete')
+        addMessage('ai', response.message || 'Select the events to delete:', undefined, response.events, 'delete')
         setHasUncompletedComponent(true);
       } else if (response && typeof response === 'object' && response.type === 'create' && response.events) {
-        addMessage('ai', response.message || 'Lütfen etkinlik detaylarını gözden geçirin:', response.events, undefined, 'create', undefined, response.conflict_events)
+        addMessage('ai', response.message || 'Please review the event details:', response.events, undefined, 'create', undefined, response.conflict_events)
         setHasUncompletedComponent(true);
       } else if (response && typeof response === 'object' && response.type === 'update' && response.events) {
-        addMessage('ai', response.message || 'Güncellenecek etkinlikleri seçin:', undefined, response.events, 'update', response.update_arguments, response.update_conflict_event)
+        addMessage('ai', response.message || 'Select the events to update:', undefined, response.events, 'update', response.update_arguments, response.update_conflict_event)
         setHasUncompletedComponent(true);
       } else {
         // Handle string responses or other types
-        const message = typeof response === 'string' ? response : (response?.message || 'Komut başarıyla işlendi.');
+        const message = typeof response === 'string' ? response : (response?.message || 'Command processed successfully.');
         addMessage('ai', message, undefined, undefined, 'text')
       }
       
       scrollToBottom();
     } catch (error) {
-      addMessage('ai', 'Üzgünüm, komutunuzu işleyemedim. Lütfen tekrar deneyin.');
+      addMessage('ai', 'Sorry, I couldn\'t process your command. Please try again.');
       scrollToBottom();
     } finally {
       setIsThinking(false);
@@ -148,7 +148,7 @@ export default function HomeScreen() {
 
     try {
       const response = await transcribeAudio(audioUri);
-      const userMessage = response.message || 'Ses komutu işlendi';
+      const userMessage = response.message || 'Voice command processed';
       addMessage('user', userMessage);
       scrollToBottom();
       await handleProcessText(userMessage)
@@ -156,7 +156,7 @@ export default function HomeScreen() {
       //await processCommand(userMessage);
     } catch (error) {
       console.error('Error processing voice command:', error);
-      addMessage('ai', 'Üzgünüm, ses komutunuzu işleyemedim. Lütfen tekrar deneyin.');
+      addMessage('ai', 'Sorry, I couldn\'t process your voice command. Please try again.');
       scrollToBottom();
     } finally {
       setIsProcessing(false);
@@ -166,10 +166,10 @@ export default function HomeScreen() {
   const handleDeleteEvent = async (eventIds: string[]) => {
     try {
       const response = await deleteMultipleEvents(eventIds);
-      addMessage('ai', response.message || 'Etkinlikler basariyla silindi!', undefined, undefined, 'text');
+      addMessage('ai', response.message || 'Events deleted successfully!', undefined, undefined, 'text');
       scrollToBottom();
     } catch (error) {
-      addMessage('ai', 'Etkinlikler silinemedi. Lütfen tekrar deneyin.', undefined, undefined, 'text');
+      addMessage('ai', 'Events could not be deleted. Please try again.', undefined, undefined, 'text');
       scrollToBottom();
     }
   };
@@ -177,10 +177,10 @@ export default function HomeScreen() {
   const handleCreateEvent = async (eventData: EventCreate[]) => {
     try {
       await addEvents(eventData);
-      addMessage('ai', 'Etkinlik başarıyla oluşturuldu!', undefined, undefined, 'text');
+      addMessage('ai', 'Event created successfully!', undefined, undefined, 'text');
       scrollToBottom();
     } catch (error: any) {
-      const message = error.response?.data?.detail || 'Etkinlik oluşturulamadı. Lütfen tekrar deneyin.'
+      const message = error.response?.data?.detail || 'Event could not be created. Please try again.'
       addMessage('ai', message, undefined, undefined, 'text');
       scrollToBottom();
     }
@@ -189,10 +189,10 @@ export default function HomeScreen() {
   const handleUpdateEvent = async (eventId: string, updatedEvent: any) => {
     try {
       await updateEvent(eventId, updatedEvent);
-      addMessage('ai', 'Etkinlik başarıyla güncellendi!', undefined, undefined, 'text');
+      addMessage('ai', 'Event updated successfully!', undefined, undefined, 'text');
       scrollToBottom();
     } catch (error: any) {
-      const message = error.response?.data?.detail || 'Etkinlik güncellenemedi. Lütfen tekrar deneyin.'
+      const message = error.response?.data?.detail || 'Event could not be updated. Please try again.'
       addMessage('ai', message, undefined, undefined, 'text');
       scrollToBottom();
     }
@@ -302,7 +302,7 @@ export default function HomeScreen() {
           <TextInput
             value={inputText}
             onChangeText={setInputText}
-            placeholder="Komutunuzu yazın..."
+            placeholder="Write your command..."
             placeholderTextColor="rgba(255, 255, 255, 0.6)"
             onSubmitEditing={handleSendMessage}
             returnKeyType="send"

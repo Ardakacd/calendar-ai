@@ -1,18 +1,18 @@
 export const formatDuration = (duration?: number) => {
-    if (!duration || duration === 0) return 'Belirtilmedi';
-    const hours = Math.floor(duration / 60);
-    const minutes = duration % 60;
-    
-    if (hours > 0 && minutes > 0) {
-      return `${hours} saat ${minutes} dakika`;
-    } else if (hours > 0) {
-      return `${hours} saat`;
-    } else {
-      return `${minutes} dakika`;
-    }
-  };
+  if (!duration || duration === 0) return "Not specified";
+  const hours = Math.floor(duration / 60);
+  const minutes = duration % 60;
+
+  if (hours > 0 && minutes > 0) {
+    return `${hours} hours ${minutes} minutes`;
+  } else if (hours > 0) {
+    return `${hours} hours`;
+  } else {
+    return `${minutes} minutes`;
+  }
+};
 
 export const formatLocation = (location?: string) => {
-    if (!location) return 'Belirtilmedi';
-    return location;
-  };
+  if (!location) return "Not specified";
+  return location;
+};

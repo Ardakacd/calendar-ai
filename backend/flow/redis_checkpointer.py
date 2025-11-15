@@ -69,11 +69,6 @@ class MessagesOnlyRedisSaver(AsyncRedisSaver):
         # Filter new_versions to only include message field versions
         filtered_new_versions = self._filter_versions_for_checkpoint(new_versions)
 
-        print('json_checkpoint', checkpoint)
-        print('metadata', metadata)
-        print('new_versions', new_versions)
-        print('filtered_new_versions', filtered_new_versions)
-        
         return await super().aput(config, checkpoint, metadata, filtered_new_versions)
 
 # dont forget ttl

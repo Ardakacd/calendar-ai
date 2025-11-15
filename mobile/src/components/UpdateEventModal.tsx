@@ -1,9 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import {
-  View,
-  StyleSheet,
-  ScrollView,
-} from 'react-native';
+import React, { useState, useEffect } from "react";
+import { View, StyleSheet, ScrollView } from "react-native";
 import {
   Modal,
   Portal,
@@ -12,12 +8,16 @@ import {
   Button,
   Card,
   Title,
-} from 'react-native-paper';
-import DateTimePicker from '@react-native-community/datetimepicker';
-import { MaterialIcons } from '@expo/vector-icons';
-import NumericInput from './NumericInput';
-import { Event } from '../models/event';
-import { showErrorToast, showSuccessToast } from '../common/toast/toast-message';
+} from "react-native-paper";
+import DateTimePicker from "@react-native-community/datetimepicker";
+import { MaterialIcons } from "@expo/vector-icons";
+import NumericInput from "./NumericInput";
+import { Event } from "../models/event";
+import {
+  showErrorToast,
+  showSuccessToast,
+} from "../common/toast/toast-message";
+import { formatDateTime, toLocalISOString } from "../utils/datetime/dateUtils";
 interface UpdateEventModalProps {
   visible: boolean;
   event: Event | null;
@@ -31,19 +31,18 @@ export default function UpdateEventModal({
   onDismiss,
   onUpdate,
 }: UpdateEventModalProps) {
-  const [title, setTitle] = useState('');
-  const [location, setLocation] = useState('');
-  const [duration, setDuration] = useState('');
+  const [title, setTitle] = useState("");
+  const [location, setLocation] = useState("");
+  const [duration, setDuration] = useState("");
   const [datetime, setDatetime] = useState(new Date());
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    console.log(event);
     if (event) {
       setTitle(event.title);
-      setLocation(event.location || '');
-      setDuration(event.duration ? event.duration.toString() : '');
+      setLocation(event.location || "");
+      setDuration(event.duration ? event.duration.toString() : "");
       setDatetime(new Date(event.startDate));
     }
   }, [event]);
@@ -54,12 +53,12 @@ export default function UpdateEventModal({
     const trimmedTitle = title.trim();
 
     if (!trimmedTitle) {
-      showErrorToast('Başlık gereklidir');
+      showErrorToast("Title is required");
       return;
     }
 
     if (trimmedTitle.length > 255) {
-      showErrorToast('Başlık 255 karakterden uzun olamaz');
+      showErrorToast("Title cannot be longer than 255 characters");
       return;
     }
 
@@ -69,16 +68,14 @@ export default function UpdateEventModal({
       try {
         durationMinutes = parseInt(duration);
         if (durationMinutes <= 0) {
-          showErrorToast('Süre 0\'dan büyük olmalıdır');
+          showErrorToast("Duration must be greater than 0");
           return;
-        }   
+        }
       } catch (error) {
-        showErrorToast('Geçersiz süre formatı');
+        showErrorToast("Invalid duration format");
         return;
       }
-     
     }
-
 
     try {
       setLoading(true);
@@ -86,12 +83,14 @@ export default function UpdateEventModal({
         title: trimmedTitle,
         location: location.trim() || undefined,
         duration: durationMinutes,
-        startDate: datetime.toISOString(),
+        startDate: toLocalISOString(datetime),
       });
       onDismiss();
-      showSuccessToast('Etkinlik başarıyla güncellendi');
-    } catch (error : any) {
-      showErrorToast(error.response?.data?.detail || 'Etkinlik güncellenemedi');
+      showSuccessToast("Event updated successfully");
+    } catch (error: any) {
+      showErrorToast(
+        error.response?.data?.detail || "Event could not be updated"
+      );
     } finally {
       setLoading(false);
     }
@@ -103,16 +102,7 @@ export default function UpdateEventModal({
     }
   };
 
-  const formatDateTime = (date: Date) => {
-    return date.toLocaleString('tr-TR', {
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: false
-    });
-  };
+  // Use the imported formatDateTime utility function for consistent formatting
 
   return (
     <Portal>
@@ -123,36 +113,36 @@ export default function UpdateEventModal({
       >
         <Card style={styles.card}>
           <Card.Content>
-            <Title style={styles.title}>Etkinlik Düzenle</Title>
-            
-            <ScrollView >
+            <Title style={styles.title}>Update Event</Title>
+
+            <ScrollView>
               <View style={styles.inputContainer}>
-                <Text style={styles.label}>Baslik *</Text>
+                <Text style={styles.label}>Title *</Text>
                 <TextInput
                   mode="outlined"
                   value={title}
                   onChangeText={setTitle}
-                  placeholder="Etkinlik basligi giriniz"
+                  placeholder="Enter event title"
                   style={styles.input}
                 />
               </View>
 
               <View style={styles.inputContainer}>
-                <Text style={styles.label}>Tarih & Saat *</Text>
+                <Text style={styles.label}>Date & Time *</Text>
                 <Button
                   mode="outlined"
                   onPress={() => setShowDatePicker(true)}
                   style={styles.dateButton}
                   icon="calendar-clock"
                 >
-                  {formatDateTime(datetime)}
+                  {formatDateTime(toLocalISOString(datetime))}
                 </Button>
                 {showDatePicker && (
                   <DateTimePicker
                     value={datetime}
                     mode="datetime"
                     display="default"
-                    locale="tr-TR"
+                    locale="en-US"
                     onChange={onDateChange}
                   />
                 )}
@@ -161,30 +151,30 @@ export default function UpdateEventModal({
               <View style={styles.inputContainer}>
                 <View style={styles.labelContainer}>
                   <MaterialIcons name="schedule" size={20} color="#6200ee" />
-                  <Text style={styles.label}>Süre</Text>
+                  <Text style={styles.label}>Duration</Text>
                 </View>
                 <NumericInput
                   mode="outlined"
                   value={duration}
                   onValueChange={setDuration}
-                  placeholder="Etkinlik suresini giriniz (opsiyonel)"
+                  placeholder="Enter event duration (optional)"
                   style={styles.input}
                 />
                 <Text style={styles.helperText}>
-                  Süreyi dakika cinsinden giriniz (örn: 30 dakika)
+                  Enter duration in minutes (e.g: 30)
                 </Text>
               </View>
 
               <View style={styles.inputContainer}>
                 <View style={styles.labelContainer}>
                   <MaterialIcons name="location-on" size={20} color="#6200ee" />
-                  <Text style={styles.label}>Konum</Text>
+                  <Text style={styles.label}>Location</Text>
                 </View>
                 <TextInput
                   mode="outlined"
                   value={location}
                   onChangeText={setLocation}
-                  placeholder="Etkinlik konumunu girin (opsiyonel)"
+                  placeholder="Enter event location (optional)"
                   style={styles.input}
                 />
               </View>
@@ -219,65 +209,65 @@ export default function UpdateEventModal({
 const styles = StyleSheet.create({
   modalContainer: {
     flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
     padding: 20,
-    backgroundColor: 'transparent',
+    backgroundColor: "transparent",
   },
   card: {
-    width: '100%',
+    width: "100%",
     maxWidth: 400,
     borderRadius: 16,
     elevation: 8,
-    shadowColor: '#000',
+    shadowColor: "#000",
     shadowOffset: {
       width: 0,
       height: 4,
     },
     shadowOpacity: 0.25,
     shadowRadius: 8,
-    backgroundColor: '#ffffff',
+    backgroundColor: "#ffffff",
   },
   title: {
-    textAlign: 'center',
+    textAlign: "center",
     marginBottom: 20,
-    color: '#1a1a1a',
+    color: "#1a1a1a",
     fontSize: 22,
-    fontWeight: 'bold',
+    fontWeight: "bold",
   },
   inputContainer: {
     marginBottom: 16,
   },
   labelContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     marginBottom: 8,
   },
   label: {
     fontSize: 16,
-    fontWeight: '600',
-    color: '#333',
+    fontWeight: "600",
+    color: "#333",
     marginLeft: 8,
   },
   input: {
-    backgroundColor: '#f8f9fa',
+    backgroundColor: "#f8f9fa",
     borderRadius: 12,
   },
   dateButton: {
     marginTop: 4,
     borderRadius: 12,
-    borderColor: '#6200ee',
+    borderColor: "#6200ee",
     borderWidth: 1.5,
   },
   helperText: {
     fontSize: 12,
-    color: '#666',
+    color: "#666",
     marginTop: 4,
-    fontStyle: 'italic',
+    fontStyle: "italic",
   },
   buttonContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    justifyContent: "space-between",
     marginTop: 20,
     gap: 12,
   },
@@ -287,10 +277,10 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   cancelButton: {
-    borderColor: '#6200ee',
+    borderColor: "#6200ee",
     borderWidth: 1.5,
   },
   updateButton: {
-    backgroundColor: '#6200ee',
+    backgroundColor: "#6200ee",
   },
-}); 
+});

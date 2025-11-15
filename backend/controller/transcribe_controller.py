@@ -23,7 +23,7 @@ async def transcribe(
     try:
         # Validate file type
         if not audio.content_type or not audio.content_type.startswith('audio/'):
-            raise HTTPException(status_code=400, detail="Dosya ses dosyası olmalıdır")
+            raise HTTPException(status_code=400, detail="File must be an audio file")
 
         # Get token from credentials
         token = credentials.credentials
@@ -38,4 +38,4 @@ async def transcribe(
         raise
     except Exception as e:
         logger.error(f"Error in transcribe endpoint: {e}")
-        raise HTTPException(status_code=500, detail="Ses işlenemedi")
+        raise HTTPException(status_code=500, detail="Audio could not be processed")

@@ -28,18 +28,22 @@ async def delete_date_range_agent(state: FlowState):
             weekday=state['weekday'],
             days_in_month=state['days_in_month']
         )
-    
-    if not isinstance(state["delete_messages"][0], SystemMessage):
-        state["delete_messages"].insert(0, SystemMessage(content=prompt_text))
 
     state["delete_messages"].append(HumanMessage(content=state["input_text"]))
+    
+    if state["delete_messages"] and isinstance(state["delete_messages"][0], SystemMessage):
+        state["delete_messages"][0] = SystemMessage(content=prompt_text)
+    else:
+        state["delete_messages"].insert(0, SystemMessage(content=prompt_text))
+
+    
 
     try:
         response = [await model.ainvoke(state["delete_messages"])]
         route_data = json.loads(response[0].content)
         state['delete_date_range_data'] = route_data
     except Exception as e:
-        state['delete_date_range_data'] = {"message": "Bir hata olustu. Lutfen daha sonra tekrar deneyiniz."}
+        state['delete_date_range_data'] = {"message": "An error occurred. Please try again later."}
     
     return state
 
@@ -51,7 +55,7 @@ def delete_action(state: FlowState):
         
 def delete_message_handler(_: FlowState):
         """Handle cases where router returns a message instead of arguments"""
-        return {"delete_messages": [AIMessage(content="Bir hata olustu. Lutfen daha sonra tekrar deneyiniz.")]}
+        return {"delete_messages": [AIMessage(content="An error occurred. Please try again later.")]}
 
 async def delete_event_by_date_range(state: FlowState) -> List[Event]:
     """
@@ -80,9 +84,11 @@ async def delete_filter_event_agent(state: FlowState):
                 user_events=state['delete_date_range_filtered_events']
             )
         
-        if not isinstance(state["delete_messages"][0], SystemMessage):
+        if state["delete_messages"] and isinstance(state["delete_messages"][0], SystemMessage):
+            state["delete_messages"][0] = SystemMessage(content=prompt_text)
+        else:
             state["delete_messages"].insert(0, SystemMessage(content=prompt_text))
-
+            
         state["delete_messages"].append(HumanMessage(content=state["input_text"]))
 
         response = [await model.ainvoke(state["delete_messages"])]
@@ -111,16 +117,16 @@ async def delete_filter_event_agent(state: FlowState):
                 
                 state['delete_final_filtered_events'] = events
                 if len(events) == 0:
-                    state['delete_messages'].append(AIMessage(content="Silinecek herhangi bir etkinlik bulunamadı"))
+                    state['delete_messages'].append(AIMessage(content="No events to delete found"))
                 else:
-                    state['delete_messages'].append(AIMessage(content=f"Asagidaki etkinlikleri silmek istediginize emin misiniz? {events}"))
+                    state['delete_messages'].append(AIMessage(content=f"Are you sure you want to delete the following events?"))
                     state['is_success'] = True
             else:
-                state['delete_messages'].append(AIMessage(content="Bir hata olustu. Lutfen daha sonra tekrar deneyiniz."))
+                state['delete_messages'].append(AIMessage(content="An error occurred. Please try again later."))
                 
         except Exception as e:
-            state['delete_messages'].append(AIMessage(content="Bir hata olustu. Lutfen daha sonra tekrar deneyiniz."))
+            state['delete_messages'].append(AIMessage(content="An error occurred. Please try again later."))
     else:
-        state['delete_messages'].append(AIMessage(content="Silinecek herhangi bir etkinlik bulunamadı"))
+        state['delete_messages'].append(AIMessage(content="No events to delete found"))
     
     return state

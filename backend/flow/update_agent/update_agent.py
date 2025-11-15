@@ -13,6 +13,7 @@ from models import Event
 from .update_filter_event_agent_prompt import UPDATE_FILTER_EVENT_AGENT_PROMPT
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
+from langchain_core.messages import HumanMessage
 
 retryable_exceptions = (OpenAIError, RateLimitError)
 
@@ -30,6 +31,8 @@ async def update_date_range_agent(state: FlowState):
             weekday=state['weekday'],
             days_in_month=state['days_in_month']
         )
+
+    state["update_messages"].append(HumanMessage(content=state["input_text"]))
     
     if state["update_messages"] and isinstance(state["update_messages"][0], SystemMessage):
         state["update_messages"][0] = SystemMessage(content=prompt_text)
@@ -41,7 +44,7 @@ async def update_date_range_agent(state: FlowState):
         route_data = json.loads(response[0].content)
         state['update_date_range_data'] = route_data
     except Exception as e:
-        state['update_date_range_data'] = {"message": "Bir hata olustu. Lutfen daha sonra tekrar deneyiniz."}
+        state['update_date_range_data'] = {"message": "An error occurred. Please try again later."}
     
     return state
 
@@ -52,7 +55,7 @@ def update_action(state: FlowState):
         return "update_message_handler"
         
 def update_message_handler(_: FlowState):
-        return {"update_messages": [AIMessage(content="Bir hata olustu. Lutfen daha sonra tekrar deneyiniz.")]}
+        return {"update_messages": [AIMessage(content="An error occurred. Please try again later.")]}
 
 async def get_events_for_update(state: FlowState) -> List[Event]:
     """
@@ -116,7 +119,7 @@ async def update_filter_event_agent(state: FlowState):
                 state['update_arguments'] = state['update_date_range_data']['arguments'].get('update_arguments', {})
                 
                 if len(events) == 0:
-                    state['update_messages'].append(AIMessage(content="Güncellenecek herhangi bir etkinlik bulunamadı"))
+                    state['update_messages'].append(AIMessage(content="Could not find any events to update"))
                 else:
                     update_args = state['update_arguments']
                     if 'startDate' in update_args: # important: no need to add duration
@@ -138,16 +141,16 @@ async def update_filter_event_agent(state: FlowState):
                                 )
                                 state['update_conflict_event'] = conflict_event
                         except Exception as e:
-                            state['update_messages'].append(AIMessage(content="Bir hata oluştu. Lütfen daha sonra tekrar deneyiniz."))
+                            state['update_messages'].append(AIMessage(content="An error occurred. Please try again later."))
                             return state
                     
-                    state['update_messages'].append(AIMessage(content="Güncellenmesini istediğiniz etkinlikleri aşağıda görebilirsiniz. Lütfen güncellemek istediğiniz etkinliği seçiniz."))
+                    state['update_messages'].append(AIMessage(content="You can see the events below that you want to update. Please select the event you want to update."))
                     state['is_success'] = True
             else:
-                state['update_messages'].append(AIMessage(content="Bir hata olustu. Lutfen daha sonra tekrar deneyiniz."))
+                state['update_messages'].append(AIMessage(content="An error occurred. Please try again later."))
         except Exception as e:
-            state['update_messages'].append(AIMessage(content="Bir hata olustu. Lutfen daha sonra tekrar deneyiniz."))
+            state['update_messages'].append(AIMessage(content="An error occurred. Please try again later."))
     else:
-        state['update_messages'].append(AIMessage(content="Güncellenecek herhangi bir etkinlik bulunamadı"))
+        state['update_messages'].append(AIMessage(content="Could not find any events to update"))
     
     return state 

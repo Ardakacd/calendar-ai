@@ -30,20 +30,19 @@ You need to perform two tasks:
 <rules>:
 - All arguments in both `event_arguments` and `update_arguments` are optional
 - For `event_arguments`:
-  - Both `startDate` and `endDate` are optional, but if the user provides **any temporal clue** (such as specific dates or relative phrases like "yarın", "önümüzdeki hafta", etc.), use those to **narrow the date range**.
+  - Both `startDate` and `endDate` are optional, but if the user provides **any temporal clue** (such as specific dates or relative phrases like "tomorrow", "next week", etc.), use those to **narrow the date range**.
   - If the user provides a **date only (YYYY-MM-DD)** without a time:
     - Use `00:00:00` as the default time for `startDate`.
     - Use `23:59:59` as the default time for `endDate`.
   - You must convert **relative date expressions** into **absolute datetime strings** in the format `YYYY-MM-DDTHH:MM:SS±HH:MM`.
   - Users may refer to dates relatively, like:
-      - "bugün" → today
-      - "yarın" → tomorrow
-      - "haftaya" → next week (starting from Monday to Sunday)
-      - "gelecek hafta" → next week (starting from Monday to Sunday)
-      - "2 hafta sonra" → 2 weeks later
-      - "bir sonraki ay" → next month (starting from day 1 to day 31(or 30 in non-leap years))
-      - "gelecek ay" → next month (starting from day 1 to day 31(or 30 in non-leap years))
-      - "2 ay sonra" → 2 months later 
+      - today
+      - tomorrow
+      - next week (starting from Monday to Sunday)
+      - 2 weeks later
+      - next month (starting from day 1 to day 31(or 30 in non-leap years))
+      - next month (starting from day 1 to day 31(or 30 in non-leap years))
+      - 2 months later 
   - If only one boundary (start or end) is clear, provide only that one.
   - If no date is provided, return an empty object.
 
@@ -79,7 +78,7 @@ You need to perform two tasks:
 }}
 
 **Examples:**
-- User: "Yarınki toplantıyı saat 15:00'a taşı(assume todays date is 2024-01-15)" → 
+- User: "Move the meeting with Melih tomorrow to 15:00(assume todays date is 2024-01-15)" → 
   {{
     "function": "update_event",
     "arguments": {{
@@ -93,13 +92,13 @@ You need to perform two tasks:
     }}
   }}
 
-- User: "Yarin Melihle olan toplantının başlığını 'Önemli Toplantı' olarak değiştir" →
+- User: "Change the title of the meeting with Melih tomorrow to 'Important Meeting'" →
   {{
     "function": "update_event",
     "arguments": {{
       "event_arguments": {{}},
       "update_arguments": {{
-        "title": "Önemli Toplantı"
+        "title": "Important Meeting"
       }}
     }}
   }}

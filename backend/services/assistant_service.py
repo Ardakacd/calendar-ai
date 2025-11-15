@@ -29,11 +29,11 @@ class AssistantService:
                 "weekday": weekday, 
                 "days_in_month": days_in_month
             }, config=config)
+            
             route = response["route"].get('route') if isinstance(response["route"], dict) else None
             is_success = response["is_success"]
-            print('geldi')
-            print(response["create_messages"])
-
+            
+        
             if is_success:
                 if route == "create":
                     create_event_data = response["create_event_data"]
@@ -43,36 +43,53 @@ class AssistantService:
                         duration=event_data.get("arguments", {}).get("duration"),
                         location=event_data.get("arguments", {}).get("location")
                     ) for event_data in create_event_data]
+                    
+                    # Safety check for empty messages array
+                    message = response["create_messages"][-1].content if response.get("create_messages") else "Events created successfully"
+                    
                     create_response = SuccessfulCreateResponse(
-                        message=response["create_messages"][-1].content, 
+                        message=message, 
                         events=events,
                         conflict_events=response["create_conflict_events"]
                     )
                     return create_response.model_dump()
                 elif route == "update":
+                    # Safety check for empty messages array
+                    message = response["update_messages"][-1].content if response.get("update_messages") else "Events updated successfully"
+                    
                     update_response = SuccessfulUpdateResponse(
-                        message=response["update_messages"][-1].content, 
+                        message=message, 
                         events=response["update_final_filtered_events"],
                         update_arguments=response["update_arguments"],
                         update_conflict_event=response["update_conflict_event"]
                     )
                     return update_response.model_dump()
                 elif route == "delete":
+                    # Safety check for empty messages array
+                    message = response["delete_messages"][-1].content if response.get("delete_messages") else "Events deleted successfully"
+                    
                     delete_response = SuccessfulDeleteResponse(
-                        message=response["delete_messages"][-1].content, 
+                        message=message, 
                         events=response["delete_final_filtered_events"]
                     )
                     return delete_response.model_dump()
                 elif route == "list":
+                    # Safety check for empty messages array
+                    message = response["list_messages"][-1].content if response.get("list_messages") else "Events listed successfully"
+                    
                     list_response = SuccessfulListResponse(
-                        message=response["list_messages"][-1].content, 
+                        message=message, 
                         events=response["list_final_filtered_events"]
                     )
                     return list_response.model_dump()
                 else:
-                    return {"message": response["router_messages"][-1].content}
+                    # Safety check for empty messages array
+                    message = response["router_messages"][-1].content if response.get("router_messages") else "Request processed"
+                    return {"message": message}
             else:
-                return {"message": response["router_messages"][-1].content}
+                # Safety check for empty messages array
+                message = response["router_messages"][-1].content if response.get("router_messages") else "Request could not be processed"
+                return {"message": message}
         except HTTPException as e:
             raise
         except Exception as e:

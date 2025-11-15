@@ -40,7 +40,7 @@ async def create_event(
         logger.error(f"Unexpected error during event creation: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Bir hata oluştu. Lütfen daha sonra tekrar deneyiniz."
+            detail="An error occurred. Please try again later."
         )
     
 @router.post("/bulk", response_model=List[Event])
@@ -55,6 +55,7 @@ async def create_events(
     Returns the created event details.
     """
     try:
+        
         token = credentials.credentials
         
         result = await event_service.create_events(token, event_data)
@@ -68,7 +69,7 @@ async def create_events(
         logger.error(f"Unexpected error during event creation: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Bir hata oluştu. Lütfen daha sonra tekrar deneyiniz."
+            detail="An error occurred. Please try again later."
         )
 
 
@@ -97,7 +98,7 @@ async def get_event(
         logger.error(f"Unexpected error during event retrieval: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Bir hata oluştu. Lütfen daha sonra tekrar deneyiniz."
+            detail="An error occurred. Please try again later."
         )
 
 
@@ -118,6 +119,7 @@ async def get_user_events(
         token = credentials.credentials
         result = await event_service.get_user_events(token, limit=limit, offset=offset)
         logger.info(f"Retrieved {len(result)} events for user")
+        
         return result
 
     except HTTPException as e:
@@ -127,7 +129,7 @@ async def get_user_events(
         logger.error(f"Unexpected error during events retrieval: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Bir hata oluştu. Lütfen daha sonra tekrar deneyiniz."
+            detail="An error occurred. Please try again later."
         )
 
 
@@ -157,7 +159,7 @@ async def get_events_by_date_range(
         logger.error(f"Unexpected error during date range events retrieval: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Bir hata oluştu. Lütfen daha sonra tekrar deneyiniz."
+            detail="An error occurred. Please try again later."
         )
 
 
@@ -187,7 +189,7 @@ async def update_event(
         logger.error(f"Unexpected error during event update: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Bir hata oluştu. Lütfen daha sonra tekrar deneyiniz."
+            detail="An error occurred. Please try again later."
         )
 
 
@@ -216,7 +218,7 @@ async def delete_event(
         logger.error(f"Unexpected error during event deletion: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Bir hata oluştu. Lütfen daha sonra tekrar deneyiniz."
+            detail="An error occurred. Please try again later."
         )
 
 
@@ -245,7 +247,7 @@ async def delete_multiple_events(
         logger.error(f"Unexpected error during bulk event deletion: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Bir hata oluştu. Lütfen daha sonra tekrar deneyiniz."
+            detail="An error occurred. Please try again later."
         )
 
 
@@ -274,7 +276,7 @@ async def search_events(
         logger.error(f"Unexpected error during event search: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Bir hata oluştu. Lütfen daha sonra tekrar deneyiniz."
+            detail="An error occurred. Please try again later."
         )
 
 
@@ -302,5 +304,5 @@ async def get_events_count(
         logger.error(f"Unexpected error during events count retrieval: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Bir hata oluştu. Lütfen daha sonra tekrar deneyiniz."
+            detail="An error occurred. Please try again later."
         )

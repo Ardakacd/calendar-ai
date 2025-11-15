@@ -1,13 +1,13 @@
-import axios from 'axios';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { getUserDateTime } from '../utils/datetime/get_current_time';
-import { Event, EventCreate } from '../models/event';
+import axios from "axios";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { getUserDateTime } from "../utils/datetime/get_current_time";
+import { Event, EventCreate } from "../models/event";
 
-const API_BASE_URL = 'http://localhost:8000';
+const API_BASE_URL = "http://localhost:8000";
 
 // Token storage keys
-const ACCESS_TOKEN_KEY = 'access_token';
-const REFRESH_TOKEN_KEY = 'refresh_token';
+const ACCESS_TOKEN_KEY = "access_token";
+const REFRESH_TOKEN_KEY = "refresh_token";
 
 interface TranscribeMessage {
   message: string;
@@ -85,21 +85,24 @@ class CalendarAPI {
         // 2. Request hasn't been retried yet
         // 3. This is not already a refresh request
         // 4. The error indicates token expiration (check WWW-Authenticate header)
-        if (error.response?.status === 401 && 
-            !originalRequest._retry && 
-            !originalRequest.url?.includes('/auth/refresh')) {
-              
+        if (
+          error.response?.status === 401 &&
+          !originalRequest._retry &&
+          !originalRequest.url?.includes("/auth/refresh")
+        ) {
           // Check if this is likely a token expiration error
           const isTokenExpired = this.isTokenExpiredError(error);
           if (isTokenExpired) {
             originalRequest._retry = true;
 
             try {
-              const refreshToken = await AsyncStorage.getItem(REFRESH_TOKEN_KEY);
+              const refreshToken = await AsyncStorage.getItem(
+                REFRESH_TOKEN_KEY
+              );
               if (refreshToken) {
                 const response = await this.refreshToken(refreshToken);
                 await this.storeTokens(response);
-                
+
                 // Retry the original request with new token
                 originalRequest.headers.Authorization = `Bearer ${response.access_token}`;
                 return this.api(originalRequest);
@@ -124,9 +127,9 @@ class CalendarAPI {
   // Authentication methods
   async login(credentials: LoginCredentials): Promise<TokenResponse> {
     try {
-      const response = await this.api.post('/auth/login', credentials);
+      const response = await this.api.post("/auth/login", credentials);
       const tokenData = response.data;
-      
+
       await this.storeTokens(tokenData);
       return tokenData;
     } catch (error) {
@@ -136,9 +139,9 @@ class CalendarAPI {
 
   async register(userData: RegisterData): Promise<TokenResponse> {
     try {
-      const response = await this.api.post('/auth/register', userData);
+      const response = await this.api.post("/auth/register", userData);
       const tokenData = response.data;
-      
+
       await this.storeTokens(tokenData);
       return tokenData;
     } catch (error) {
@@ -148,21 +151,21 @@ class CalendarAPI {
 
   async refreshToken(refreshToken: string): Promise<TokenResponse> {
     try {
-      const response = await this.api.post('/auth/refresh', {
-        refresh_token: refreshToken
+      const response = await this.api.post("/auth/refresh", {
+        refresh_token: refreshToken,
       });
       return response.data;
     } catch (error) {
-      console.error('Error refreshing token:', error);
-      throw new Error('Token yenilenemedi');
+      console.error("Error refreshing token:", error);
+      throw new Error("Token could not be refreshed");
     }
   }
 
   async logout(): Promise<void> {
     try {
-      await this.api.post('/auth/logout');
+      await this.api.post("/auth/logout");
     } catch (error) {
-      console.error('Error logging out:', error);
+      console.error("Error logging out:", error);
     } finally {
       await this.clearTokens();
     }
@@ -170,21 +173,26 @@ class CalendarAPI {
 
   async getCurrentUser(): Promise<User> {
     try {
-      const response = await this.api.get('/auth/me');
+      const response = await this.api.get("/auth/me");
       return response.data;
     } catch (error) {
-      console.error('Error getting current user:', error);
-      throw new Error('Mevcut kullanıcı alınamadı');
+      console.error("Error getting current user:", error);
+      throw new Error("Current user could not be retrieved");
     }
   }
 
-  async changePassword(passwordRequest: PasswordChangeRequest): Promise<{message: string}> {
+  async changePassword(
+    passwordRequest: PasswordChangeRequest
+  ): Promise<{ message: string }> {
     try {
-      const response = await this.api.patch('/auth/change-password', passwordRequest);
+      const response = await this.api.patch(
+        "/auth/change-password",
+        passwordRequest
+      );
       return response.data;
     } catch (error) {
-      console.error('Error changing password:', error);
-      throw new Error('Şifre değiştirilemedi');
+      console.error("Error changing password:", error);
+      throw new Error("Password could not be changed");
     }
   }
 
@@ -204,10 +212,13 @@ class CalendarAPI {
     return !!token;
   }
 
-  async getStoredTokens(): Promise<{ accessToken: string | null; refreshToken: string | null; }> {
+  async getStoredTokens(): Promise<{
+    accessToken: string | null;
+    refreshToken: string | null;
+  }> {
     const accessToken = await AsyncStorage.getItem(ACCESS_TOKEN_KEY);
     const refreshToken = await AsyncStorage.getItem(REFRESH_TOKEN_KEY);
-    
+
     return { accessToken, refreshToken };
   }
 
@@ -216,53 +227,52 @@ class CalendarAPI {
     try {
       // Create FormData for multipart upload
       const formData = new FormData();
-      formData.append('audio', {
+      formData.append("audio", {
         uri: audioUri,
-        type: 'audio/m4a', // Adjust based on your audio format
-        name: 'audio.m4a'
+        type: "audio/m4a", // Adjust based on your audio format
+        name: "audio.m4a",
       } as any);
-    
-      const response = await this.api.post('/transcribe', formData, {
+
+      const response = await this.api.post("/transcribe", formData, {
         headers: {
-          'Content-Type': 'multipart/form-data',
+          "Content-Type": "multipart/form-data",
         },
-      }); 
+      });
 
       return response.data;
-      
     } catch (error) {
-      console.error('Error transcribing audio:', error);
-      throw new Error('Ses işlenemedi');
+      console.error("Error transcribing audio:", error);
+      throw new Error("Audio could not be processed");
     }
   }
 
   async getEvents(date?: string): Promise<Event[]> {
     try {
       const params = date ? { date } : {};
-      const response = await this.api.get('/events', { params });
+      const response = await this.api.get("/events", { params });
       return response.data;
     } catch (error) {
-      console.error('Error fetching events:', error);
-      throw new Error('Etkinlikler alınamadı');
+      console.error("Error fetching events:", error);
+      throw new Error("Events could not be fetched");
     }
   }
 
   async addEvent(event: EventCreate): Promise<Event> {
     try {
-      const response = await this.api.post('/events', event);
+      const response = await this.api.post("/events", event);
       return response.data;
     } catch (error) {
-      console.error('Error adding event:', error);
+      console.error("Error adding event:", error);
       throw error;
     }
   }
 
   async addEvents(events: EventCreate[]): Promise<Event[]> {
     try {
-      const response = await this.api.post('/events/bulk', events);
+      const response = await this.api.post("/events/bulk", events);
       return response.data;
     } catch (error) {
-      console.error('Error adding events:', error);
+      console.error("Error adding events:", error);
       throw error;
     }
   }
@@ -272,56 +282,61 @@ class CalendarAPI {
       const response = await this.api.patch(`/events/${id}`, event);
       return response.data;
     } catch (error) {
-      console.error('Error updating event:', error);
+      console.error("Error updating event:", error);
       throw error;
     }
   }
 
-  async deleteEvent(eventId: string): Promise<{message: string}> {
+  async deleteEvent(eventId: string): Promise<{ message: string }> {
     try {
       const response = await this.api.delete(`/events/${eventId}`);
       return response.data;
     } catch (error) {
-      console.error('Error deleting event:', error);
-      throw new Error('Etkinlik silinemedi');
+      console.error("Error deleting event:", error);
+      throw new Error("Event could not be deleted");
     }
   }
 
-  async deleteMultipleEvents(eventIds: string[]): Promise<{message: string}> {
+  async deleteMultipleEvents(eventIds: string[]): Promise<{ message: string }> {
     try {
-      console.log(eventIds);
-      const response = await this.api.delete('/events/bulk/', {
+      const response = await this.api.delete("/events/bulk/", {
         params: { event_ids: eventIds },
         paramsSerializer: {
-          indexes: null
-        }
+          indexes: null,
+        },
       });
       return response.data;
     } catch (error) {
-      console.error('Error deleting multiple events:', error);
-      throw new Error('Etkinlikler silinemedi');
+      console.error("Error deleting multiple events:", error);
+      throw new Error("Events could not be deleted");
     }
   }
 
   async processText(text: string): Promise<any> {
     try {
-      const {currentDateTime: current_datetime, weekday, daysInMonth: days_in_month} = getUserDateTime()
-      
-      const response = await this.api.post('/assistant', { text, 
-        current_datetime, 
-        weekday, 
-        days_in_month });
+      const {
+        currentDateTime: current_datetime,
+        weekday,
+        daysInMonth: days_in_month,
+      } = getUserDateTime();
+
+      const response = await this.api.post("/assistant", {
+        text,
+        current_datetime,
+        weekday,
+        days_in_month,
+      });
       return response.data;
     } catch (error) {
-      console.error('Error processing text:', error);
-      throw new Error('Metin işlenemedi');
+      console.error("Error processing text:", error);
+      throw new Error("Text could not be processed");
     }
   }
 
   private isTokenExpiredError(error: any): boolean {
     // Check if this is an authentication error by looking for the WWW-Authenticate header
     // This is set by the backend for all token-related issues (expired, invalid, etc.)
-    return error.response?.headers?.['www-authenticate']?.includes('Bearer');
+    return error.response?.headers?.["www-authenticate"]?.includes("Bearer");
   }
 }
 
@@ -339,7 +354,7 @@ export const useCalendarAPI = () => {
     changePassword: calendarAPI.changePassword.bind(calendarAPI),
     isAuthenticated: calendarAPI.isAuthenticated.bind(calendarAPI),
     getStoredTokens: calendarAPI.getStoredTokens.bind(calendarAPI),
-    
+
     // Calendar
     transcribeAudio: calendarAPI.transcribeAudio.bind(calendarAPI),
     getEvents: calendarAPI.getEvents.bind(calendarAPI),
@@ -350,4 +365,4 @@ export const useCalendarAPI = () => {
     deleteMultipleEvents: calendarAPI.deleteMultipleEvents.bind(calendarAPI),
     processText: calendarAPI.processText.bind(calendarAPI),
   };
-}; 
+};

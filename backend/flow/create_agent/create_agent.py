@@ -32,13 +32,16 @@ async def create_agent(state: FlowState):
     
     state["create_messages"].append(HumanMessage(content=state["input_text"]))
 
-    if not isinstance(state["create_messages"][0], SystemMessage):
+    if state["create_messages"] and isinstance(state["create_messages"][0], SystemMessage):
+        state["create_messages"][0] = SystemMessage(content=prompt_text)
+    else:
         state["create_messages"].insert(0, SystemMessage(content=prompt_text))
 
 
     try:
         response = [await model.ainvoke(state["create_messages"])]
         create_event_data = json.loads(response[0].content)
+
         state['create_event_data'] = create_event_data
     except Exception as e:
         state['create_event_data'] = None
@@ -52,7 +55,7 @@ def create_action(state: FlowState):
         return "create_message_handler"
         
 def create_message_handler(state: FlowState):
-    return {"create_messages": [AIMessage(content='Bir hata olustu. Lutfen daha sonra tekrar deneyiniz.')]}
+    return {"create_messages": [AIMessage(content='An error occurred. Please try again later.')]}
 
 async def check_event_conflict(state: FlowState) -> Optional[Event]:
     """
@@ -72,8 +75,8 @@ async def check_event_conflict(state: FlowState) -> Optional[Event]:
                         conflict_events.append(conflict_event)
             state['create_conflict_events'] = conflict_events
             state['is_success'] = True    
-            state['create_messages'].append(AIMessage(content=f"Asagidaki etkinlikleri olusturmak istediginize emin misiniz? {state['create_event_data']}"))
+            state['create_messages'].append(AIMessage(content=f"Do you want to create the following events?"))
             return state
     except Exception as e:
-        state['create_messages'].append(AIMessage(content="Bir hata olustu. Lutfen daha sonra tekrar deneyiniz."))
+        state['create_messages'].append(AIMessage(content="An error occurred. Please try again later."))
         return state

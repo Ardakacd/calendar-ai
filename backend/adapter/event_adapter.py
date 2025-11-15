@@ -29,6 +29,7 @@ class EventAdapter:
         
         delta = event_model.endDate - event_model.startDate
         duration = int(delta.total_seconds() / 60)
+
         
         return Event(
             id=event_model.event_id, 
@@ -174,6 +175,7 @@ class EventAdapter:
             result = await self.db.execute(stmt)
             db_events = result.scalars().all()
             
+                    
             return [self._convert_to_model(event) for event in db_events]
             
         except SQLAlchemyError as e:
@@ -204,7 +206,6 @@ class EventAdapter:
             
             result = await self.db.execute(stmt)
             db_events = result.scalars().all()
-            
             return [self._convert_to_model(event) for event in db_events]
             
         except SQLAlchemyError as e:

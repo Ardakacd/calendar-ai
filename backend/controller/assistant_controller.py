@@ -20,9 +20,10 @@ async def process(
     """
     try:
         if len(input.text) == 0:
-            raise HTTPException(status_code=400, detail="Metin boş olamaz")
+            raise HTTPException(status_code=400, detail="Text cannot be empty")
 
         token = credentials.credentials
+
         
         result = await assistant_service.process(token, input.text, input.current_datetime, input.weekday, input.days_in_month)
         return result
@@ -31,4 +32,4 @@ async def process(
         raise
     except Exception as e:
         logger.error(f"Error in process endpoint: {e}")
-        raise HTTPException(status_code=500, detail="Kullanıcı mesajı işlenemedi")
+        raise HTTPException(status_code=500, detail="User message could not be processed")

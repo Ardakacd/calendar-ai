@@ -1,10 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import {
-  View,
-  StyleSheet,
-  ScrollView,
-  Alert,
-} from 'react-native';
+import React, { useState, useEffect } from "react";
+import { View, StyleSheet, ScrollView, Alert } from "react-native";
 import {
   Modal,
   Portal,
@@ -13,12 +8,13 @@ import {
   Button,
   Card,
   Title,
-} from 'react-native-paper';
-import DateTimePicker from '@react-native-community/datetimepicker';
-import { MaterialIcons } from '@expo/vector-icons';
-import NumericInput from './NumericInput';
-import { Event } from '../models/event';
-import { showErrorToast } from '../common/toast/toast-message';
+} from "react-native-paper";
+import DateTimePicker from "@react-native-community/datetimepicker";
+import { MaterialIcons } from "@expo/vector-icons";
+import NumericInput from "./NumericInput";
+import { Event } from "../models/event";
+import { showErrorToast } from "../common/toast/toast-message";
+import { formatDateTime, toLocalISOString } from "../utils/datetime/dateUtils";
 interface UpdateAgentEventModalProps {
   visible: boolean;
   event: Event | null;
@@ -34,23 +30,29 @@ export default function UpdateAgentEventModal({
   onDismiss,
   onUpdate,
 }: UpdateAgentEventModalProps) {
-  const [title, setTitle] = useState('');
-  const [location, setLocation] = useState('');
-  const [duration, setDuration] = useState('');
+  const [title, setTitle] = useState("");
+  const [location, setLocation] = useState("");
+  const [duration, setDuration] = useState("");
   const [datetime, setDatetime] = useState(new Date());
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     if (event) {
-      console.log(updateArguments);
-      console.log(event);
       setTitle(updateArguments.title || event.title);
-      setLocation(updateArguments.location || event.location || '');
-      setDuration(updateArguments.duration ? updateArguments.duration.toString() : (event.duration ? event.duration.toString() : ''));
-      
+      setLocation(updateArguments.location || event.location || "");
+      setDuration(
+        updateArguments.duration
+          ? updateArguments.duration.toString()
+          : event.duration
+          ? event.duration.toString()
+          : ""
+      );
+
       // Use update arguments startDate if available, otherwise use current event startDate
-      const startDate = updateArguments.startDate ? new Date(updateArguments.startDate) : new Date(event.startDate);
+      const startDate = updateArguments.startDate
+        ? new Date(updateArguments.startDate)
+        : new Date(event.startDate);
       setDatetime(startDate);
     }
   }, [event, updateArguments]);
@@ -61,12 +63,12 @@ export default function UpdateAgentEventModal({
     const trimmedTitle = title.trim();
 
     if (!trimmedTitle) {
-      showErrorToast('Başlık gereklidir');
+      showErrorToast("Title is required");
       return;
     }
 
     if (trimmedTitle.length > 255) {
-      showErrorToast('Başlık 255 karakterden uzun olamaz');
+      showErrorToast("Title cannot be longer than 255 characters");
       return;
     }
 
@@ -76,11 +78,11 @@ export default function UpdateAgentEventModal({
       try {
         durationMinutes = parseInt(duration);
         if (durationMinutes <= 0) {
-          showErrorToast('Süre 0\'dan büyük olmalıdır');
+          showErrorToast("Duration must be greater than 0");
           return;
-        }   
+        }
       } catch (error) {
-        showErrorToast('Geçersiz süre formatı');
+        showErrorToast("Invalid duration format");
         return;
       }
     }
@@ -91,11 +93,11 @@ export default function UpdateAgentEventModal({
         title: trimmedTitle,
         location: location.trim() || undefined,
         duration: durationMinutes,
-        startDate: datetime.toISOString(),
+        startDate: toLocalISOString(datetime),
       });
       onDismiss();
     } catch (error) {
-      console.error('Error updating event:', error);
+      console.error("Error updating event:", error);
     } finally {
       setLoading(false);
     }
@@ -107,16 +109,7 @@ export default function UpdateAgentEventModal({
     }
   };
 
-  const formatDateTime = (date: Date) => {
-    return date.toLocaleString('tr-TR', {
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: false
-    });
-  };
+  // Use the imported formatDateTime utility function for consistent formatting
 
   const renderFieldWithPreviousValue = (
     label: string,
@@ -130,12 +123,12 @@ export default function UpdateAgentEventModal({
         <MaterialIcons name={icon as any} size={20} color="#6200ee" />
         <Text style={styles.label}>{label}</Text>
       </View>
-      
+
       {inputComponent}
-      
+
       {updateValue && updateValue !== currentValue && (
         <View style={styles.previousValueContainer}>
-          <Text style={styles.previousValueLabel}>Önceki değer:</Text>
+          <Text style={styles.previousValueLabel}>Previous value:</Text>
           <Text style={styles.previousValueText}>{currentValue}</Text>
         </View>
       )}
@@ -151,35 +144,37 @@ export default function UpdateAgentEventModal({
       >
         <Card style={styles.card}>
           <Card.Content>
-            <Title style={styles.title}>Etkinlik Güncelle</Title>
-            
+            <Title style={styles.title}>Update Event</Title>
+
             <ScrollView>
               {renderFieldWithPreviousValue(
-                'Başlık *',
-                event?.title || '',
+                "Title *",
+                event?.title || "",
                 updateArguments.title,
-                'edit',
+                "edit",
                 <TextInput
                   mode="outlined"
                   value={title}
                   onChangeText={setTitle}
-                  placeholder="Etkinlik başlığını girin"
+                  placeholder="Enter event title"
                   style={styles.input}
                 />
               )}
 
               {renderFieldWithPreviousValue(
-                'Tarih & Saat *',
-                event ? formatDateTime(new Date(event.startDate)) : '',
-                updateArguments.startDate ? formatDateTime(new Date(updateArguments.startDate)) : undefined,
-                'event',
+                "Date & Time *",
+                event ? formatDateTime(event.startDate) : "",
+                updateArguments.startDate
+                  ? formatDateTime(updateArguments.startDate)
+                  : undefined,
+                "event",
                 <Button
                   mode="outlined"
                   onPress={() => setShowDatePicker(true)}
                   style={styles.dateButton}
                   icon="calendar-clock"
                 >
-                  {formatDateTime(datetime)}
+                  {formatDateTime(toLocalISOString(datetime))}
                 </Button>
               )}
 
@@ -188,35 +183,39 @@ export default function UpdateAgentEventModal({
                   value={datetime}
                   mode="datetime"
                   display="default"
-                  locale="tr-TR"
+                  locale="en-US"
                   onChange={onDateChange}
                 />
               )}
 
               {renderFieldWithPreviousValue(
-                'Süre (dakika)',
-                event?.duration ? `${event.duration} dakika` : 'Süre belirtilmemiş',
-                updateArguments.duration ? `${updateArguments.duration} dakika` : undefined,
-                'schedule',
+                "Duration (minutes)",
+                event?.duration
+                  ? `${event.duration} minutes`
+                  : "Duration not specified",
+                updateArguments.duration
+                  ? `${updateArguments.duration} minutes`
+                  : undefined,
+                "schedule",
                 <NumericInput
                   mode="outlined"
                   value={duration}
                   onValueChange={setDuration}
-                  placeholder="Dakika cinsinden süre giriniz"
+                  placeholder="Enter duration in minutes"
                   style={styles.input}
                 />
               )}
 
               {renderFieldWithPreviousValue(
-                'Konum',
-                event?.location || 'Konum belirtilmemiş',
+                "Location",
+                event?.location || "Location not specified",
                 updateArguments.location,
-                'location-on',
+                "location-on",
                 <TextInput
                   mode="outlined"
                   value={location}
                   onChangeText={setLocation}
-                  placeholder="Etkinlik konumunu girin (opsiyonel)"
+                  placeholder="Enter event location (optional)"
                   style={styles.input}
                 />
               )}
@@ -229,7 +228,7 @@ export default function UpdateAgentEventModal({
                 style={[styles.button, styles.cancelButton]}
                 disabled={loading}
               >
-                İptal Et
+                Cancel
               </Button>
               <Button
                 mode="contained"
@@ -238,7 +237,7 @@ export default function UpdateAgentEventModal({
                 loading={loading}
                 disabled={loading}
               >
-                Etkinlik Güncelle
+                Update Event
               </Button>
             </View>
           </Card.Content>
@@ -251,76 +250,76 @@ export default function UpdateAgentEventModal({
 const styles = StyleSheet.create({
   modalContainer: {
     flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
     padding: 20,
-    backgroundColor: 'transparent',
+    backgroundColor: "transparent",
   },
   card: {
-    width: '100%',
+    width: "100%",
     maxWidth: 400,
     borderRadius: 16,
     elevation: 8,
-    shadowColor: '#000',
+    shadowColor: "#000",
     shadowOffset: {
       width: 0,
       height: 4,
     },
     shadowOpacity: 0.25,
     shadowRadius: 8,
-    backgroundColor: '#ffffff',
+    backgroundColor: "#ffffff",
   },
   title: {
-    textAlign: 'center',
+    textAlign: "center",
     marginBottom: 20,
-    color: '#1a1a1a',
+    color: "#1a1a1a",
     fontSize: 22,
-    fontWeight: 'bold',
+    fontWeight: "bold",
   },
   inputContainer: {
     marginBottom: 16,
   },
   labelContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     marginBottom: 8,
   },
   label: {
     fontSize: 16,
-    fontWeight: '600',
-    color: '#333',
+    fontWeight: "600",
+    color: "#333",
     marginLeft: 8,
   },
   input: {
-    backgroundColor: '#f8f9fa',
+    backgroundColor: "#f8f9fa",
     borderRadius: 12,
   },
   dateButton: {
     marginTop: 4,
     borderRadius: 12,
-    borderColor: '#6200ee',
+    borderColor: "#6200ee",
     borderWidth: 1.5,
   },
   previousValueContainer: {
     marginTop: 6,
     padding: 8,
-    backgroundColor: '#f0f0f0',
+    backgroundColor: "#f0f0f0",
     borderRadius: 6,
   },
   previousValueLabel: {
     fontSize: 12,
-    color: '#666',
-    fontWeight: '500',
+    color: "#666",
+    fontWeight: "500",
     marginBottom: 2,
   },
   previousValueText: {
     fontSize: 12,
-    color: '#999',
-    fontStyle: 'italic',
+    color: "#999",
+    fontStyle: "italic",
   },
   buttonContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    justifyContent: "space-between",
     marginTop: 20,
     gap: 12,
   },
@@ -330,10 +329,10 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   cancelButton: {
-    borderColor: '#6200ee',
+    borderColor: "#6200ee",
     borderWidth: 1.5,
   },
   updateButton: {
-    backgroundColor: '#6200ee',
+    backgroundColor: "#6200ee",
   },
-}); 
+});
