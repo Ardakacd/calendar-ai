@@ -54,8 +54,8 @@ class FlowBuilder:
         graph_builder.add_edge("get_events_for_update", "update_filter_event_agent")
         graph_builder.add_edge("update_filter_event_agent", END)
 
-        checkpointer = await get_checkpointer()
-        flow = graph_builder.compile(checkpointer=checkpointer)
+        # checkpointer = await get_checkpointer()
+        flow = graph_builder.compile()
         return flow
     
         
