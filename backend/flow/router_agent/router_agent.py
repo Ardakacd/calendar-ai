@@ -36,23 +36,23 @@ async def router_agent(state: FlowState):
     return state
 
 def route_action(state: FlowState):
+    # create, delete, update, list agents removed from graph - route all to message handler
+    # New architecture will use Scheduling Agent with tools instead
     if isinstance(state['route'], dict) and "route" in state['route']:
         route = state["route"]["route"]
-
-        match route:
-            case "create":
-                return "create_agent"
-            case "update":
-                return "update_date_range_agent"
-            case "delete":
-                return "delete_date_range_agent"
-            case "list":
-                return "list_date_range_agent"
-            case _:
-                return 'router_message_handler'
-    return 'router_message_handler'
+        if route in ("create", "update", "delete", "list"):
+            # Placeholder: route to message handler until Scheduling Agent is wired
+            return "router_message_handler"
+    return "router_message_handler"
         
 def router_message_handler(state: FlowState):
-    """Handle cases where router returns a message instead of a route"""
+    """Handle cases where router returns a message or when agents are not wired (create/update/delete/list)"""
     state['is_success'] = True
-    return {"router_messages": [AIMessage(content=state['route'])]}
+    route = state.get('route')
+    if isinstance(route, dict) and route.get('route') in ('create', 'update', 'delete', 'list'):
+        content = "Calendar operations are being migrated. This feature will be available soon."
+    elif isinstance(route, str):
+        content = route
+    else:
+        content = str(route) if route else "How can I help you with your calendar?"
+    return {"router_messages": [AIMessage(content=content)]}

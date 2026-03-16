@@ -6,10 +6,6 @@ from ..llm import model
 from tenacity import retry, stop_after_attempt, wait_random_exponential, retry_if_exception_type
 from openai import OpenAIError, RateLimitError
 import json
-from typing import Optional
-from adapter.event_adapter import EventAdapter
-from database import get_async_db_context_manager
-from models import Event
 from datetime import timedelta, datetime
 
 retryable_exceptions = (OpenAIError, RateLimitError)
@@ -43,40 +39,31 @@ async def create_agent(state: FlowState):
         create_event_data = json.loads(response[0].content)
 
         state['create_event_data'] = create_event_data
+
+        # Set conflict_check_request for Conflict Resolution Agent (first event)
+        if isinstance(create_event_data, list) and len(create_event_data) > 0:
+            first_event = create_event_data[0].get("arguments", {})
+            start_date = first_event.get("startDate")
+            duration = first_event.get("duration", 60)
+            if start_date:
+                start_dt = datetime.fromisoformat(start_date) if isinstance(start_date, str) else start_date
+                end_dt = start_dt + timedelta(minutes=duration)
+                state['conflict_check_request'] = {
+                    "startDate": start_date if isinstance(start_date, str) else start_dt.isoformat(),
+                    "endDate": end_dt.isoformat(),
+                    "duration_minutes": duration,
+                    "exclude_event_id": None
+                }
     except Exception as e:
         state['create_event_data'] = None
-    
+
     return state
 
 def create_action(state: FlowState):
     if isinstance(state['create_event_data'], list):
-        return "check_event_conflict"
+        return "conflict_resolution_agent"
     else:
         return "create_message_handler"
         
 def create_message_handler(state: FlowState):
     return {"create_messages": [AIMessage(content='An error occurred. Please try again later.')]}
-
-async def check_event_conflict(state: FlowState) -> Optional[Event]:
-    """
-    Check for event conflicts before creating the event.
-    """
-    try:
-        async with get_async_db_context_manager() as db:
-            adapter = EventAdapter(db)
-            conflict_events = []
-            for event_data in state['create_event_data']:
-                start_date = datetime.fromisoformat(event_data.get('arguments', {}).get('startDate'))
-                duration = event_data.get('arguments', {}).get('duration', 0)
-                end_date = start_date + timedelta(minutes=duration)
-                if start_date:
-                    conflict_event = await adapter.check_event_conflict(state['user_id'], start_date, end_date)
-                    if conflict_event:
-                        conflict_events.append(conflict_event)
-            state['create_conflict_events'] = conflict_events
-            state['is_success'] = True    
-            state['create_messages'].append(AIMessage(content=f"Do you want to create the following events?"))
-            return state
-    except Exception as e:
-        state['create_messages'].append(AIMessage(content="An error occurred. Please try again later."))
-        return state
