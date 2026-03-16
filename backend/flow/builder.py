@@ -1,6 +1,7 @@
 from langgraph.graph import StateGraph, START, END
 from .router_agent.router_agent import router_agent, route_action, router_message_handler
-from .create_agent.create_agent import create_agent, create_message_handler, create_action, check_event_conflict
+from .create_agent.create_agent import create_agent, create_message_handler, create_action
+from .conflict_resolution.conflict_resolution_agent import conflict_resolution_agent
 from .list_agent.list_agent import list_date_range_agent, list_message_handler, list_action, list_event_by_date_range, list_filter_event_agent
 from .delete_agent.delete_agent import delete_date_range_agent, delete_message_handler, delete_action, delete_event_by_date_range, delete_filter_event_agent
 from .update_agent.update_agent import update_date_range_agent, update_message_handler, update_action, get_events_for_update, update_filter_event_agent
@@ -16,7 +17,7 @@ class FlowBuilder:
         graph_builder.add_node("router_message_handler", router_message_handler)
         graph_builder.add_node("create_agent", create_agent)
         graph_builder.add_node("create_message_handler", create_message_handler)
-        graph_builder.add_node("check_event_conflict", check_event_conflict)
+        graph_builder.add_node("conflict_resolution_agent", conflict_resolution_agent)
         graph_builder.add_node("list_date_range_agent", list_date_range_agent)
         graph_builder.add_node("list_message_handler", list_message_handler)
         graph_builder.add_node("list_event_by_date_range", list_event_by_date_range)
@@ -37,7 +38,7 @@ class FlowBuilder:
 
         graph_builder.add_conditional_edges("create_agent", create_action)
         graph_builder.add_edge("create_message_handler", END)
-        graph_builder.add_edge("check_event_conflict", END)
+        graph_builder.add_edge("conflict_resolution_agent", END)
 
         graph_builder.add_conditional_edges("list_date_range_agent", list_action)
         graph_builder.add_edge("list_message_handler", END)

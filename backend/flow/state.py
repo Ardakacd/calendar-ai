@@ -34,3 +34,7 @@ class FlowState(TypedDict):
     update_arguments: dict
     update_conflict_event: Optional[Event]
     is_success: Annotated[bool, merge_is_success]
+    # Conflict Resolution
+    conflict_check_request: Optional[dict]
+    conflict_check_result: Optional[dict]
+    conflict_resolution_messages: Annotated[list[BaseMessage], add_messages]
