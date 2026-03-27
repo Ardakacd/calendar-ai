@@ -13,12 +13,10 @@ import { LinearGradient } from "expo-linear-gradient";
 import { useNavigation } from "@react-navigation/native";
 import MicButton from "../components/MicButton";
 import ListComponent from "../components/ListComponent";
-import DeleteComponent from "../components/DeleteComponent";
-import CreateComponent from "../components/CreateComponent";
-import UpdateComponent from "../components/UpdateComponent";
+import ConflictComponent, { ConflictSuggestion } from "../components/ConflictComponent";
 import { useCalendarAPI } from "../services/api";
 import { useAuth } from "../contexts/AuthContext";
-import { Event, EventCreate } from "../models/event";
+import { Event } from "../models/event";
 
 // Animated thinking dots component
 const ThinkingDots = () => {
@@ -55,11 +53,9 @@ interface ChatMessage {
   type: "user" | "ai";
   content: string;
   timestamp: Date;
-  eventData?: EventCreate[] | EventCreate;
   events?: Event[];
-  updateArguments?: any;
-  responseType?: "text" | "list" | "delete" | "create" | "update";
-  conflictEvent?: Event[] | Event;
+  hasConflict?: boolean;
+  suggestions?: ConflictSuggestion[];
 }
 
 export default function HomeScreen() {
@@ -70,45 +66,47 @@ export default function HomeScreen() {
       type: "ai",
       content: "Hello, I am your AI calendar assistant. How can I help you?",
       timestamp: new Date(),
-      eventData: undefined,
-      events: undefined,
-      responseType: "text",
     },
   ]);
   const [inputText, setInputText] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
   const [isThinking, setIsThinking] = useState(false);
-  const [hasUncompletedComponent, setHasUncompletedComponent] = useState(false);
-  const {
-    transcribeAudio,
-    addEvents,
-    processText,
-    deleteMultipleEvents,
-    updateEvent,
-  } = useCalendarAPI();
+  const { transcribeAudio, processText, resetMemory } = useCalendarAPI();
   const { user } = useAuth();
   const scrollViewRef = useRef<ScrollView>(null);
   const inputRef = useRef<TextInput>(null);
 
+  const handleClearMemory = async () => {
+    try {
+      await resetMemory();
+      setMessages([
+        {
+          id: Date.now().toString(),
+          type: "ai",
+          content: "Conversation cleared. How can I help you?",
+          timestamp: new Date(),
+        },
+      ]);
+    } catch {
+      // silently ignore
+    }
+  };
+
   const addMessage = (
     type: "user" | "ai",
     content: string,
-    eventData?: EventCreate[] | EventCreate,
     events?: Event[],
-    responseType: "text" | "list" | "delete" | "create" | "update" = "text",
-    updateArguments?: any,
-    conflictEvent?: Event
+    hasConflict?: boolean,
+    suggestions?: ConflictSuggestion[]
   ) => {
     const newMessage: ChatMessage = {
       id: Date.now().toString(),
       type,
       content: content ? content.trim() : "",
       timestamp: new Date(),
-      eventData,
       events,
-      updateArguments,
-      responseType,
-      conflictEvent,
+      hasConflict,
+      suggestions,
     };
     setMessages((prev) => [...prev, newMessage]);
   };
@@ -128,7 +126,6 @@ export default function HomeScreen() {
     scrollToBottom();
     await handleProcessText(userMessage);
 
-    // Maintain focus on the input
     setTimeout(() => {
       inputRef.current?.focus();
     }, 100);
@@ -139,80 +136,20 @@ export default function HomeScreen() {
     try {
       const response = await processText(text);
 
-      if (
-        response &&
-        typeof response === "object" &&
-        response.type === "list" &&
-        response.events
-      ) {
-        addMessage(
-          "ai",
-          response.message || "Here are your events:",
-          undefined,
-          response.events,
-          "list"
-        );
-      } else if (
-        response &&
-        typeof response === "object" &&
-        response.type === "delete" &&
-        response.events
-      ) {
-        addMessage(
-          "ai",
-          response.message || "Select the events to delete:",
-          undefined,
-          response.events,
-          "delete"
-        );
-        setHasUncompletedComponent(true);
-      } else if (
-        response &&
-        typeof response === "object" &&
-        response.type === "create" &&
-        response.events
-      ) {
-        addMessage(
-          "ai",
-          response.message || "Please review the event details:",
-          response.events,
-          undefined,
-          "create",
-          undefined,
-          response.conflict_events
-        );
-        setHasUncompletedComponent(true);
-      } else if (
-        response &&
-        typeof response === "object" &&
-        response.type === "update" &&
-        response.events
-      ) {
-        addMessage(
-          "ai",
-          response.message || "Select the events to update:",
-          undefined,
-          response.events,
-          "update",
-          response.update_arguments,
-          response.update_conflict_event
-        );
-        setHasUncompletedComponent(true);
-      } else {
-        // Handle string responses or other types
-        const message =
-          typeof response === "string"
-            ? response
-            : response?.message || "Command processed successfully.";
-        addMessage("ai", message, undefined, undefined, "text");
-      }
+      const message =
+        typeof response === "string"
+          ? response
+          : response?.message || "Done.";
 
+      const events: Event[] | undefined =
+        response?.events?.length > 0 ? response.events : undefined;
+      const hasConflict: boolean = response?.has_conflict === true;
+      const suggestions: ConflictSuggestion[] = response?.suggestions ?? [];
+
+      addMessage("ai", message, events, hasConflict, suggestions);
       scrollToBottom();
     } catch (error) {
-      addMessage(
-        "ai",
-        "Sorry, I couldn't process your command. Please try again."
-      );
+      addMessage("ai", "Sorry, I couldn't process your command. Please try again.");
       scrollToBottom();
     } finally {
       setIsThinking(false);
@@ -221,93 +158,18 @@ export default function HomeScreen() {
 
   const handleVoiceCommand = async (audioUri: string) => {
     setIsProcessing(true);
-
     try {
       const response = await transcribeAudio(audioUri);
       const userMessage = response.message || "Voice command processed";
       addMessage("user", userMessage);
       scrollToBottom();
       await handleProcessText(userMessage);
-
-      //await processCommand(userMessage);
     } catch (error) {
-      console.error("Error processing voice command:", error);
-      addMessage(
-        "ai",
-        "Sorry, I couldn't process your voice command. Please try again."
-      );
+      addMessage("ai", "Sorry, I couldn't process your voice command. Please try again.");
       scrollToBottom();
     } finally {
       setIsProcessing(false);
     }
-  };
-
-  const handleDeleteEvent = async (eventIds: string[]) => {
-    try {
-      const response = await deleteMultipleEvents(eventIds);
-      addMessage(
-        "ai",
-        response.message || "Events deleted successfully!",
-        undefined,
-        undefined,
-        "text"
-      );
-      scrollToBottom();
-    } catch (error) {
-      addMessage(
-        "ai",
-        "Events could not be deleted. Please try again.",
-        undefined,
-        undefined,
-        "text"
-      );
-      scrollToBottom();
-    }
-  };
-
-  const handleCreateEvent = async (eventData: EventCreate[]) => {
-    try {
-      await addEvents(eventData);
-      addMessage(
-        "ai",
-        "Event created successfully!",
-        undefined,
-        undefined,
-        "text"
-      );
-      scrollToBottom();
-    } catch (error: any) {
-      const message =
-        error.response?.data?.detail ||
-        "Event could not be created. Please try again.";
-      addMessage("ai", message, undefined, undefined, "text");
-      scrollToBottom();
-    }
-  };
-
-  const handleUpdateEvent = async (eventId: string, updatedEvent: any) => {
-    try {
-      await updateEvent(eventId, updatedEvent);
-      addMessage(
-        "ai",
-        "Event updated successfully!",
-        undefined,
-        undefined,
-        "text"
-      );
-      scrollToBottom();
-    } catch (error: any) {
-      const message =
-        error.response?.data?.detail ||
-        "Event could not be updated. Please try again.";
-      addMessage("ai", message, undefined, undefined, "text");
-      scrollToBottom();
-    }
-  };
-
-  // Function to mark component as completed
-  const markComponentAsCompleted = () => {
-    setHasUncompletedComponent(false);
   };
 
   const renderMessage = (message: ChatMessage) => {
@@ -321,52 +183,34 @@ export default function HomeScreen() {
           isUser ? styles.userMessage : styles.aiMessage,
         ]}
       >
-        <View
-          style={[
-            styles.messageBubble,
-            isUser ? styles.userBubble : styles.aiBubble,
-          ]}
-        >
-          <Text
+        {message.events && message.events.length > 0 ? (
+          <View style={styles.eventsContainer}>
+            <ListComponent events={message.events} />
+          </View>
+        ) : message.hasConflict ? (
+          <View style={[styles.messageBubble, styles.aiBubble, styles.eventsContainer]}>
+            <ConflictComponent
+              conflictMessage={message.content}
+              suggestions={message.suggestions ?? []}
+            />
+          </View>
+        ) : (
+          <View
             style={[
-              styles.messageText,
-              isUser ? styles.userMessageText : styles.aiMessageText,
+              styles.messageBubble,
+              isUser ? styles.userBubble : styles.aiBubble,
             ]}
           >
-            {message.content}
-          </Text>
-
-          {message.responseType === "list" && message.events && (
-            <ListComponent events={message.events} />
-          )}
-
-          {message.responseType === "delete" && message.events && (
-            <DeleteComponent
-              events={message.events}
-              onDelete={handleDeleteEvent}
-              onCompleted={markComponentAsCompleted}
-            />
-          )}
-
-          {message.responseType === "create" && message.eventData && (
-            <CreateComponent
-              eventData={message.eventData as unknown as EventCreate[]}
-              onCreate={handleCreateEvent}
-              onCompleted={markComponentAsCompleted}
-              conflictEvents={message.conflictEvent as any}
-            />
-          )}
-
-          {message.responseType === "update" && message.events && (
-            <UpdateComponent
-              events={message.events}
-              updateArguments={message.updateArguments || {}}
-              onUpdate={handleUpdateEvent}
-              onCompleted={markComponentAsCompleted}
-              conflictEvent={message.conflictEvent as any}
-            />
-          )}
-        </View>
+            <Text
+              style={[
+                styles.messageText,
+                isUser ? styles.userMessageText : styles.aiMessageText,
+              ]}
+            >
+              {message.content}
+            </Text>
+          </View>
+        )}
       </View>
     );
   };
@@ -388,6 +232,13 @@ export default function HomeScreen() {
             </View>
           </View>
         </TouchableOpacity>
+        <IconButton
+          icon="delete-sweep"
+          iconColor="white"
+          size={24}
+          onPress={handleClearMemory}
+          style={styles.logoutButton}
+        />
         <IconButton
           icon="calendar"
           iconColor="white"
@@ -425,16 +276,11 @@ export default function HomeScreen() {
             placeholderTextColor="rgba(255, 255, 255, 0.6)"
             onSubmitEditing={handleSendMessage}
             returnKeyType="send"
-            style={[
-              styles.textInput,
-              hasUncompletedComponent && styles.disabledInput,
-            ]}
+            style={styles.textInput}
             contextMenuHidden={false}
             selectTextOnFocus={false}
             autoCorrect={false}
             autoCapitalize="none"
-            editable={!hasUncompletedComponent}
-            pointerEvents={hasUncompletedComponent ? "none" : "auto"}
             ref={inputRef}
           />
           <View>
@@ -444,17 +290,12 @@ export default function HomeScreen() {
                 iconColor="white"
                 size={20}
                 onPress={handleSendMessage}
-                style={[
-                  styles.sendButton,
-                  hasUncompletedComponent && styles.disabledButton,
-                ]}
-                disabled={hasUncompletedComponent}
+                style={styles.sendButton}
               />
             ) : (
               <MicButton
                 onRecordingComplete={handleVoiceCommand}
                 isProcessing={isProcessing}
-                disabled={hasUncompletedComponent}
               />
             )}
           </View>
@@ -535,14 +376,6 @@ const styles = StyleSheet.create({
     borderWidth: 0,
     borderColor: "transparent",
   },
-  disabledInput: {
-    opacity: 0.5,
-    backgroundColor: "rgba(255, 255, 255, 0.05)",
-  },
-  inputButtons: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
   sendButton: {
     backgroundColor: "rgba(255, 255, 255, 0.2)",
     borderRadius: 20,
@@ -551,13 +384,12 @@ const styles = StyleSheet.create({
     margin: 0,
     padding: 0,
   },
-  disabledButton: {
-    opacity: 0.5,
-    backgroundColor: "rgba(255, 255, 255, 0.05)",
-  },
   messageContainer: {
     marginVertical: 8,
     paddingHorizontal: 8,
+  },
+  eventsContainer: {
+    alignSelf: "stretch",
   },
   userMessage: {
     alignItems: "flex-end",
@@ -588,21 +420,5 @@ const styles = StyleSheet.create({
   },
   aiMessageText: {
     color: "rgba(255, 255, 255, 0.9)",
-  },
-  eventCard: {
-    marginTop: 12,
-    backgroundColor: "rgba(255, 255, 255, 0.1)",
-    borderRadius: 12,
-  },
-  eventTitle: {
-    fontSize: 16,
-    fontWeight: "bold",
-    marginBottom: 8,
-    color: "white",
-  },
-  eventDetail: {
-    fontSize: 14,
-    color: "rgba(255, 255, 255, 0.8)",
-    marginBottom: 4,
   },
 });

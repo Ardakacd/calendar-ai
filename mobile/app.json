@@ -39,7 +39,8 @@
           "microphonePermission": "Allow Calendar AI to access your microphone to record voice commands."
         }
       ],
-      "expo-localization"
+      "expo-localization",
+      "expo-audio"
     ]
   }
 }

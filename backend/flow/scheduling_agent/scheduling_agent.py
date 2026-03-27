@@ -1,0 +1,798 @@
+"""
+Scheduling Agent — Agentic Implementation
+
+Handles CREATE, UPDATE, DELETE, and LIST calendar operations.
+Replaces the four separate agents (create_agent, update_agent, delete_agent, list_agent)
+with a single LLM-driven agent that uses tools.
+
+Flow per operation:
+  CREATE  → structured extraction → conflict_resolution_agent → scheduling_finalize (execute)
+  UPDATE  → list_event (agentic) → keyword filter → conflict_resolution_agent → scheduling_finalize (execute)
+  DELETE  → list_event (agentic) → keyword filter → delete_event (if unambiguous) or ask user
+  LIST    → list_event (agentic) → keyword filter → return results
+"""
+
+import logging
+import json
+from typing import Optional, List
+from datetime import datetime, timedelta
+from langchain_core.messages import SystemMessage, AIMessage, HumanMessage, ToolMessage
+from langchain_core.prompts import PromptTemplate
+from pydantic import BaseModel, Field
+from tenacity import retry, stop_after_attempt, wait_random_exponential, retry_if_exception_type
+from openai import OpenAIError, RateLimitError
+
+from ..state import FlowState
+from ..llm import model
+from ..tools.list_event_tool import list_event_tool_factory
+from ..tools.delete_event_tool import delete_event_tool_factory
+from ..tools.create_event_tool import create_event_impl
+from ..tools.update_event_tool import update_event_impl
+from .prompt import SCHEDULING_AGENT_SYSTEM_PROMPT, SCHEDULING_FILTER_PROMPT
+
+logger = logging.getLogger(__name__)
+
+retryable_exceptions = (OpenAIError, RateLimitError)
+
+
+# ---------------------------------------------------------------------------
+# Pydantic schemas for structured extraction
+# ---------------------------------------------------------------------------
+
+class CreateEventItem(BaseModel):
+    title: str = Field(description="Event title in English")
+    startDate: datetime = Field(description="Event start time (ISO 8601 with timezone)")
+    duration: Optional[int] = Field(None, description="Duration in minutes; calculated from endDate if not stated")
+    endDate: Optional[datetime] = Field(None, description="Event end time if explicitly provided by the user")
+    location: Optional[str] = Field(None, description="Event location if mentioned")
+
+
+class CreatePlan(BaseModel):
+    events: List[CreateEventItem] = Field(description="All events to create (one or more)")
+    clarification_needed: Optional[str] = Field(
+        None, description="Set this if start time or title is missing or ambiguous — ask the user"
+    )
+
+
+class UpdatePlan(BaseModel):
+    event_ids: List[str] = Field(description="UUIDs of the event(s) to update, taken from list results")
+    new_title: Optional[str] = Field(None, description="New title if the user wants to change it")
+    new_startDate: Optional[datetime] = Field(None, description="New start time if the user wants to change it")
+    new_duration: Optional[int] = Field(None, description="New duration in minutes if the user wants to change it")
+    new_location: Optional[str] = Field(None, description="New location if the user wants to change it")
+    existing_startDate: Optional[datetime] = Field(
+        None, description="Current start time of the target event(s), from list results"
+    )
+    existing_endDate: Optional[datetime] = Field(
+        None, description="Current end time of the target event(s), from list results"
+    )
+    clarification_needed: Optional[str] = Field(
+        None, description="Set this if multiple events match ambiguously or information is unclear"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Main scheduling agent node
+# ---------------------------------------------------------------------------
+
+@retry(
+    wait=wait_random_exponential(min=1, max=10),
+    stop=stop_after_attempt(3),
+    retry=retry_if_exception_type(retryable_exceptions),
+)
+async def scheduling_agent(state: FlowState):
+    operation = state['route']['route']
+    user_id = state['user_id']
+
+    system_prompt = PromptTemplate.from_template(SCHEDULING_AGENT_SYSTEM_PROMPT).format(
+        current_datetime=state['current_datetime'],
+        weekday=state['weekday'],
+        days_in_month=state['days_in_month'],
+    )
+
+    # Extract user's local timezone from current_datetime so stored UTC dates
+    # are converted to local time before the LLM sees them (fixes "+00:00" mismatch)
+    user_tz = _extract_tz(state.get('current_datetime', ''))
+
+    if operation == 'create':
+        result = await _handle_create(state, system_prompt)
+    elif operation == 'update':
+        result = await _handle_update(state, system_prompt, user_id, user_tz)
+    elif operation == 'delete':
+        result = await _handle_delete(state, system_prompt, user_id, user_tz)
+    elif operation == 'list':
+        result = await _handle_list(state, system_prompt, user_id, user_tz)
+    else:
+        msg = "I couldn't determine what calendar operation to perform. Please try again."
+        result = {
+            "scheduling_messages": [AIMessage(content=msg)],
+            "scheduling_result": {"message": msg, "success": False},
+        }
+
+    # Always stamp the current operation so scheduling_finalize routes correctly
+    # even when a handler returns early (no-match, clarification, ambiguous)
+    result.setdefault("scheduling_operation", operation)
+
+    # Mirror the last scheduling message to router_messages so the router has
+    # full conversation context on the next turn (multi-turn flows)
+    sched_msgs = result.get("scheduling_messages", [])
+    if sched_msgs and hasattr(sched_msgs[-1], "content"):
+        result["router_messages"] = [AIMessage(content=sched_msgs[-1].content)]
+
+    return result
+
+
+# ---------------------------------------------------------------------------
+# CREATE
+# ---------------------------------------------------------------------------
+
+def _extract_tz(current_datetime_str: str):
+    """Return a timezone object parsed from the current_datetime ISO string, or UTC as fallback."""
+    from datetime import timezone, timedelta
+    try:
+        dt = datetime.fromisoformat(current_datetime_str)
+        if dt.tzinfo is not None:
+            return dt.tzinfo
+    except Exception:
+        pass
+    return timezone.utc
+
+
+def _conversation_history(state: FlowState) -> list:
+    """Return previous scheduling_messages from state, excluding SystemMessages."""
+    return [m for m in state.get('scheduling_messages', []) if not isinstance(m, SystemMessage)]
+
+
+async def _handle_create(state: FlowState, system_prompt: str) -> dict:
+    """
+    Structured extraction of one or more events from the user's message.
+    Includes conversation history so the LLM can resolve references like "book option 2".
+    No DB calls — conflict check happens next via conflict_resolution_agent.
+    """
+    # scheduling_messages: previous scheduling turns (what event was being created, conflicts seen)
+    # router_messages: full cross-agent conversation context (conflict replies, prior turns)
+    # Combine both so the LLM can resolve references like "it" or "option 2"
+    sched_history = _conversation_history(state)
+    router_history = [m for m in state.get('router_messages', []) if not isinstance(m, SystemMessage)]
+
+    # Deduplicate: keep router_history entries not already covered by sched_history content
+    sched_contents = {m.content for m in sched_history if hasattr(m, 'content')}
+    extra_router = [m for m in router_history if m.content not in sched_contents]
+
+    history = sched_history + extra_router
+
+    plan: CreatePlan = await model.with_structured_output(CreatePlan).ainvoke(
+        [SystemMessage(content=system_prompt)]
+        + history
+        + [HumanMessage(content=state['input_text'])]
+    )
+
+    if plan.clarification_needed:
+        return {
+            "scheduling_messages": [AIMessage(content=plan.clarification_needed)],
+            "scheduling_result": {
+                "message": plan.clarification_needed,
+                "needs_clarification": True,
+                "success": False,
+            },
+            "conflict_check_request": None,
+            "conflict_check_result": None,
+            "scheduling_event_data": None,
+        }
+
+    # Resolve endDate and duration for each event
+    events_data = []
+    for item in plan.events:
+        start = item.startDate
+        if item.endDate and not item.duration:
+            duration = int((item.endDate - start).total_seconds() / 60)
+            end = item.endDate
+        elif item.duration:
+            duration = item.duration
+            end = start + timedelta(minutes=duration)
+        else:
+            duration = 60  # default 1 hour
+            end = start + timedelta(minutes=60)
+
+        events_data.append({
+            "title": item.title,
+            "startDate": start.isoformat(),
+            "endDate": end.isoformat(),
+            "duration_minutes": duration,
+            "location": item.location,
+        })
+
+    # Use the first event's time for the conflict check
+    first = events_data[0]
+    return {
+        "scheduling_operation": "create",
+        "scheduling_event_data": {"events": events_data},
+        "conflict_check_request": {
+            "startDate": first["startDate"],
+            "endDate": first["endDate"],
+            "duration_minutes": first["duration_minutes"],
+        },
+        "conflict_check_result": None,
+        # Store the user request + AI ack so next-turn history resolves "it" / "option 2"
+        "scheduling_messages": [
+            HumanMessage(content=state['input_text']),
+            AIMessage(content=f"Understood. Creating {', '.join(repr(e['title']) for e in events_data)}. Checking for conflicts..."),
+        ],
+    }
+
+
+# ---------------------------------------------------------------------------
+# UPDATE
+# ---------------------------------------------------------------------------
+
+async def _handle_update(state: FlowState, system_prompt: str, user_id: int, user_tz=None) -> dict:
+    """
+    Phase 1: Use list_event to find events in the relevant date range.
+    Phase 2: Keyword-filter the results, then extract the update plan.
+    Conversation history is included so the LLM understands multi-turn context.
+    """
+    list_tool = list_event_tool_factory(user_id, user_tz)
+    model_with_tools = model.bind_tools([list_tool])
+
+    history = _conversation_history(state)
+    messages = (
+        [SystemMessage(content=system_prompt)]
+        + history
+        + [HumanMessage(content=state['input_text'])]
+    )
+
+    # Agentic search loop
+    messages = await _run_tool_loop(messages, model_with_tools, {'list_event': list_tool}, max_iter=5)
+
+    # Collect all events returned by list_event across all tool calls
+    all_events = _extract_events_from_messages(messages)
+
+    # Keyword-filter by title/location/duration
+    filtered_events = await _filter_events(all_events, state['input_text'], intent="find the event to update")
+
+    if not filtered_events:
+        msg = "I couldn't find any events matching your request. Could you provide more details?"
+        return {
+            "scheduling_messages": [AIMessage(content=msg)],
+            "scheduling_result": {"message": msg, "success": False},
+            "conflict_check_request": None,
+            "conflict_check_result": None,
+        }
+
+    # Structured extraction of the update plan using filtered events as context
+    filter_context = json.dumps(filtered_events, default=str, indent=2)
+    messages.append(HumanMessage(
+        content=(
+            f"The following events match the user's request:\n{filter_context}\n\n"
+            "Extract the update plan: which event(s) to update and what fields to change."
+        )
+    ))
+    plan: UpdatePlan = await model.with_structured_output(UpdatePlan).ainvoke(messages)
+
+    if plan.clarification_needed:
+        return {
+            "scheduling_messages": [AIMessage(content=plan.clarification_needed)],
+            "scheduling_result": {
+                "message": plan.clarification_needed,
+                "needs_clarification": True,
+                "success": False,
+            },
+            "conflict_check_request": None,
+            "conflict_check_result": None,
+        }
+
+    if not plan.event_ids:
+        msg = "I couldn't identify which event to update. Could you be more specific?"
+        return {
+            "scheduling_messages": [AIMessage(content=msg)],
+            "scheduling_result": {"message": msg, "success": False},
+            "conflict_check_request": None,
+            "conflict_check_result": None,
+        }
+
+    # Only trigger conflict check if the start time is actually changing
+    check_start = plan.new_startDate
+    check_end = None
+    if check_start:
+        if plan.new_duration:
+            check_end = check_start + timedelta(minutes=plan.new_duration)
+        elif plan.existing_endDate:
+            check_end = plan.existing_endDate
+        else:
+            check_end = check_start + timedelta(hours=1)
+
+    duration_minutes = 60
+    if check_start and check_end:
+        duration_minutes = int((check_end - check_start).total_seconds() / 60)
+
+    return {
+        "scheduling_operation": "update",
+        "conflict_check_result": None,
+        "scheduling_event_data": {
+            "event_ids": plan.event_ids,
+            "update_args": {
+                "title": plan.new_title,
+                "startDate": plan.new_startDate.isoformat() if plan.new_startDate else None,
+                "duration": plan.new_duration,
+                "location": plan.new_location,
+            },
+        },
+        "conflict_check_request": {
+            "startDate": check_start.isoformat() if check_start else None,
+            "endDate": check_end.isoformat() if check_end else None,
+            "duration_minutes": duration_minutes,
+            "exclude_event_id": plan.event_ids[0] if plan.event_ids else None,
+        },
+        "scheduling_messages": [m for m in messages if not isinstance(m, SystemMessage)],
+    }
+
+
+# ---------------------------------------------------------------------------
+# DELETE
+# ---------------------------------------------------------------------------
+
+async def _handle_delete(state: FlowState, system_prompt: str, user_id: int, user_tz=None) -> dict:
+    """
+    Phase 1: Use list_event to find events in the relevant date range.
+    Phase 2: Keyword-filter, then delete if unambiguous or ask user.
+    Conversation history is included for multi-turn context.
+    """
+    list_tool = list_event_tool_factory(user_id, user_tz)
+    delete_tool = delete_event_tool_factory(user_id)
+    model_with_tools = model.bind_tools([list_tool])
+
+    history = _conversation_history(state)
+    messages = (
+        [SystemMessage(content=system_prompt)]
+        + history
+        + [HumanMessage(content=state['input_text'])]
+    )
+
+    # Agentic search loop (only list here — delete is decided after filtering)
+    messages = await _run_tool_loop(messages, model_with_tools, {'list_event': list_tool}, max_iter=5)
+
+    # Collect events and keyword-filter
+    all_events = _extract_events_from_messages(messages)
+    filtered_events = await _filter_events(all_events, state['input_text'], intent="find the event to delete")
+
+    if not filtered_events:
+        msg = "I couldn't find any events matching your request."
+        return {
+            "scheduling_messages": [AIMessage(content=msg)],
+            "scheduling_result": {"message": msg, "success": False},
+            "conflict_check_request": None,
+            "conflict_check_result": None,
+            "is_success": True,
+        }
+
+    if len(filtered_events) > 1:
+        # Check if we already asked "which one?" and user replied with "both/all"
+        _delete_all_keywords = {"both", "all", "every", "all of them", "each", "each one"}
+        input_lower = state.get('input_text', '').lower()
+        user_wants_all = any(kw in input_lower for kw in _delete_all_keywords)
+
+        history_contents = " ".join(
+            m.content for m in state.get('scheduling_messages', [])
+            if hasattr(m, 'content')
+        ).lower()
+        already_asked = "multiple events match" in history_contents or "which one did you mean" in history_contents
+
+        if user_wants_all and already_asked:
+            # Delete all matching events
+            deleted = []
+            failed = []
+            for event in filtered_events:
+                event_id = event.get('id') or event.get('event_id')
+                try:
+                    result = await delete_tool.ainvoke({"event_id": event_id})
+                    if result.get('success'):
+                        deleted.append(event.get('title', event_id))
+                    else:
+                        failed.append(event.get('title', event_id))
+                except Exception as e:
+                    logger.error(f"Error deleting event {event_id}: {e}", exc_info=True)
+                    failed.append(event.get('title', event_id))
+
+            if deleted and not failed:
+                titles = ", ".join(f"'{t}'" for t in deleted)
+                msg = f"Deleted {len(deleted)} events: {titles}."
+            elif deleted:
+                msg = f"Deleted {len(deleted)} event(s), but could not delete: {', '.join(failed)}."
+            else:
+                msg = "Could not delete the events. Please try again."
+
+            return {
+                "scheduling_operation": "delete",
+                "scheduling_messages": [AIMessage(content=msg)],
+                "scheduling_result": {"message": msg, "success": bool(deleted)},
+                "conflict_check_request": None,
+                "conflict_check_result": None,
+                "is_success": bool(deleted),
+            }
+
+        # Ambiguous — ask the user to pick
+        lines = ["Multiple events match your request. Which one did you mean?\n"]
+        for i, e in enumerate(filtered_events, 1):
+            lines.append(f"  {i}. **{e.get('title')}** — {e.get('startDate')} to {e.get('endDate')}")
+        msg = "\n".join(lines)
+        return {
+            "scheduling_messages": [AIMessage(content=msg)],
+            "scheduling_result": {
+                "message": msg,
+                "needs_clarification": True,
+                "success": False,
+            },
+            "conflict_check_request": None,
+            "conflict_check_result": None,
+            "is_success": True,
+        }
+
+    # Exactly one event — delete it
+    event_to_delete = filtered_events[0]
+    event_id = event_to_delete.get('id') or event_to_delete.get('event_id')
+
+    try:
+        result = await delete_tool.ainvoke({"event_id": event_id})
+        if result.get('success'):
+            msg = f"Deleted '{event_to_delete.get('title')}' ({event_to_delete.get('startDate')})."
+        else:
+            msg = result.get('message', 'Could not delete the event.')
+        return {
+            "scheduling_operation": "delete",
+            "scheduling_messages": [AIMessage(content=msg)],
+            "scheduling_result": {"message": msg, "success": result.get('success', False)},
+            "conflict_check_request": None,
+            "conflict_check_result": None,
+            "is_success": result.get('success', False),
+        }
+    except Exception as e:
+        logger.error(f"Error deleting event {event_id}: {e}", exc_info=True)
+        msg = "Something went wrong while deleting the event. Please try again."
+        return {
+            "scheduling_messages": [AIMessage(content=msg)],
+            "scheduling_result": {"message": msg, "success": False},
+            "conflict_check_request": None,
+            "conflict_check_result": None,
+        }
+
+
+# ---------------------------------------------------------------------------
+# LIST
+# ---------------------------------------------------------------------------
+
+async def _handle_list(state: FlowState, system_prompt: str, user_id: int, user_tz=None) -> dict:
+    """
+    Use list_event to retrieve events, then keyword-filter and present results.
+    Conversation history is included for multi-turn context.
+    """
+    list_tool = list_event_tool_factory(user_id, user_tz)
+    model_with_tools = model.bind_tools([list_tool])
+
+    history = _conversation_history(state)
+    messages = (
+        [SystemMessage(content=system_prompt)]
+        + history
+        + [HumanMessage(content=state['input_text'])]
+    )
+
+    messages = await _run_tool_loop(messages, model_with_tools, {'list_event': list_tool}, max_iter=4)
+
+    all_events = _extract_events_from_messages(messages)
+    filtered_events = await _filter_events(all_events, state['input_text'], intent="list events matching the user's request")
+
+    if not filtered_events:
+        msg = "No events found for your request."
+        return {
+            "scheduling_operation": "list",
+            "scheduling_messages": [AIMessage(content=msg)],
+            "scheduling_result": {"message": msg, "events": [], "success": True},
+            "conflict_check_request": None,
+            "conflict_check_result": None,
+            "is_success": True,
+        }
+
+    count = len(filtered_events)
+    msg = f"Found {count} event{'s' if count != 1 else ''}."
+
+    return {
+        "scheduling_operation": "list",
+        "scheduling_messages": [AIMessage(content=msg)],
+        "scheduling_result": {"message": msg, "events": filtered_events, "success": True},
+        "conflict_check_request": None,
+        "conflict_check_result": None,
+        "is_success": True,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Scheduling finalize node
+# ---------------------------------------------------------------------------
+
+def _format_suggestion_dt(iso: str | None) -> str:
+    """Format an ISO datetime string as 'Mon Mar 28, 6:30 PM'."""
+    if not iso:
+        return "?"
+    try:
+        dt = datetime.fromisoformat(iso)
+        day = str(dt.day)
+        hour = dt.hour % 12 or 12
+        minute = dt.strftime("%M")
+        ampm = "AM" if dt.hour < 12 else "PM"
+        month = dt.strftime("%b")
+        weekday = dt.strftime("%a")
+        return f"{weekday} {month} {day}, {hour}:{minute} {ampm}"
+    except Exception:
+        return iso
+
+
+async def scheduling_finalize(state: FlowState):
+    """
+    Called after conflict_resolution_agent for CREATE and UPDATE operations.
+    - No conflict → execute the CRUD in the database.
+    - Conflict detected → return suggestions to the user, do not execute.
+    For DELETE and LIST, scheduling_agent already handled everything — this is a pass-through.
+    """
+    operation = state.get('scheduling_operation')
+
+    # DELETE and LIST are fully handled by scheduling_agent
+    if operation in ('delete', 'list', None):
+        return {"is_success": True}
+
+    conflict_result = state.get('conflict_check_result', {})
+    event_data = state.get('scheduling_event_data', {})
+    user_id = state['user_id']
+
+    # No conflict check was run (e.g. title-only update or clarification path)
+    if not conflict_result:
+        # Still execute if we have event data (title/location-only update)
+        if event_data:
+            try:
+                if operation == 'create':
+                    return await _execute_create(event_data, user_id)
+                elif operation == 'update':
+                    return await _execute_update(event_data, user_id)
+            except Exception as e:
+                logger.error(f"Error in scheduling_finalize ({operation}): {e}", exc_info=True)
+                msg = f"Something went wrong: {str(e)}"
+                return {
+                    "scheduling_result": {"message": msg, "success": False},
+                    "scheduling_messages": [AIMessage(content=msg)],
+                    "is_success": False,
+                }
+        return {"is_success": True}
+
+    if conflict_result.get('has_conflict'):
+        suggestions = conflict_result.get('suggestions', [])
+        conflicting = conflict_result.get('conflicting_events', [])
+
+        # Build a clean human-readable message from structured data
+        conflict_titles = ", ".join(f"'{e.get('title', 'Untitled')}'" for e in conflicting)
+        msg = f"There's a scheduling conflict with {conflict_titles}."
+        if suggestions:
+            lines = ["\n\nAvailable alternative times:"]
+            for i, s in enumerate(suggestions, 1):
+                start = _format_suggestion_dt(s.get('startDate'))
+                end = _format_suggestion_dt(s.get('endDate'))
+                lines.append(f"  {i}. {start} – {end}")
+            msg += "\n".join(lines)
+        else:
+            msg += " No alternative times were found nearby."
+        return {
+            "scheduling_result": {
+                "message": msg,
+                "has_conflict": True,
+                "suggestions": suggestions,
+                "success": False,
+            },
+            "scheduling_messages": [AIMessage(content=msg)],
+            "router_messages": [AIMessage(content=msg)],
+            "is_success": True,
+        }
+
+    # No conflict — execute
+    try:
+        if operation == 'create':
+            result = await _execute_create(event_data, user_id)
+        elif operation == 'update':
+            result = await _execute_update(event_data, user_id)
+        else:
+            return {"is_success": True}
+        # Mirror to router_messages for multi-turn context
+        sched_msgs = result.get("scheduling_messages", [])
+        if sched_msgs and hasattr(sched_msgs[-1], "content"):
+            result["router_messages"] = [AIMessage(content=sched_msgs[-1].content)]
+        return result
+    except Exception as e:
+        logger.error(f"Error in scheduling_finalize ({operation}): {e}", exc_info=True)
+        msg = f"Something went wrong while executing the operation: {str(e)}"
+        return {
+            "scheduling_result": {"message": msg, "success": False},
+            "scheduling_messages": [AIMessage(content=msg)],
+            "router_messages": [AIMessage(content=msg)],
+            "is_success": False,
+        }
+
+
+async def _execute_create(event_data: dict, user_id: int) -> dict:
+    events_to_create = event_data.get("events", [])
+    created = []
+    for ev in events_to_create:
+        result = await create_event_impl(
+            title=ev['title'],
+            startDate=datetime.fromisoformat(ev['startDate']),
+            endDate=datetime.fromisoformat(ev['endDate']) if ev.get('endDate') else None,
+            location=ev.get('location'),
+            user_id=user_id,
+        )
+        created.append(result)
+
+    if len(created) == 1:
+        msg = f"'{created[0]['title']}' has been added to your calendar for {created[0]['startDate']}."
+    else:
+        titles = ", ".join(f"'{e['title']}'" for e in created)
+        msg = f"{len(created)} events have been added to your calendar: {titles}."
+
+    return {
+        "scheduling_result": {"message": msg, "events": created, "success": True},
+        "scheduling_messages": [AIMessage(content=msg)],
+        "is_success": True,
+    }
+
+
+async def _execute_update(event_data: dict, user_id: int) -> dict:
+    event_ids = event_data.get("event_ids", [])
+    update_args = event_data.get("update_args", {})
+
+    # Strip None values so update_event_impl only receives fields to change
+    clean_args = {k: v for k, v in update_args.items() if v is not None}
+
+    if 'startDate' in clean_args and isinstance(clean_args['startDate'], str):
+        clean_args['startDate'] = datetime.fromisoformat(clean_args['startDate'])
+
+    updated = []
+    for event_id in event_ids:
+        result = await update_event_impl(
+            event_id=event_id,
+            user_id=user_id,
+            title=clean_args.get('title'),
+            startDate=clean_args.get('startDate'),
+            duration=clean_args.get('duration'),
+            location=clean_args.get('location'),
+        )
+        if result.get('success') and result.get('event'):
+            updated.append(result['event'])
+
+    if not updated:
+        msg = "Could not update the event. It may not exist or you may not have permission."
+        return {
+            "scheduling_result": {"message": msg, "success": False},
+            "scheduling_messages": [AIMessage(content=msg)],
+            "is_success": False,
+        }
+
+    if len(updated) == 1:
+        ev = updated[0]
+        msg = f"'{ev.get('title')}' has been updated."
+    else:
+        msg = f"{len(updated)} events have been updated."
+
+    return {
+        "scheduling_result": {"message": msg, "events": updated, "success": True},
+        "scheduling_messages": [AIMessage(content=msg)],
+        "is_success": True,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Conditional edge
+# ---------------------------------------------------------------------------
+
+def scheduling_route(state: FlowState) -> str:
+    """
+    Route after scheduling_agent completes:
+    - CREATE / UPDATE with a valid conflict_check_request → conflict_resolution_agent
+    - UPDATE with no date change (startDate is None) → scheduling_finalize directly
+    - Everything else (DELETE, LIST, clarification) → scheduling_finalize
+    """
+    operation = state.get('scheduling_operation')
+    conflict_req = state.get('conflict_check_request') or {}
+    if operation in ('create', 'update') and conflict_req.get('startDate'):
+        return "conflict_resolution_agent"
+    return "scheduling_finalize"
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+async def _run_tool_loop(
+    messages: list,
+    model_with_tools,
+    tools_map: dict,
+    max_iter: int = 5,
+) -> list:
+    """Run an agentic tool-calling loop until the LLM stops requesting tools."""
+    for _ in range(max_iter):
+        response = await model_with_tools.ainvoke(messages)
+        messages.append(response)
+        if not (hasattr(response, 'tool_calls') and response.tool_calls):
+            break
+        for tc in response.tool_calls:
+            result = await _run_single_tool(tc, tools_map)
+            messages.append(ToolMessage(
+                content=json.dumps(result, default=str),
+                tool_call_id=tc['id'],
+            ))
+    return messages
+
+
+async def _run_single_tool(tool_call: dict, tools_map: dict) -> dict:
+    tool_name = tool_call['name']
+    tool_args = dict(tool_call.get('args', {}))
+
+    for key in ('startDate', 'endDate'):
+        if isinstance(tool_args.get(key), str):
+            tool_args[key] = datetime.fromisoformat(tool_args[key])
+
+    tool = tools_map.get(tool_name)
+    if not tool:
+        return {"error": f"Unknown tool: {tool_name}"}
+    return await tool.ainvoke(tool_args)
+
+
+def _extract_events_from_messages(messages: list) -> list:
+    """Pull all events returned by list_event tool calls out of the message history.
+    Deduplicates by event_id so multiple tool calls for overlapping ranges don't
+    produce phantom duplicates."""
+    seen_ids = set()
+    events = []
+    for msg in messages:
+        if isinstance(msg, ToolMessage):
+            try:
+                data = json.loads(msg.content)
+                if isinstance(data, dict) and 'events' in data:
+                    for event in data['events']:
+                        eid = event.get('event_id') or event.get('id')
+                        if eid and eid in seen_ids:
+                            continue
+                        if eid:
+                            seen_ids.add(eid)
+                        events.append(event)
+            except (json.JSONDecodeError, TypeError):
+                pass
+    return events
+
+
+async def _filter_events(events: list, user_message: str, intent: str = "identify") -> list:
+    """
+    Use LLM to keyword-filter a list of events based on the user's message.
+    Filters by title/location/duration keywords only (not date/time).
+    Returns all events if no keywords match.
+    """
+    if not events:
+        return []
+
+    prompt = PromptTemplate.from_template(SCHEDULING_FILTER_PROMPT).format(
+        user_events=json.dumps(events, default=str, indent=2),
+        user_message=user_message,
+        intent=intent,
+    )
+
+    response = await model.ainvoke([HumanMessage(content=prompt)])
+
+    try:
+        content = response.content.strip()
+        # Strip markdown code fences if present (LLMs often wrap JSON in ```json ... ```)
+        if content.startswith("```"):
+            content = content.split("```")[1]
+            if content.startswith("json"):
+                content = content[4:]
+            content = content.strip()
+        filtered = json.loads(content)
+        if isinstance(filtered, list):
+            return filtered
+    except (json.JSONDecodeError, TypeError):
+        pass
+
+    # Fallback: return all events if parsing fails
+    return events

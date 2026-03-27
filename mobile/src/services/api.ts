@@ -312,6 +312,15 @@ class CalendarAPI {
     }
   }
 
+  async resetMemory(): Promise<{ message: string }> {
+    try {
+      const response = await this.api.delete("/assistant/memory");
+      return response.data;
+    } catch (error) {
+      throw new Error("Memory could not be reset");
+    }
+  }
+
   async processText(text: string): Promise<any> {
     try {
       const {
@@ -364,5 +373,6 @@ export const useCalendarAPI = () => {
     deleteEvent: calendarAPI.deleteEvent.bind(calendarAPI),
     deleteMultipleEvents: calendarAPI.deleteMultipleEvents.bind(calendarAPI),
     processText: calendarAPI.processText.bind(calendarAPI),
+    resetMemory: calendarAPI.resetMemory.bind(calendarAPI),
   };
 };

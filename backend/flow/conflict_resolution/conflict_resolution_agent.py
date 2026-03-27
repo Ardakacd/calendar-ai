@@ -9,7 +9,6 @@ import logging
 from typing import Optional
 from datetime import datetime
 from langchain_core.messages import SystemMessage, AIMessage, HumanMessage, ToolMessage
-from langchain_core.prompts import PromptTemplate
 from ..state import FlowState
 from .system_prompt import CONFLICT_RESOLUTION_AGENT_PROMPT
 from ..llm import model
@@ -31,7 +30,7 @@ retryable_exceptions = (OpenAIError, RateLimitError)
 @retry(
     wait=wait_random_exponential(min=1, max=10),
     stop=stop_after_attempt(3),
-    retry_if_exception_type=retryable_exceptions,
+    retry=retry_if_exception_type(retryable_exceptions),
 )
 async def conflict_resolution_agent(state: FlowState):
     """
@@ -50,8 +49,6 @@ async def conflict_resolution_agent(state: FlowState):
                 "recommendation": "No conflict check requested"
             },
             "conflict_resolution_messages": [AIMessage(content="No conflict check requested.")],
-            "create_conflict_events": [],
-            "create_messages": [AIMessage(content="Do you want to create the following events?")],
             "is_success": True
         }
     
@@ -69,9 +66,8 @@ async def conflict_resolution_agent(state: FlowState):
         # Bind tools to model
         model_with_tools = model.bind_tools([check_conflict_tool, suggest_tool, find_free_slots_tool])
         
-        # Prepare system prompt
-        template = PromptTemplate.from_template(CONFLICT_RESOLUTION_AGENT_PROMPT)
-        prompt_text = template.format()
+        # Use the prompt directly — it has no template variables
+        prompt_text = CONFLICT_RESOLUTION_AGENT_PROMPT
         
         # Initialize messages list
         messages = []
@@ -115,38 +111,37 @@ Check for conflicts and suggest alternatives if conflicts are found. Provide a c
                 # Execute tool calls
                 for tool_call in response.tool_calls:
                     tool_name = tool_call['name']
-                    tool_args = tool_call.get('args', {})
-                    
+                    # Copy args — do NOT mutate tool_call in-place or LangChain
+                    # will fail to serialize the AIMessage on the next loop iteration
+                    tool_args = dict(tool_call.get('args', {}))
+
                     logger.info(f"Conflict Resolution Agent calling tool: {tool_name}")
-                    
+
                     # Execute appropriate tool
                     if tool_name == 'check_conflict':
-                        # Convert string dates to datetime if needed
                         if isinstance(tool_args.get('startDate'), str):
                             tool_args['startDate'] = datetime.fromisoformat(tool_args['startDate'])
                         if isinstance(tool_args.get('endDate'), str):
                             tool_args['endDate'] = datetime.fromisoformat(tool_args['endDate'])
-                        
+
                         tool_result = await check_conflict_tool.ainvoke(tool_args)
                         conflict_result_from_tools = tool_result
 
                     elif tool_name == 'suggest_alternative_times':
-                        # Convert string dates to datetime if needed
                         if isinstance(tool_args.get('requested_startDate'), str):
                             tool_args['requested_startDate'] = datetime.fromisoformat(tool_args['requested_startDate'])
                         if isinstance(tool_args.get('requested_endDate'), str):
                             tool_args['requested_endDate'] = datetime.fromisoformat(tool_args['requested_endDate'])
-                        
+
                         tool_result = await suggest_tool.ainvoke(tool_args)
                         suggestions_from_tools = tool_result
 
                     elif tool_name == 'find_free_slots':
-                        # Convert string dates to datetime if needed
                         if isinstance(tool_args.get('startDate'), str):
                             tool_args['startDate'] = datetime.fromisoformat(tool_args['startDate'])
                         if isinstance(tool_args.get('endDate'), str):
                             tool_args['endDate'] = datetime.fromisoformat(tool_args['endDate'])
-                        
+
                         tool_result = await find_free_slots_tool.ainvoke(tool_args)
                     else:
                         tool_result = {"error": f"Unknown tool: {tool_name}"}
@@ -179,17 +174,9 @@ Check for conflicts and suggest alternatives if conflicts are found. Provide a c
 
         logger.info(f"Conflict Resolution Agent: Found {conflict_result.get('conflict_count', 0)} conflicts, {len(conflict_result.get('suggestions', []))} suggestions")
 
-        # Convert conflicting_events to Event objects for backward compatibility
-        create_conflict_events = _dicts_to_events(
-            conflict_result.get("conflicting_events", []),
-            user_id
-        )
-
         return {
             "conflict_check_result": conflict_result,
             "conflict_resolution_messages": messages,
-            "create_conflict_events": create_conflict_events,
-            "create_messages": [AIMessage(content=conflict_result.get("recommendation", "Do you want to create the following events?"))],
             "is_success": True
         }
         
@@ -203,8 +190,6 @@ Check for conflicts and suggest alternatives if conflicts are found. Provide a c
                 "recommendation": f"Error checking conflicts: {str(e)}"
             },
             "conflict_resolution_messages": [AIMessage(content="An error occurred while checking conflicts.")],
-            "create_conflict_events": [],
-            "create_messages": [AIMessage(content="An error occurred. Please try again later.")],
             "is_success": False
         }
 

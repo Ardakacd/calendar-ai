@@ -46,14 +46,17 @@ export const formatDateTime = (dateString: string): string => {
 export const formatDateWithWeekday = (dateString: string): string => {
   try {
     const date = parseDate(dateString);
-    return date.toLocaleDateString("en-US", {
+    const datePart = date.toLocaleDateString("en-US", {
       weekday: "short",
       month: "short",
       day: "numeric",
-      hour: "2-digit",
+    });
+    const timePart = date.toLocaleTimeString("en-US", {
+      hour: "numeric",
       minute: "2-digit",
       hour12: true,
     });
+    return `${datePart}, ${timePart}`;
   } catch (error) {
     console.error("Error formatting date with weekday:", error, dateString);
     return "Invalid date";
@@ -108,14 +111,15 @@ export const formatConflictEventDate = (
       ? new Date(startDate.getTime() + duration * 60000)
       : startDate;
 
-    const startFormatted = startDate.toLocaleDateString("en-US", {
+    const startFormatted = `${startDate.toLocaleDateString("en-US", {
       weekday: "short",
       month: "short",
       day: "numeric",
-      hour: "2-digit",
+    })}, ${startDate.toLocaleTimeString("en-US", {
+      hour: "numeric",
       minute: "2-digit",
       hour12: true,
-    });
+    })}`;
 
     if (duration && duration > 0) {
       const endFormatted = endDate.toLocaleTimeString("en-US", {

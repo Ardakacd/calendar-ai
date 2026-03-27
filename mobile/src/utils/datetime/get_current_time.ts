@@ -5,7 +5,7 @@ import * as Localization from 'expo-localization';
 
 export function getUserDateTime(){
     // For example: 2025-06-28T13:45:00+03:00
-    const currentDateTime = DateTime.local().setLocale(Localization.locale);
+    const currentDateTime = DateTime.local().setLocale(Localization.getLocales()[0]?.languageTag ?? 'en');
 
     const weekdayList = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
 

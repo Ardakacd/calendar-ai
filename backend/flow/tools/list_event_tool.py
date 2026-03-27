@@ -35,13 +35,23 @@ class ListEventInput(BaseModel):
         }
 
 
-def _event_to_dict(event: Event) -> dict:
-    """Convert Event model to dictionary."""
+def _event_to_dict(event: Event, user_tz=None) -> dict:
+    """Convert Event model to dictionary, converting dates to user's local timezone."""
+    def _fmt(dt):
+        if dt is None:
+            return None
+        if user_tz is not None:
+            try:
+                dt = dt.astimezone(user_tz)
+            except Exception:
+                pass
+        return dt.isoformat()
+
     return {
         "event_id": event.id,
         "title": event.title,
-        "startDate": event.startDate.isoformat() if event.startDate else None,
-        "endDate": event.endDate.isoformat() if event.endDate else None,
+        "startDate": _fmt(event.startDate),
+        "endDate": _fmt(event.endDate),
         "location": event.location,
         "user_id": event.user_id,
         "duration": event.duration
@@ -51,7 +61,8 @@ def _event_to_dict(event: Event) -> dict:
 async def list_event_impl(
     startDate: datetime,
     endDate: Optional[datetime],
-    user_id: int
+    user_id: int,
+    user_tz=None,
 ) -> dict:
     """
     List calendar events within a date range.
@@ -82,7 +93,7 @@ async def list_event_impl(
             logger.info(f"Found {len(events)} events for user {user_id}")
             
             return {
-                "events": [_event_to_dict(event) for event in events],
+                "events": [_event_to_dict(event, user_tz) for event in events],
                 "count": len(events),
                 "startDate": startDate.isoformat(),
                 "endDate": endDate.isoformat() if endDate else None,
@@ -93,7 +104,7 @@ async def list_event_impl(
         raise Exception(f"Failed to list events: {str(e)}")
 
 
-def list_event_tool_factory(user_id: int) -> StructuredTool:
+def list_event_tool_factory(user_id: int, user_tz=None) -> StructuredTool:
     """
     Factory function to create a list_event tool bound to a specific user_id.
     
@@ -111,11 +122,12 @@ def list_event_tool_factory(user_id: int) -> StructuredTool:
         return await list_event_impl(
             startDate=startDate,
             endDate=endDate,
-            user_id=user_id
+            user_id=user_id,
+            user_tz=user_tz,
         )
     
     return StructuredTool.from_function(
-        func=list_event_with_user_id,
+        coroutine=list_event_with_user_id,
         name="list_event",
         description="""List calendar events within a date range.
         

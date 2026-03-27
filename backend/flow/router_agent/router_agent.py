@@ -19,40 +19,34 @@ async def router_agent(state: FlowState):
     template = PromptTemplate.from_template(ROUTER_AGENT_PROMPT)
     prompt_text = template.format()
 
-    if state["router_messages"] and isinstance(state["router_messages"][0], SystemMessage):
-        state["router_messages"][0] = SystemMessage(content=prompt_text)
-    else:
-        state["router_messages"].insert(0, SystemMessage(content=prompt_text))
-    
-    response = [await model.ainvoke(state["router_messages"])]
-    
+    # Build message list locally — do not mutate state
+    existing = [m for m in state.get("router_messages", []) if not isinstance(m, SystemMessage)]
+    messages = [SystemMessage(content=prompt_text)] + existing
+
+    response = await model.ainvoke(messages)
+
     # Parse the JSON response
     try:
-        route_data = json.loads(response[0].content)
-        state['route'] = route_data
+        route_data = json.loads(response.content)
     except json.JSONDecodeError:
-        state['route'] = response[0].content
-    
-    return state
+        route_data = response.content
+
+    return {"route": route_data}
 
 def route_action(state: FlowState):
-    # create, delete, update, list agents removed from graph - route all to message handler
-    # New architecture will use Scheduling Agent with tools instead
     if isinstance(state['route'], dict) and "route" in state['route']:
         route = state["route"]["route"]
         if route in ("create", "update", "delete", "list"):
-            # Placeholder: route to message handler until Scheduling Agent is wired
-            return "router_message_handler"
+            return "scheduling_agent"
+        if route == "leisure_search":
+            return "leisure_search_agent"
     return "router_message_handler"
         
 def router_message_handler(state: FlowState):
-    """Handle cases where router returns a message or when agents are not wired (create/update/delete/list)"""
-    state['is_success'] = True
+    """Handle conversation responses from the router."""
     route = state.get('route')
-    if isinstance(route, dict) and route.get('route') in ('create', 'update', 'delete', 'list'):
-        content = "Calendar operations are being migrated. This feature will be available soon."
-    elif isinstance(route, str):
+    if isinstance(route, str):
         content = route
     else:
         content = str(route) if route else "How can I help you with your calendar?"
-    return {"router_messages": [AIMessage(content=content)]}
+    return {"router_messages": [AIMessage(content=content)], "is_success": True}

@@ -84,7 +84,7 @@ def delete_event_tool_factory(user_id: int) -> StructuredTool:
         )
     
     return StructuredTool.from_function(
-        func=delete_event_with_user_id,
+        coroutine=delete_event_with_user_id,
         name="delete_event",
         description="""Delete a calendar event by its event_id.
         

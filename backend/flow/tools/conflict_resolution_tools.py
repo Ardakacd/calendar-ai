@@ -53,15 +53,14 @@ def _event_to_dict(event: Event) -> dict:
     }
 
 
-def _calculate_conflict_type(requested_start: datetime, requested_end: datetime, 
+def _calculate_conflict_type(requested_start: datetime, requested_end: datetime,
                             existing_start: datetime, existing_end: datetime) -> str:
     """Determine the type of conflict."""
     if requested_start == existing_start and requested_end == existing_end:
         return "exact_match"
-    elif (requested_start < existing_end and requested_end > existing_start):
+    # Strict overlap: one event starts strictly before the other ends (boundaries don't count)
+    elif requested_start < existing_end and requested_end > existing_start:
         return "overlap"
-    elif (requested_end == existing_start) or (requested_start == existing_end):
-        return "adjacent"
     return "none"
 
 
@@ -148,54 +147,38 @@ async def find_free_slots_impl(
             
             free_slots = []
             current_time = startDate
-            
-            # Default working hours: 9 AM - 5 PM
-            working_start_hour = 9
-            working_end_hour = 17
-            
+
             for event in events:
                 event_start = event.startDate
                 event_end = event.endDate
-                
+
                 # Check if there's a free slot before this event
-                if current_time < event_start:
+                if current_time + timedelta(minutes=duration_minutes) <= event_start:
                     slot_end = event_start - timedelta(minutes=buffer_minutes)
                     slot_duration = (slot_end - current_time).total_seconds() / 60
-                    
+
                     if slot_duration >= duration_minutes:
-                        # Check if within working hours
-                        slot_hour = current_time.hour
-                        if working_start_hour <= slot_hour < working_end_hour:
-                            quality_score = _calculate_slot_quality(
-                                current_time, preferred_times
-                            )
-                            free_slots.append({
-                                "startDate": current_time.isoformat(),
-                                "endDate": slot_end.isoformat(),
-                                "duration_minutes": int(slot_duration),
-                                "quality_score": quality_score
-                            })
-                
-                # Move current_time to after this event (with buffer)
-                current_time = max(current_time, event_end + timedelta(minutes=buffer_minutes))
-            
-            # Check for free slot after last event
-            if current_time < endDate:
-                slot_end = min(endDate, current_time + timedelta(minutes=duration_minutes))
-                slot_duration = (slot_end - current_time).total_seconds() / 60
-                
-                if slot_duration >= duration_minutes:
-                    slot_hour = current_time.hour
-                    if working_start_hour <= slot_hour < working_end_hour:
-                        quality_score = _calculate_slot_quality(
-                            current_time, preferred_times
-                        )
+                        quality_score = _calculate_slot_quality(current_time, preferred_times)
                         free_slots.append({
                             "startDate": current_time.isoformat(),
-                            "endDate": slot_end.isoformat(),
-                            "duration_minutes": int(slot_duration),
-                            "quality_score": quality_score
+                            "endDate": (current_time + timedelta(minutes=duration_minutes)).isoformat(),
+                            "duration_minutes": duration_minutes,
+                            "quality_score": quality_score,
                         })
+
+                # Move current_time to after this event (with buffer)
+                current_time = max(current_time, event_end + timedelta(minutes=buffer_minutes))
+
+            # Check for free slot after last event
+            remaining = (endDate - current_time).total_seconds() / 60
+            if remaining >= duration_minutes:
+                quality_score = _calculate_slot_quality(current_time, preferred_times)
+                free_slots.append({
+                    "startDate": current_time.isoformat(),
+                    "endDate": (current_time + timedelta(minutes=duration_minutes)).isoformat(),
+                    "duration_minutes": duration_minutes,
+                    "quality_score": quality_score,
+                })
             
             # Sort by quality score (best first)
             free_slots.sort(key=lambda x: x["quality_score"], reverse=True)
@@ -251,17 +234,17 @@ async def suggest_alternative_times_impl(
     logger.info(f"Suggesting alternatives for user {user_id}, duration: {duration_minutes} minutes")
     
     try:
-        # Calculate search range
-        search_start = requested_startDate
+        # Start searching from after the conflicting slot ends, not from its start
+        search_start = requested_endDate
         search_end = requested_startDate + timedelta(days=search_window_days)
         
-        # Find free slots
+        # Find free slots — no buffer so back-to-back suggestions like 3pm after a 1-3pm event are valid
         free_slots_result = await find_free_slots_impl(
             startDate=search_start,
             endDate=search_end,
             duration_minutes=duration_minutes,
             user_id=user_id,
-            buffer_minutes=15
+            buffer_minutes=0
         )
         
         free_slots = free_slots_result.get("free_slots", [])
@@ -336,7 +319,7 @@ def check_conflict_tool_factory(user_id: int) -> StructuredTool:
         )
     
     return StructuredTool.from_function(
-        func=check_conflict_with_user_id,
+        coroutine=check_conflict_with_user_id,
         name="check_conflict",
         description="""Check if a time slot conflicts with existing events.
         
@@ -366,7 +349,7 @@ def find_free_slots_tool_factory(user_id: int) -> StructuredTool:
         )
     
     return StructuredTool.from_function(
-        func=find_free_slots_with_user_id,
+        coroutine=find_free_slots_with_user_id,
         name="find_free_slots",
         description="""Find available time slots in a date range.
         
@@ -396,7 +379,7 @@ def suggest_alternative_times_tool_factory(user_id: int) -> StructuredTool:
         )
     
     return StructuredTool.from_function(
-        func=suggest_alternatives_with_user_id,
+        coroutine=suggest_alternatives_with_user_id,
         name="suggest_alternative_times",
         description="""Suggest alternative times for a conflicting event.
         

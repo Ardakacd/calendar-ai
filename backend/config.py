@@ -48,6 +48,7 @@ class Settings(BaseSettings):
 
     # LLM settings
     OPENAI_API_KEY: Optional[str] = Field(default=None, description="OpenAI API key")
+    TAVILY_API_KEY: Optional[str] = Field(default=None, description="Tavily search API key")
     
     
     # Logging settings
