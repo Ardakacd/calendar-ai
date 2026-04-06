@@ -24,10 +24,7 @@ from openai import OpenAIError, RateLimitError
 
 from ..state import FlowState
 from ..llm import model
-from ..tools.list_event_tool import list_event_tool_factory
-from ..tools.delete_event_tool import delete_event_tool_factory
-from ..tools.create_event_tool import create_event_impl
-from ..tools.update_event_tool import update_event_impl
+from ..mcp.calendar_tools_mcp import get_calendar_tools
 from .prompt import SCHEDULING_AGENT_SYSTEM_PROMPT, SCHEDULING_FILTER_PROMPT
 
 logger = logging.getLogger(__name__)
@@ -96,18 +93,24 @@ async def scheduling_agent(state: FlowState):
 
     if operation == 'create':
         result = await _handle_create(state, system_prompt)
-    elif operation == 'update':
-        result = await _handle_update(state, system_prompt, user_id, user_tz)
-    elif operation == 'delete':
-        result = await _handle_delete(state, system_prompt, user_id, user_tz)
-    elif operation == 'list':
-        result = await _handle_list(state, system_prompt, user_id, user_tz)
     else:
-        msg = "I couldn't determine what calendar operation to perform. Please try again."
-        result = {
-            "scheduling_messages": [AIMessage(content=msg)],
-            "scheduling_result": {"message": msg, "success": False},
-        }
+        async with get_calendar_tools(user_id, user_tz) as mcp_tools:
+            tools_map = {t.name: t for t in mcp_tools}
+            if operation == 'update':
+                result = await _handle_update(state, system_prompt, tools_map)
+            elif operation == 'delete':
+                result = await _handle_delete(state, system_prompt, tools_map)
+            elif operation == 'list':
+                result = await _handle_list(state, system_prompt, tools_map)
+            else:
+                result = None
+
+        if result is None:
+            msg = "I couldn't determine what calendar operation to perform. Please try again."
+            result = {
+                "scheduling_messages": [AIMessage(content=msg)],
+                "scheduling_result": {"message": msg, "success": False},
+            }
 
     # Always stamp the current operation so scheduling_finalize routes correctly
     # even when a handler returns early (no-match, clarification, ambiguous)
@@ -225,13 +228,13 @@ async def _handle_create(state: FlowState, system_prompt: str) -> dict:
 # UPDATE
 # ---------------------------------------------------------------------------
 
-async def _handle_update(state: FlowState, system_prompt: str, user_id: int, user_tz=None) -> dict:
+async def _handle_update(state: FlowState, system_prompt: str, tools_map: dict) -> dict:
     """
     Phase 1: Use list_event to find events in the relevant date range.
     Phase 2: Keyword-filter the results, then extract the update plan.
     Conversation history is included so the LLM understands multi-turn context.
     """
-    list_tool = list_event_tool_factory(user_id, user_tz)
+    list_tool = tools_map['list_event']
     model_with_tools = model.bind_tools([list_tool])
 
     history = _conversation_history(state)
@@ -344,37 +347,51 @@ async def _handle_update(state: FlowState, system_prompt: str, user_id: int, use
 # DELETE
 # ---------------------------------------------------------------------------
 
-async def _handle_delete(state: FlowState, system_prompt: str, user_id: int, user_tz=None) -> dict:
+async def _handle_delete(state: FlowState, system_prompt: str, tools_map: dict) -> dict:
     """
     Phase 1: Use list_event to find events in the relevant date range.
     Phase 2: Keyword-filter, then delete if unambiguous or ask user.
     Conversation history is included for multi-turn context.
     """
-    list_tool = list_event_tool_factory(user_id, user_tz)
-    delete_tool = delete_event_tool_factory(user_id)
-    model_with_tools = model.bind_tools([list_tool])
+    list_tool = tools_map['list_event']
+    delete_tool = tools_map['delete_event']
 
+    _delete_all_keywords = {"both", "all", "every", "all of them", "each", "each one"}
+    input_lower = state.get('input_text', '').lower()
+    user_wants_all = any(kw in input_lower for kw in _delete_all_keywords)
+
+    history_contents = " ".join(
+        m.content for m in state.get('scheduling_messages', [])
+        if hasattr(m, 'content')
+    ).lower()
+    already_asked = "multiple events match" in history_contents or "which one did you mean" in history_contents
+
+    # If the user replied "both/all" to a previous clarification, skip re-listing entirely
+    # and use the candidate_events stored from that turn so we delete exactly the right events.
+    stored_candidates = state.get('scheduling_result', {}).get('candidate_events', [])
+    if user_wants_all and already_asked and stored_candidates:
+        return await _delete_events(stored_candidates, delete_tool)
+
+    # --- Normal flow: list → filter → decide ---
+    model_with_tools = model.bind_tools([list_tool])
     history = _conversation_history(state)
     messages = (
         [SystemMessage(content=system_prompt)]
         + history
         + [HumanMessage(content=state['input_text'])]
     )
-
-    # Agentic search loop (only list here — delete is decided after filtering)
     messages = await _run_tool_loop(messages, model_with_tools, {'list_event': list_tool}, max_iter=5)
 
-    # Collect events and keyword-filter
     all_events = _extract_events_from_messages(messages)
 
-    # Build recent conversation context so LLM can resolve pronouns like "it" or "that meeting"
     recent_msgs = [m for m in _conversation_history(state) if not isinstance(m, SystemMessage)][-4:]
     filter_context = "\n".join(
         f"{'User' if isinstance(m, HumanMessage) else 'Assistant'}: {m.content}"
         for m in recent_msgs if hasattr(m, 'content')
     )
-
-    filtered_events = await _filter_events(all_events, state['input_text'], intent="find the event to delete", context=filter_context)
+    filtered_events = await _filter_events(
+        all_events, state['input_text'], intent="find the event to delete", context=filter_context
+    )
 
     if not filtered_events:
         msg = "I couldn't find any events matching your request."
@@ -386,115 +403,95 @@ async def _handle_delete(state: FlowState, system_prompt: str, user_id: int, use
             "is_success": True,
         }
 
-    if len(filtered_events) > 1:
-        # Check if we already asked "which one?" and user replied with "both/all"
-        _delete_all_keywords = {"both", "all", "every", "all of them", "each", "each one"}
-        input_lower = state.get('input_text', '').lower()
-        user_wants_all = any(kw in input_lower for kw in _delete_all_keywords)
+    if len(filtered_events) == 1:
+        return await _delete_events(filtered_events, delete_tool)
 
-        history_contents = " ".join(
-            m.content for m in state.get('scheduling_messages', [])
-            if hasattr(m, 'content')
-        ).lower()
-        already_asked = "multiple events match" in history_contents or "which one did you mean" in history_contents
+    # Multiple matches — if user already said "both/all" in this same message, delete all
+    if user_wants_all:
+        return await _delete_events(filtered_events, delete_tool)
 
-        if user_wants_all and already_asked:
-            # Delete all matching events
-            deleted = []
-            failed = []
-            for event in filtered_events:
-                event_id = event.get('id') or event.get('event_id')
-                try:
-                    result = await delete_tool.ainvoke({"event_id": event_id})
-                    if result.get('success'):
-                        deleted.append(event.get('title', event_id))
-                    else:
-                        failed.append(event.get('title', event_id))
-                except Exception as e:
-                    logger.error(f"Error deleting event {event_id}: {e}", exc_info=True)
-                    failed.append(event.get('title', event_id))
+    # Ask the user which one
+    lines = ["Multiple events match your request. Which one did you mean?\n"]
+    for i, e in enumerate(filtered_events, 1):
+        start = e.get('startDate', '')
+        try:
+            dt = datetime.fromisoformat(start)
+            start_fmt = dt.strftime("%a %b %-d, %-I:%M %p")
+        except Exception:
+            start_fmt = start
+        lines.append(f"{i}. {e.get('title')} — {start_fmt}")
+    msg = "\n".join(lines)
+    return {
+        "scheduling_messages": [AIMessage(content=msg)],
+        "scheduling_result": {
+            "message": msg,
+            "needs_clarification": True,
+            "candidate_events": filtered_events,
+            "success": False,
+        },
+        "conflict_check_request": None,
+        "conflict_check_result": None,
+        "is_success": True,
+    }
 
-            if deleted and not failed:
-                titles = ", ".join(f"'{t}'" for t in deleted)
-                msg = f"Deleted {len(deleted)} events: {titles}."
-            elif deleted:
-                msg = f"Deleted {len(deleted)} event(s), but could not delete: {', '.join(failed)}."
+
+async def _delete_events(events: list, delete_tool) -> dict:
+    """Execute delete for one or more events and return a result dict."""
+    deleted_events = []
+    failed_titles = []
+
+    for event in events:
+        event_id = event.get('id') or event.get('event_id')
+        try:
+            result = _parse_mcp_result(await delete_tool.ainvoke({"event_id": event_id}))
+            if result.get('success'):
+                deleted_events.append(event)
             else:
-                msg = "Could not delete the events. Please try again."
+                failed_titles.append(event.get('title', event_id))
+        except Exception as e:
+            logger.error(f"Error deleting event {event_id}: {e}", exc_info=True)
+            failed_titles.append(event.get('title', event_id))
 
-            return {
-                "scheduling_operation": "delete",
-                "scheduling_messages": [AIMessage(content=msg)],
-                "scheduling_result": {"message": msg, "success": bool(deleted)},
-                "conflict_check_request": None,
-                "conflict_check_result": None,
-                "is_success": bool(deleted),
-            }
-
-        # Ambiguous — list the options in the message so the user can reply by name or "both"
-        lines = ["Multiple events match your request. Which one did you mean?\n"]
-        for i, e in enumerate(filtered_events, 1):
-            start = e.get('startDate', '')
-            try:
-                dt = datetime.fromisoformat(start)
-                start_fmt = dt.strftime("%a %b %-d, %-I:%M %p")
-            except Exception:
-                start_fmt = start
-            lines.append(f"{i}. {e.get('title')} — {start_fmt}")
-        lines.append('\nYou can say "both", "all", or name the one you want.')
-        msg = "\n".join(lines)
+    if not deleted_events and not failed_titles:
+        # Edge case: empty input
+        msg = "No events to delete."
         return {
             "scheduling_messages": [AIMessage(content=msg)],
-            "scheduling_result": {
-                "message": msg,
-                "needs_clarification": True,
-                "candidate_events": filtered_events,
-                "success": False,
-            },
+            "scheduling_result": {"message": msg, "success": False, "events": []},
             "conflict_check_request": None,
             "conflict_check_result": None,
-            "is_success": True,
+            "is_success": False,
         }
 
-    # Exactly one event — delete it
-    event_to_delete = filtered_events[0]
-    event_id = event_to_delete.get('id') or event_to_delete.get('event_id')
+    if deleted_events and not failed_titles:
+        titles = ", ".join(f"'{e.get('title')}'" for e in deleted_events)
+        msg = f"Deleted {titles}." if len(deleted_events) == 1 else f"Deleted {len(deleted_events)} events: {titles}."
+    elif deleted_events:
+        titles = ", ".join(f"'{e.get('title')}'" for e in deleted_events)
+        msg = f"Deleted {titles}, but could not delete: {', '.join(failed_titles)}."
+    else:
+        msg = "Could not delete the events. Please try again."
 
-    try:
-        result = await delete_tool.ainvoke({"event_id": event_id})
-        if result.get('success'):
-            msg = f"Deleted '{event_to_delete.get('title')}' ({event_to_delete.get('startDate')})."
-        else:
-            msg = result.get('message', 'Could not delete the event.')
-        return {
-            "scheduling_operation": "delete",
-            "scheduling_messages": [AIMessage(content=msg)],
-            "scheduling_result": {"message": msg, "success": result.get('success', False)},
-            "conflict_check_request": None,
-            "conflict_check_result": None,
-            "is_success": result.get('success', False),
-        }
-    except Exception as e:
-        logger.error(f"Error deleting event {event_id}: {e}", exc_info=True)
-        msg = "Something went wrong while deleting the event. Please try again."
-        return {
-            "scheduling_messages": [AIMessage(content=msg)],
-            "scheduling_result": {"message": msg, "success": False},
-            "conflict_check_request": None,
-            "conflict_check_result": None,
-        }
+    return {
+        "scheduling_operation": "delete",
+        "scheduling_messages": [AIMessage(content=msg)],
+        "scheduling_result": {"message": msg, "success": bool(deleted_events), "events": deleted_events},
+        "conflict_check_request": None,
+        "conflict_check_result": None,
+        "is_success": bool(deleted_events),
+    }
 
 
 # ---------------------------------------------------------------------------
 # LIST
 # ---------------------------------------------------------------------------
 
-async def _handle_list(state: FlowState, system_prompt: str, user_id: int, user_tz=None) -> dict:
+async def _handle_list(state: FlowState, system_prompt: str, tools_map: dict) -> dict:
     """
     Use list_event to retrieve events, then keyword-filter and present results.
     Conversation history is included for multi-turn context.
     """
-    list_tool = list_event_tool_factory(user_id, user_tz)
+    list_tool = tools_map['list_event']
     model_with_tools = model.bind_tools([list_tool])
 
     history = _conversation_history(state)
@@ -591,10 +588,13 @@ async def scheduling_finalize(state: FlowState):
         # Still execute if we have event data (title/location-only update)
         if event_data:
             try:
-                if operation == 'create':
-                    return await _execute_create(event_data, user_id)
-                elif operation == 'update':
-                    return await _execute_update(event_data, user_id)
+                user_tz = _extract_tz(state.get('current_datetime', ''))
+                async with get_calendar_tools(user_id, user_tz) as mcp_tools:
+                    tools_map = {t.name: t for t in mcp_tools}
+                    if operation == 'create':
+                        return await _execute_create(event_data, tools_map)
+                    elif operation == 'update':
+                        return await _execute_update(event_data, tools_map)
             except Exception as e:
                 logger.error(f"Error in scheduling_finalize ({operation}): {e}", exc_info=True)
                 msg = f"Something went wrong: {str(e)}"
@@ -635,12 +635,15 @@ async def scheduling_finalize(state: FlowState):
 
     # No conflict — execute
     try:
-        if operation == 'create':
-            result = await _execute_create(event_data, user_id)
-        elif operation == 'update':
-            result = await _execute_update(event_data, user_id)
-        else:
-            return {"is_success": True}
+        user_tz = _extract_tz(state.get('current_datetime', ''))
+        async with get_calendar_tools(user_id, user_tz) as mcp_tools:
+            tools_map = {t.name: t for t in mcp_tools}
+            if operation == 'create':
+                result = await _execute_create(event_data, tools_map)
+            elif operation == 'update':
+                result = await _execute_update(event_data, tools_map)
+            else:
+                return {"is_success": True}
         # Mirror to router_messages for multi-turn context
         sched_msgs = result.get("scheduling_messages", [])
         if sched_msgs and hasattr(sched_msgs[-1], "content"):
@@ -657,23 +660,26 @@ async def scheduling_finalize(state: FlowState):
         }
 
 
-async def _execute_create(event_data: dict, user_id: int) -> dict:
+async def _execute_create(event_data: dict, tools_map: dict) -> dict:
+    create_tool = tools_map['create_event']
     events_to_create = event_data.get("events", [])
     created = []
     for ev in events_to_create:
-        result = await create_event_impl(
-            title=ev['title'],
-            startDate=datetime.fromisoformat(ev['startDate']),
-            endDate=datetime.fromisoformat(ev['endDate']) if ev.get('endDate') else None,
-            location=ev.get('location'),
-            user_id=user_id,
-        )
+        args = {
+            "title": ev['title'],
+            "startDate": ev['startDate'],
+        }
+        if ev.get('endDate'):
+            args["endDate"] = ev['endDate']
+        if ev.get('location'):
+            args["location"] = ev['location']
+        result = _parse_mcp_result(await create_tool.ainvoke(args))
         created.append(result)
 
     if len(created) == 1:
-        msg = f"'{created[0]['title']}' has been added to your calendar for {created[0]['startDate']}."
+        msg = f"'{created[0].get('title', '')}' has been added to your calendar for {created[0].get('startDate', '')}."
     else:
-        titles = ", ".join(f"'{e['title']}'" for e in created)
+        titles = ", ".join(f"'{e.get('title', '')}'" for e in created)
         msg = f"{len(created)} events have been added to your calendar: {titles}."
 
     return {
@@ -683,26 +689,18 @@ async def _execute_create(event_data: dict, user_id: int) -> dict:
     }
 
 
-async def _execute_update(event_data: dict, user_id: int) -> dict:
+async def _execute_update(event_data: dict, tools_map: dict) -> dict:
+    update_tool = tools_map['update_event']
     event_ids = event_data.get("event_ids", [])
     update_args = event_data.get("update_args", {})
 
-    # Strip None values so update_event_impl only receives fields to change
+    # Strip None values so update_event only receives fields to change
     clean_args = {k: v for k, v in update_args.items() if v is not None}
-
-    if 'startDate' in clean_args and isinstance(clean_args['startDate'], str):
-        clean_args['startDate'] = datetime.fromisoformat(clean_args['startDate'])
 
     updated = []
     for event_id in event_ids:
-        result = await update_event_impl(
-            event_id=event_id,
-            user_id=user_id,
-            title=clean_args.get('title'),
-            startDate=clean_args.get('startDate'),
-            duration=clean_args.get('duration'),
-            location=clean_args.get('location'),
-        )
+        args = {"event_id": event_id, **clean_args}
+        result = _parse_mcp_result(await update_tool.ainvoke(args))
         if result.get('success') and result.get('event'):
             updated.append(result['event'])
 
@@ -770,18 +768,24 @@ async def _run_tool_loop(
     return messages
 
 
+def _parse_mcp_result(result) -> dict:
+    """MCP tools (langchain-mcp-adapters 0.1.6) return results as JSON strings."""
+    if isinstance(result, str):
+        try:
+            return json.loads(result)
+        except json.JSONDecodeError:
+            return {"error": result}
+    return result
+
+
 async def _run_single_tool(tool_call: dict, tools_map: dict) -> dict:
     tool_name = tool_call['name']
     tool_args = dict(tool_call.get('args', {}))
-
-    for key in ('startDate', 'endDate'):
-        if isinstance(tool_args.get(key), str):
-            tool_args[key] = datetime.fromisoformat(tool_args[key])
-
+    # MCP tools accept ISO string dates — no conversion needed
     tool = tools_map.get(tool_name)
     if not tool:
         return {"error": f"Unknown tool: {tool_name}"}
-    return await tool.ainvoke(tool_args)
+    return _parse_mcp_result(await tool.ainvoke(tool_args))
 
 
 def _extract_events_from_messages(messages: list) -> list:

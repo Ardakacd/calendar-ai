@@ -6,25 +6,28 @@ The LLM decides which tools to use and how to respond.
 """
 
 import logging
-from typing import Optional
-from datetime import datetime
+import json
 from langchain_core.messages import SystemMessage, AIMessage, HumanMessage, ToolMessage
 from ..state import FlowState
 from .system_prompt import CONFLICT_RESOLUTION_AGENT_PROMPT
 from ..llm import model
 from tenacity import retry, stop_after_attempt, wait_random_exponential, retry_if_exception_type
 from openai import OpenAIError, RateLimitError
-from ..tools.conflict_resolution_tools import (
-    check_conflict_tool_factory,
-    suggest_alternative_times_tool_factory,
-    find_free_slots_tool_factory
-)
-from models import Event
-import json
+from ..mcp.calendar_tools_mcp import get_calendar_tools
 
 logger = logging.getLogger(__name__)
 
 retryable_exceptions = (OpenAIError, RateLimitError)
+
+
+def _parse_mcp_result(result) -> dict:
+    """MCP tools (langchain-mcp-adapters 0.1.6) return results as JSON strings."""
+    if isinstance(result, str):
+        try:
+            return json.loads(result)
+        except json.JSONDecodeError:
+            return {"error": result}
+    return result
 
 
 @retry(
@@ -35,10 +38,9 @@ retryable_exceptions = (OpenAIError, RateLimitError)
 async def conflict_resolution_agent(state: FlowState):
     """
     Conflict Resolution Agent - Agentic implementation.
-    
+
     The LLM decides which tools to use and orchestrates conflict checking and suggestions.
     """
-    # Check if conflict check was requested
     if not state.get('conflict_check_request'):
         logger.warning("No conflict check request found in state")
         return {
@@ -51,135 +53,25 @@ async def conflict_resolution_agent(state: FlowState):
             "conflict_resolution_messages": [AIMessage(content="No conflict check requested.")],
             "is_success": True
         }
-    
+
     request = state['conflict_check_request']
     user_id = state['user_id']
-    
+
     logger.info(f"Conflict Resolution Agent: Checking conflicts for user {user_id}")
-    
+
     try:
-        # Create tools bound to user_id
-        check_conflict_tool = check_conflict_tool_factory(user_id)
-        suggest_tool = suggest_alternative_times_tool_factory(user_id)
-        find_free_slots_tool = find_free_slots_tool_factory(user_id)
-        
-        # Bind tools to model
-        model_with_tools = model.bind_tools([check_conflict_tool, suggest_tool, find_free_slots_tool])
-        
-        # Use the prompt directly — it has no template variables
-        prompt_text = CONFLICT_RESOLUTION_AGENT_PROMPT
-        
-        # Initialize messages list
-        messages = []
-        
-        # Add system prompt
-        if state.get("conflict_resolution_messages") and isinstance(state["conflict_resolution_messages"][0], SystemMessage):
-            state["conflict_resolution_messages"][0] = SystemMessage(content=prompt_text)
-            messages = state["conflict_resolution_messages"]
-        else:
-            messages = [SystemMessage(content=prompt_text)]
-            if "conflict_resolution_messages" in state:
-                messages.extend(state["conflict_resolution_messages"])
-        
-        # Add user request as HumanMessage
-        request_text = f"""Please check for conflicts for the following time slot:
-- Start Date: {request.get('startDate')}
-- End Date: {request.get('endDate')}
-- Duration: {request.get('duration_minutes', 60)} minutes
-- Exclude Event ID: {request.get('exclude_event_id', 'None')}
+        from ..scheduling_agent.scheduling_agent import _extract_tz
+        user_tz = _extract_tz(state.get('current_datetime', ''))
 
-Check for conflicts and suggest alternatives if conflicts are found. Provide a clear recommendation."""
-        
-        messages.append(HumanMessage(content=request_text))
-        
-        # Agentic loop: Let LLM call tools until it's done
-        max_iterations = 5
-        iteration = 0
-        conflict_result_from_tools = None  # Capture from check_conflict tool
-        suggestions_from_tools = None  # Capture from suggest_alternative_times tool
+        async with get_calendar_tools(user_id, user_tz) as mcp_tools:
+            tools_map = {t.name: t for t in mcp_tools}
+            check_conflict_tool = tools_map['check_conflict']
+            suggest_tool = tools_map['suggest_alternative_times']
+            find_free_slots_tool = tools_map['find_free_slots']
+            return await _run_conflict_agent(
+                state, request, check_conflict_tool, suggest_tool, find_free_slots_tool
+            )
 
-        while iteration < max_iterations:
-            iteration += 1
-            logger.debug(f"Conflict Resolution Agent iteration {iteration}")
-            
-            # Invoke model with tools
-            response = await model_with_tools.ainvoke(messages)
-            messages.append(response)
-            
-            # Check if model wants to call tools
-            if hasattr(response, 'tool_calls') and response.tool_calls:
-                # Execute tool calls
-                for tool_call in response.tool_calls:
-                    tool_name = tool_call['name']
-                    # Copy args — do NOT mutate tool_call in-place or LangChain
-                    # will fail to serialize the AIMessage on the next loop iteration
-                    tool_args = dict(tool_call.get('args', {}))
-
-                    logger.info(f"Conflict Resolution Agent calling tool: {tool_name}")
-
-                    # Execute appropriate tool
-                    if tool_name == 'check_conflict':
-                        if isinstance(tool_args.get('startDate'), str):
-                            tool_args['startDate'] = datetime.fromisoformat(tool_args['startDate'])
-                        if isinstance(tool_args.get('endDate'), str):
-                            tool_args['endDate'] = datetime.fromisoformat(tool_args['endDate'])
-
-                        tool_result = await check_conflict_tool.ainvoke(tool_args)
-                        conflict_result_from_tools = tool_result
-
-                    elif tool_name == 'suggest_alternative_times':
-                        if isinstance(tool_args.get('requested_startDate'), str):
-                            tool_args['requested_startDate'] = datetime.fromisoformat(tool_args['requested_startDate'])
-                        if isinstance(tool_args.get('requested_endDate'), str):
-                            tool_args['requested_endDate'] = datetime.fromisoformat(tool_args['requested_endDate'])
-
-                        tool_result = await suggest_tool.ainvoke(tool_args)
-                        suggestions_from_tools = tool_result
-
-                    elif tool_name == 'find_free_slots':
-                        if isinstance(tool_args.get('startDate'), str):
-                            tool_args['startDate'] = datetime.fromisoformat(tool_args['startDate'])
-                        if isinstance(tool_args.get('endDate'), str):
-                            tool_args['endDate'] = datetime.fromisoformat(tool_args['endDate'])
-
-                        tool_result = await find_free_slots_tool.ainvoke(tool_args)
-                    else:
-                        tool_result = {"error": f"Unknown tool: {tool_name}"}
-                    
-                    # Add tool result as ToolMessage
-                    tool_message = ToolMessage(
-                        content=json.dumps(tool_result, default=str),
-                        tool_call_id=tool_call.get('id', '')
-                    )
-                    messages.append(tool_message)
-                
-                # Continue loop to let LLM process tool results
-                continue
-            else:
-                # LLM provided final response (no more tool calls)
-                break
-        
-        # Build conflict_result from tool results (preferred) or LLM response
-        final_response = messages[-1].content if messages else "No response generated"
-        if conflict_result_from_tools:
-            conflict_result = {
-                "has_conflict": conflict_result_from_tools.get("has_conflict", False),
-                "conflicting_events": conflict_result_from_tools.get("conflicting_events", []),
-                "conflict_count": conflict_result_from_tools.get("conflict_count", 0),
-                "suggestions": suggestions_from_tools.get("suggestions", []) if suggestions_from_tools else [],
-                "recommendation": final_response
-            }
-        else:
-            conflict_result = _parse_llm_response(final_response, request)
-
-        logger.info(f"Conflict Resolution Agent: Found {conflict_result.get('conflict_count', 0)} conflicts, {len(conflict_result.get('suggestions', []))} suggestions")
-
-        return {
-            "conflict_check_result": conflict_result,
-            "conflict_resolution_messages": messages,
-            "is_success": True
-        }
-        
     except Exception as e:
         logger.error(f"Error in conflict resolution agent: {e}", exc_info=True)
         return {
@@ -195,44 +87,91 @@ Check for conflicts and suggest alternatives if conflicts are found. Provide a c
         }
 
 
-def _dicts_to_events(conflicting_events: list, user_id: int) -> list:
-    """Convert conflict event dicts to Event objects for backward compatibility."""
-    events = []
-    for d in conflicting_events:
-        try:
-            event_id = d.get("event_id") or d.get("id")
-            start_date = d.get("startDate")
-            end_date = d.get("endDate")
-            if isinstance(start_date, str):
-                start_date = datetime.fromisoformat(start_date)
-            if isinstance(end_date, str):
-                end_date = datetime.fromisoformat(end_date)
-            duration = d.get("duration")
-            if duration is None and start_date and end_date:
-                duration = int((end_date - start_date).total_seconds() / 60)
-            events.append(Event(
-                id=event_id,
-                title=d.get("title", ""),
-                startDate=start_date,
-                endDate=end_date,
-                duration=duration,
-                location=d.get("location"),
-                user_id=user_id
+async def _run_conflict_agent(state, request, check_conflict_tool, suggest_tool, find_free_slots_tool):
+    """Inner agentic loop — separated so the outer function can manage the MCP context."""
+    model_with_tools = model.bind_tools([check_conflict_tool, suggest_tool, find_free_slots_tool])
+
+    prompt_text = CONFLICT_RESOLUTION_AGENT_PROMPT
+
+    if state.get("conflict_resolution_messages") and isinstance(state["conflict_resolution_messages"][0], SystemMessage):
+        state["conflict_resolution_messages"][0] = SystemMessage(content=prompt_text)
+        messages = list(state["conflict_resolution_messages"])
+    else:
+        messages = [SystemMessage(content=prompt_text)]
+        if "conflict_resolution_messages" in state:
+            messages.extend(state["conflict_resolution_messages"])
+
+    request_text = (
+        f"Please check for conflicts for the following time slot:\n"
+        f"- Start Date: {request.get('startDate')}\n"
+        f"- End Date: {request.get('endDate')}\n"
+        f"- Duration: {request.get('duration_minutes', 60)} minutes\n"
+        f"- Exclude Event ID: {request.get('exclude_event_id', 'None')}\n\n"
+        "Check for conflicts and suggest alternatives if conflicts are found. "
+        "Provide a clear recommendation."
+    )
+    messages.append(HumanMessage(content=request_text))
+
+    max_iterations = 5
+    conflict_result_from_tools = None
+    suggestions_from_tools = None
+
+    for _ in range(max_iterations):
+        response = await model_with_tools.ainvoke(messages)
+        messages.append(response)
+
+        if not (hasattr(response, 'tool_calls') and response.tool_calls):
+            break
+
+        for tool_call in response.tool_calls:
+            tool_name = tool_call['name']
+            tool_args = dict(tool_call.get('args', {}))
+            logger.info(f"Conflict Resolution Agent calling tool: {tool_name}")
+
+            # MCP tools (langchain-mcp-adapters 0.1.6) return JSON strings — parse them
+            if tool_name == 'check_conflict':
+                tool_result = _parse_mcp_result(await check_conflict_tool.ainvoke(tool_args))
+                conflict_result_from_tools = tool_result
+            elif tool_name == 'suggest_alternative_times':
+                tool_result = _parse_mcp_result(await suggest_tool.ainvoke(tool_args))
+                suggestions_from_tools = tool_result
+            elif tool_name == 'find_free_slots':
+                tool_result = _parse_mcp_result(await find_free_slots_tool.ainvoke(tool_args))
+            else:
+                tool_result = {"error": f"Unknown tool: {tool_name}"}
+
+            messages.append(ToolMessage(
+                content=json.dumps(tool_result, default=str),
+                tool_call_id=tool_call.get('id', '')
             ))
-        except Exception:
-            continue
-    return events
+
+    final_response = messages[-1].content if messages else "No response generated"
+    if conflict_result_from_tools:
+        conflict_result = {
+            "has_conflict": conflict_result_from_tools.get("has_conflict", False),
+            "conflicting_events": conflict_result_from_tools.get("conflicting_events", []),
+            "conflict_count": conflict_result_from_tools.get("conflict_count", 0),
+            "suggestions": suggestions_from_tools.get("suggestions", []) if suggestions_from_tools else [],
+            "recommendation": final_response
+        }
+    else:
+        conflict_result = _parse_llm_response(final_response, request)
+
+    logger.info(
+        f"Conflict Resolution Agent: Found {conflict_result.get('conflict_count', 0)} conflicts, "
+        f"{len(conflict_result.get('suggestions', []))} suggestions"
+    )
+
+    return {
+        "conflict_check_result": conflict_result,
+        "conflict_resolution_messages": messages,
+        "is_success": True
+    }
 
 
 def _parse_llm_response(response: str, request: dict) -> dict:
-    """
-    Parse LLM response to extract conflict information.
-    
-    The LLM should provide structured information about conflicts and suggestions.
-    If it's JSON, parse it. Otherwise, extract from text.
-    """
+    """Parse LLM response to extract conflict information."""
     try:
-        # Try to parse as JSON first
         if response.strip().startswith('{'):
             parsed = json.loads(response)
             return {
@@ -244,9 +183,7 @@ def _parse_llm_response(response: str, request: dict) -> dict:
             }
     except json.JSONDecodeError:
         pass
-    
-    # If not JSON, create result from text response
-    # The LLM should have called tools and provided a summary
+
     return {
         "has_conflict": "conflict" in response.lower() or "conflicts" in response.lower(),
         "conflicting_events": [],
@@ -259,10 +196,10 @@ def _parse_llm_response(response: str, request: dict) -> dict:
 def conflict_resolution_action(state: FlowState):
     """Determine next action after conflict resolution."""
     result = state.get('conflict_check_result', {})
-    
+
     if not result.get('has_conflict'):
-        return "no_conflict"  # Proceed with operation
+        return "no_conflict"
     elif result.get('suggestions'):
-        return "conflict_with_suggestions"  # Has alternatives
+        return "conflict_with_suggestions"
     else:
-        return "conflict_no_suggestions"  # Conflict but no alternatives
+        return "conflict_no_suggestions"
