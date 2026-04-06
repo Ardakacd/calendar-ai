@@ -185,6 +185,7 @@ Check for conflicts and suggest alternatives if conflicts are found. Provide a c
         return {
             "conflict_check_result": {
                 "has_conflict": False,
+                "check_failed": True,
                 "conflicting_events": [],
                 "suggestions": [],
                 "recommendation": f"Error checking conflicts: {str(e)}"

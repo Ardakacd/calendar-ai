@@ -1,7 +1,8 @@
-import React, { useState, useEffect, useMemo, useCallback } from "react";
+import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { View, StyleSheet, Alert, FlatList } from "react-native";
 import { Text, FAB, ActivityIndicator, IconButton } from "react-native-paper";
 import { Calendar, DateData } from "react-native-calendars";
+import { useFocusEffect } from "@react-navigation/native";
 import { MaterialIcons } from "@expo/vector-icons";
 import { useCalendarAPI } from "../services/api";
 import UpdateEventModal from "../components/UpdateEventModal";
@@ -25,9 +26,11 @@ export default function CalendarScreen() {
   const [addModalVisible, setAddModalVisible] = useState(false);
   const { getEvents, updateEvent, deleteEvent, addEvent } = useCalendarAPI();
 
-  useEffect(() => {
-    loadEvents();
-  }, []);
+  useFocusEffect(
+    useCallback(() => {
+      loadEvents();
+    }, [])
+  );
 
   const loadEvents = async () => {
     try {

@@ -344,6 +344,21 @@ class EventService:
                 detail="Events could not be deleted. Please try again later."
             )
 
+    async def delete_all_events(self, token: str) -> Dict[str, str]:
+        """Delete all events for the authenticated user."""
+        try:
+            user_id = get_user_id_from_token(token)
+            deleted_count = await self.event_adapter.delete_all_events(user_id)
+            return {"message": f"Successfully deleted {deleted_count} events"}
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"EventService: Unexpected error deleting all events: {str(e)}", exc_info=True)
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Events could not be deleted. Please try again later."
+            )
+
     async def search_events(self, token: str, query: str) -> List[Event]:
         """
         Search events by title for the authenticated user.

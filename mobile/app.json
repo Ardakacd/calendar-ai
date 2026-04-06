@@ -16,6 +16,7 @@
     ],
     "ios": {
       "supportsTablet": true,
+      "bundleIdentifier": "com.calendarai.app",
       "infoPlist": {
         "NSMicrophoneUsageDescription": "This app needs access to microphone to record voice commands for calendar management."
       }
@@ -34,13 +35,12 @@
     },
     "plugins": [
       [
-        "expo-av",
+        "expo-audio",
         {
           "microphonePermission": "Allow Calendar AI to access your microphone to record voice commands."
         }
       ],
-      "expo-localization",
-      "expo-audio"
+      "expo-localization"
     ]
   }
 }

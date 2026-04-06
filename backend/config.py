@@ -39,8 +39,8 @@ class Settings(BaseSettings):
     # Security settings
     SECRET_KEY: str = Field(..., description="Secret key for JWT tokens")
     ALGORITHM: str = Field(default="HS256", description="JWT algorithm")
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = Field(default=30, description="Access token expiration time")
-    REFRESH_TOKEN_EXPIRE_DAYS: int = Field(default=30, description="Refresh token expiration time in days")
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = Field(default=1440, description="Access token expiration time")
+    REFRESH_TOKEN_EXPIRE_DAYS: int = Field(default=90, description="Refresh token expiration time in days")
     
     # Server settings
     HOST: str = Field(default="0.0.0.0", description="Server host")
@@ -49,6 +49,8 @@ class Settings(BaseSettings):
     # LLM settings
     OPENAI_API_KEY: Optional[str] = Field(default=None, description="OpenAI API key")
     TAVILY_API_KEY: Optional[str] = Field(default=None, description="Tavily search API key")
+    RESEND_API_KEY: Optional[str] = Field(default=None, description="Resend email API key")
+    NOTIFICATION_FROM_EMAIL: str = Field(default="onboarding@resend.dev", description="From address for notification emails")
     
     
     # Logging settings

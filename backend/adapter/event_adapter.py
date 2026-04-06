@@ -515,3 +515,26 @@ class EventAdapter:
             logger.error(f"Unexpected error in bulk delete operation: {e}")
             await self.db.rollback()
             return False
+
+    async def delete_all_events(self, user_id: int) -> int:
+        """
+        Delete all events for a user.
+
+        Returns:
+            Number of deleted events.
+        """
+        try:
+            stmt = delete(EventModel).where(EventModel.user_id == user_id)
+            result = await self.db.execute(stmt)
+            await self.db.commit()
+            deleted_count = result.rowcount
+            logger.info(f"Deleted all {deleted_count} events for user {user_id}")
+            return deleted_count
+        except SQLAlchemyError as e:
+            logger.error(f"Database error deleting all events for user {user_id}: {e}")
+            await self.db.rollback()
+            return 0
+        except Exception as e:
+            logger.error(f"Unexpected error deleting all events for user {user_id}: {e}")
+            await self.db.rollback()
+            return 0

@@ -193,6 +193,27 @@ async def update_event(
         )
 
 
+@router.delete("/all", response_model=Dict[str, str])
+async def delete_all_events(
+        credentials: HTTPAuthorizationCredentials = Depends(security),
+        event_service: EventService = Depends(get_event_service)
+):
+    """Delete all events for the authenticated user."""
+    try:
+        token = credentials.credentials
+        result = await event_service.delete_all_events(token)
+        return result
+    except HTTPException as e:
+        logger.error(f"HTTP error during delete all events: {e.detail}")
+        raise
+    except Exception as e:
+        logger.error(f"Unexpected error during delete all events: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An error occurred. Please try again later."
+        )
+
+
 @router.delete("/{event_id}", response_model=Dict[str, str])
 async def delete_event(
         event_id: str,
@@ -201,7 +222,7 @@ async def delete_event(
 ):
     """
     Delete an event for the authenticated user.
-    
+
     Returns a success message.
     """
     logger.info(f"Deleting event: {event_id}")

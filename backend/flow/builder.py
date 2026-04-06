@@ -4,6 +4,7 @@ from .router_agent.router_agent import router_agent, route_action, router_messag
 from .scheduling_agent.scheduling_agent import scheduling_agent, scheduling_finalize, scheduling_route
 from .conflict_resolution.conflict_resolution_agent import conflict_resolution_agent
 from .leisure_search_agent.leisure_search_agent import leisure_search_agent
+from .notification_agent.notification_agent import notification_agent
 from .state import FlowState
 
 # Module-level singleton — persists for the lifetime of the server process.
@@ -22,6 +23,7 @@ class FlowBuilder:
         graph_builder.add_node("scheduling_agent", scheduling_agent)
         graph_builder.add_node("conflict_resolution_agent", conflict_resolution_agent)
         graph_builder.add_node("scheduling_finalize", scheduling_finalize)
+        graph_builder.add_node("notification_agent", notification_agent)
 
         # Edges from router
         graph_builder.add_edge(START, "router_agent")
@@ -45,7 +47,8 @@ class FlowBuilder:
             },
         )
         graph_builder.add_edge("conflict_resolution_agent", "scheduling_finalize")
-        graph_builder.add_edge("scheduling_finalize", END)
+        graph_builder.add_edge("scheduling_finalize", "notification_agent")
+        graph_builder.add_edge("notification_agent", END)
 
         # Terminal nodes
         graph_builder.add_edge("router_message_handler", END)

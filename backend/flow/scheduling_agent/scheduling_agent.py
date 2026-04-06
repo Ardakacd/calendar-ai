@@ -247,8 +247,15 @@ async def _handle_update(state: FlowState, system_prompt: str, user_id: int, use
     # Collect all events returned by list_event across all tool calls
     all_events = _extract_events_from_messages(messages)
 
+    # Build recent conversation context so LLM can resolve pronouns like "it" or "that meeting"
+    recent_msgs = [m for m in _conversation_history(state) if not isinstance(m, SystemMessage)][-4:]
+    filter_context = "\n".join(
+        f"{'User' if isinstance(m, HumanMessage) else 'Assistant'}: {m.content}"
+        for m in recent_msgs if hasattr(m, 'content')
+    )
+
     # Keyword-filter by title/location/duration
-    filtered_events = await _filter_events(all_events, state['input_text'], intent="find the event to update")
+    filtered_events = await _filter_events(all_events, state['input_text'], intent="find the event to update", context=filter_context)
 
     if not filtered_events:
         msg = "I couldn't find any events matching your request. Could you provide more details?"
@@ -259,15 +266,21 @@ async def _handle_update(state: FlowState, system_prompt: str, user_id: int, use
             "conflict_check_result": None,
         }
 
-    # Structured extraction of the update plan using filtered events as context
+    # Structured extraction of the update plan using filtered events as context.
+    # Only include the last 2 scheduling messages (enough to resolve "it"/"option 2"
+    # references) rather than full history, so older turns (e.g. a prior standup
+    # update) don't bleed in and cause the LLM to pick the wrong event.
     filter_context = json.dumps(filtered_events, default=str, indent=2)
-    messages.append(HumanMessage(
-        content=(
-            f"The following events match the user's request:\n{filter_context}\n\n"
+    recent_history = [m for m in _conversation_history(state) if not isinstance(m, SystemMessage)][-2:]
+    plan: UpdatePlan = await model.with_structured_output(UpdatePlan).ainvoke([
+        SystemMessage(content=system_prompt),
+        *recent_history,
+        HumanMessage(content=(
+            f"User request: \"{state['input_text']}\"\n\n"
+            f"Matching events found in the calendar:\n{filter_context}\n\n"
             "Extract the update plan: which event(s) to update and what fields to change."
-        )
-    ))
-    plan: UpdatePlan = await model.with_structured_output(UpdatePlan).ainvoke(messages)
+        )),
+    ])
 
     if plan.clarification_needed:
         return {
@@ -353,7 +366,15 @@ async def _handle_delete(state: FlowState, system_prompt: str, user_id: int, use
 
     # Collect events and keyword-filter
     all_events = _extract_events_from_messages(messages)
-    filtered_events = await _filter_events(all_events, state['input_text'], intent="find the event to delete")
+
+    # Build recent conversation context so LLM can resolve pronouns like "it" or "that meeting"
+    recent_msgs = [m for m in _conversation_history(state) if not isinstance(m, SystemMessage)][-4:]
+    filter_context = "\n".join(
+        f"{'User' if isinstance(m, HumanMessage) else 'Assistant'}: {m.content}"
+        for m in recent_msgs if hasattr(m, 'content')
+    )
+
+    filtered_events = await _filter_events(all_events, state['input_text'], intent="find the event to delete", context=filter_context)
 
     if not filtered_events:
         msg = "I couldn't find any events matching your request."
@@ -410,16 +431,24 @@ async def _handle_delete(state: FlowState, system_prompt: str, user_id: int, use
                 "is_success": bool(deleted),
             }
 
-        # Ambiguous — ask the user to pick
+        # Ambiguous — list the options in the message so the user can reply by name or "both"
         lines = ["Multiple events match your request. Which one did you mean?\n"]
         for i, e in enumerate(filtered_events, 1):
-            lines.append(f"  {i}. **{e.get('title')}** — {e.get('startDate')} to {e.get('endDate')}")
+            start = e.get('startDate', '')
+            try:
+                dt = datetime.fromisoformat(start)
+                start_fmt = dt.strftime("%a %b %-d, %-I:%M %p")
+            except Exception:
+                start_fmt = start
+            lines.append(f"{i}. {e.get('title')} — {start_fmt}")
+        lines.append('\nYou can say "both", "all", or name the one you want.')
         msg = "\n".join(lines)
         return {
             "scheduling_messages": [AIMessage(content=msg)],
             "scheduling_result": {
                 "message": msg,
                 "needs_clarification": True,
+                "candidate_events": filtered_events,
                 "success": False,
             },
             "conflict_check_request": None,
@@ -479,6 +508,12 @@ async def _handle_list(state: FlowState, system_prompt: str, user_id: int, user_
 
     all_events = _extract_events_from_messages(messages)
     filtered_events = await _filter_events(all_events, state['input_text'], intent="list events matching the user's request")
+
+    # If filter incorrectly returned empty but events exist, show all of them.
+    # For LIST the user always wants to see events — an empty filter result is almost
+    # certainly a filter error, not a genuine "no match".
+    if not filtered_events and all_events:
+        filtered_events = all_events
 
     if not filtered_events:
         msg = "No events found for your request."
@@ -541,6 +576,15 @@ async def scheduling_finalize(state: FlowState):
     conflict_result = state.get('conflict_check_result', {})
     event_data = state.get('scheduling_event_data', {})
     user_id = state['user_id']
+
+    # Conflict check failed (e.g. rate limit) — do not execute, ask user to retry
+    if conflict_result and conflict_result.get('check_failed'):
+        msg = "I couldn't verify your calendar for conflicts right now. Please try again in a moment."
+        return {
+            "scheduling_result": {"message": msg, "success": False},
+            "scheduling_messages": [AIMessage(content=msg)],
+            "is_success": False,
+        }
 
     # No conflict check was run (e.g. title-only update or clarification path)
     if not conflict_result:
@@ -763,10 +807,67 @@ def _extract_events_from_messages(messages: list) -> list:
     return events
 
 
-async def _filter_events(events: list, user_message: str, intent: str = "identify") -> list:
+def _reconcile_event_ids(filtered: list, originals: list) -> list:
+    """
+    Replace any hallucinated IDs in the LLM-filtered list with the real IDs from originals.
+    Matches by title (case-insensitive). When multiple originals share the same title,
+    picks the one whose startDate is closest to the filtered event's startDate.
+    """
+    # Build lookup: normalised title → list of original events
+    originals_by_title: dict[str, list] = {}
+    for e in originals:
+        title = (e.get('title') or '').strip().lower()
+        if title:
+            originals_by_title.setdefault(title, []).append(e)
+
+    # Track which originals have already been matched to avoid double-assigning
+    used_ids: set = set()
+
+    def _best_match(fe: dict, candidates: list) -> dict:
+        """Pick the closest unmatched candidate by startDate, else any unmatched one."""
+        fe_start_str = fe.get('startDate') or ''
+        try:
+            fe_dt = datetime.fromisoformat(fe_start_str)
+        except Exception:
+            fe_dt = None
+
+        best = None
+        best_diff = None
+        for c in candidates:
+            cid = c.get('event_id') or c.get('id')
+            if cid in used_ids:
+                continue
+            if fe_dt is not None:
+                try:
+                    c_dt = datetime.fromisoformat(c.get('startDate', ''))
+                    diff = abs((fe_dt - c_dt).total_seconds())
+                    if best_diff is None or diff < best_diff:
+                        best = c
+                        best_diff = diff
+                except Exception:
+                    pass
+            if best is None:
+                best = c  # fallback: first unmatched candidate
+        return best or candidates[0]  # last resort
+
+    reconciled = []
+    for fe in filtered:
+        title_key = (fe.get('title') or '').strip().lower()
+        candidates = originals_by_title.get(title_key)
+        if candidates:
+            match = _best_match(fe, candidates)
+            used_ids.add(match.get('event_id') or match.get('id'))
+            reconciled.append(match)
+        else:
+            reconciled.append(fe)
+    return reconciled
+
+
+async def _filter_events(events: list, user_message: str, intent: str = "identify", context: str = "") -> list:
     """
     Use LLM to keyword-filter a list of events based on the user's message.
     Filters by title/location/duration keywords only (not date/time).
+    Accepts optional conversation context to resolve pronouns like "it" or "that meeting".
     Returns all events if no keywords match.
     """
     if not events:
@@ -776,6 +877,7 @@ async def _filter_events(events: list, user_message: str, intent: str = "identif
         user_events=json.dumps(events, default=str, indent=2),
         user_message=user_message,
         intent=intent,
+        context=context,
     )
 
     response = await model.ainvoke([HumanMessage(content=prompt)])
@@ -790,9 +892,11 @@ async def _filter_events(events: list, user_message: str, intent: str = "identif
             content = content.strip()
         filtered = json.loads(content)
         if isinstance(filtered, list):
-            return filtered
-    except (json.JSONDecodeError, TypeError):
-        pass
+            logger.debug(f"_filter_events: {len(events)} input → {len(filtered)} after filter (intent={intent!r})")
+            # Reconcile IDs: LLM may hallucinate IDs — replace with originals matched by title
+            return _reconcile_event_ids(filtered, events)
+    except (json.JSONDecodeError, TypeError) as exc:
+        logger.warning(f"_filter_events: failed to parse LLM response ({exc}); raw={response.content[:200]!r}")
 
     # Fallback: return all events if parsing fails
     return events

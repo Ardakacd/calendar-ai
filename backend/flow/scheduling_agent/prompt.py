@@ -75,26 +75,31 @@ You are a calendar assistant. You have retrieved the following events from the u
 Your task: identify which of these events the user is referring to in their message.
 Intent: {intent}
 
+Recent conversation context (use this to resolve pronouns like "it", "that one", "the meeting"):
+{context}
+
 Rules:
 - Focus on WHAT event the user is talking about, not whether they want to keep or remove it.
+- If the user says "it", "that", "the meeting", "that event" etc., resolve it from the conversation context above.
 - "I will not meet with John" → the user is referring to the event with John.
 - "cancel my dentist appointment" → the user is referring to the dentist event.
+- "move it to 2:30pm" after a conflict about "Lunch with Sarah" → refers to Lunch with Sarah.
 - Match on `title` if the user mentions a name or keyword related to the event title.
 - Match on `location` if the user explicitly mentions a place.
 - Match on `duration` if the user explicitly mentions a duration.
-- If no specific keywords are mentioned → return ALL events.
+- If no specific keywords are mentioned AND context gives no clue → return ALL events.
 - Never filter based on date/time here.
 
 User message: {user_message}
 
-Return a JSON array of the matching events. Each object must have:
+Return a JSON array of the matching events. Copy ALL field values EXACTLY as they appear in the input — do NOT invent or modify any IDs. Each object must have:
 {{
-  "id": "...",
-  "title": "...",
-  "startDate": "...",
-  "endDate": "...",
-  "duration": ...,
-  "location": "..."
+  "event_id": "<copy event_id exactly from input>",
+  "title": "<copy exactly>",
+  "startDate": "<copy exactly>",
+  "endDate": "<copy exactly>",
+  "duration": <copy exactly>,
+  "location": "<copy exactly>"
 }}
 
 Return only valid JSON. No explanation.

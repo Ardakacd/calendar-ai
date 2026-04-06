@@ -35,9 +35,16 @@ class AssistantService:
             if route in ("create", "update", "delete", "list"):
                 scheduling_result = response.get("scheduling_result") or {}
                 message = scheduling_result.get("message", "Operation completed.")
-                # Only send events to the frontend for LIST so the ListComponent renders.
-                # CREATE/UPDATE also return event dicts but those should show as text confirmation.
-                raw_events = scheduling_result.get("events") if route == "list" else None
+                needs_clarification = scheduling_result.get("needs_clarification", False)
+
+                # Send events for LIST, and candidate_events for ambiguous DELETE
+                if route == "list":
+                    raw_events = scheduling_result.get("events")
+                elif route == "delete" and needs_clarification:
+                    raw_events = scheduling_result.get("candidate_events")
+                else:
+                    raw_events = None
+
                 events = None
                 if raw_events:
                     events = [
@@ -48,6 +55,7 @@ class AssistantService:
                     "message": message,
                     "success": scheduling_result.get("success", True),
                     "has_conflict": scheduling_result.get("has_conflict", False),
+                    "needs_clarification": needs_clarification,
                     "suggestions": scheduling_result.get("suggestions", []),
                     "events": events,
                 }

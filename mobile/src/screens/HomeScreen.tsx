@@ -7,6 +7,7 @@ import {
   TextInput,
   Platform,
   TouchableOpacity,
+  Alert,
 } from "react-native";
 import { Text, Avatar, IconButton } from "react-native-paper";
 import { LinearGradient } from "expo-linear-gradient";
@@ -71,7 +72,7 @@ export default function HomeScreen() {
   const [inputText, setInputText] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
   const [isThinking, setIsThinking] = useState(false);
-  const { transcribeAudio, processText, resetMemory } = useCalendarAPI();
+  const { transcribeAudio, processText, resetMemory, deleteAllEvents } = useCalendarAPI();
   const { user } = useAuth();
   const scrollViewRef = useRef<ScrollView>(null);
   const inputRef = useRef<TextInput>(null);
@@ -90,6 +91,36 @@ export default function HomeScreen() {
     } catch {
       // silently ignore
     }
+  };
+
+  const handleDeleteAllEvents = () => {
+    Alert.alert(
+      "Delete All Events",
+      "This will permanently delete all your calendar events. Are you sure?",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete All",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              await deleteAllEvents();
+              await resetMemory();
+              setMessages([
+                {
+                  id: Date.now().toString(),
+                  type: "ai",
+                  content: "All events deleted. How can I help you?",
+                  timestamp: new Date(),
+                },
+              ]);
+            } catch {
+              // silently ignore
+            }
+          },
+        },
+      ]
+    );
   };
 
   const addMessage = (
@@ -142,7 +173,9 @@ export default function HomeScreen() {
           : response?.message || "Done.";
 
       const events: Event[] | undefined =
-        response?.events?.length > 0 ? response.events : undefined;
+        response?.events?.length > 0 && !response?.needs_clarification
+          ? response.events
+          : undefined;
       const hasConflict: boolean = response?.has_conflict === true;
       const suggestions: ConflictSuggestion[] = response?.suggestions ?? [];
 
@@ -232,6 +265,13 @@ export default function HomeScreen() {
             </View>
           </View>
         </TouchableOpacity>
+        <IconButton
+          icon="trash-can-outline"
+          iconColor="white"
+          size={24}
+          onPress={handleDeleteAllEvents}
+          style={styles.logoutButton}
+        />
         <IconButton
           icon="delete-sweep"
           iconColor="white"

@@ -312,6 +312,15 @@ class CalendarAPI {
     }
   }
 
+  async deleteAllEvents(): Promise<{ message: string }> {
+    try {
+      const response = await this.api.delete("/events/all");
+      return response.data;
+    } catch (error) {
+      throw new Error("Events could not be deleted");
+    }
+  }
+
   async resetMemory(): Promise<{ message: string }> {
     try {
       const response = await this.api.delete("/assistant/memory");
@@ -343,9 +352,7 @@ class CalendarAPI {
   }
 
   private isTokenExpiredError(error: any): boolean {
-    // Check if this is an authentication error by looking for the WWW-Authenticate header
-    // This is set by the backend for all token-related issues (expired, invalid, etc.)
-    return error.response?.headers?.["www-authenticate"]?.includes("Bearer");
+    return error.response?.status === 401;
   }
 }
 
@@ -374,5 +381,6 @@ export const useCalendarAPI = () => {
     deleteMultipleEvents: calendarAPI.deleteMultipleEvents.bind(calendarAPI),
     processText: calendarAPI.processText.bind(calendarAPI),
     resetMemory: calendarAPI.resetMemory.bind(calendarAPI),
+    deleteAllEvents: calendarAPI.deleteAllEvents.bind(calendarAPI),
   };
 };
