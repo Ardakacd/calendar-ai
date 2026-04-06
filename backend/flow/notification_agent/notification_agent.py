@@ -13,12 +13,12 @@ Skipped for:
 import json
 import logging
 from datetime import datetime
-from langchain_core.messages import SystemMessage, HumanMessage
+from langchain_core.messages import SystemMessage, HumanMessage, ToolMessage
 from adapter.user_adapter import UserAdapter
 from database.config import get_async_db_context_manager
 from ..state import FlowState
 from ..llm import model
-from ..tools.email_tool import send_email_tool_factory
+from ..mcp.resend_mcp import get_resend_tools
 from .prompt import NOTIFICATION_AGENT_PROMPT
 
 logger = logging.getLogger(__name__)
@@ -59,22 +59,39 @@ async def notification_agent(state: FlowState):
         context_parts.append(f"Summary: {scheduling_result.get('message', 'Your calendar was updated.')}")
     context = "\n".join(context_parts)
 
-    email_tool = send_email_tool_factory()
-    model_with_tools = model.bind_tools([email_tool])
-
-    messages = [
-        SystemMessage(content=NOTIFICATION_AGENT_PROMPT),
-        HumanMessage(content=context),
-    ]
-
     try:
-        response = await model_with_tools.ainvoke(messages)
+        async with get_resend_tools() as mcp_tools:
+            if not mcp_tools:
+                logger.warning("Notification agent: no MCP email tools available, skipping")
+                return {}
 
-        if hasattr(response, "tool_calls") and response.tool_calls:
-            for tc in response.tool_calls:
-                if tc["name"] == "send_email":
-                    args = tc.get("args", {})
-                    await email_tool.ainvoke(args)
+            # Inject sender address into the system prompt so the LLM uses it
+            from config import settings
+            prompt = NOTIFICATION_AGENT_PROMPT.replace(
+                "{from_email}", settings.NOTIFICATION_FROM_EMAIL
+            )
+
+            model_with_tools = model.bind_tools(mcp_tools)
+            messages = [
+                SystemMessage(content=prompt),
+                HumanMessage(content=context),
+            ]
+
+            response = await model_with_tools.ainvoke(messages)
+            messages.append(response)
+
+            if hasattr(response, "tool_calls") and response.tool_calls:
+                # Build a tool name → tool lookup
+                tools_by_name = {t.name: t for t in mcp_tools}
+                for tc in response.tool_calls:
+                    tool = tools_by_name.get(tc["name"])
+                    if tool:
+                        result = await tool.ainvoke(tc.get("args", {}))
+                        logger.info(f"Notification agent: MCP tool {tc['name']} result={result}")
+                        messages.append(ToolMessage(
+                            content=json.dumps(result, default=str),
+                            tool_call_id=tc.get("id", ""),
+                        ))
     except Exception as e:
         # Notification failures must never break the main flow response
         logger.error(f"Notification agent error: {e}", exc_info=True)

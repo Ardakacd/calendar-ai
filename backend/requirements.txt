@@ -1,8 +1,8 @@
-fastapi==0.109.2
-uvicorn==0.27.1
-pydantic==2.7.4
-pydantic[email]==2.7.4
-pydantic-settings==2.4.0
+fastapi>=0.115.0
+uvicorn>=0.30.0
+pydantic>=2.7.4
+pydantic[email]>=2.7.4
+pydantic-settings>=2.4.0
 python-dotenv==1.0.1
 python-multipart==0.0.9
 psycopg2-binary==2.9.9
@@ -23,5 +23,8 @@ langgraph==0.5.1
 redis==5.0.1
 langgraph-checkpoint-redis==0.0.8
 tavily-python==0.7.23
+langchain-mcp-adapters==0.1.6
+mcp>=1.0.0
+socksio>=1.0.0
 
 
