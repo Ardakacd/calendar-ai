@@ -15,8 +15,11 @@ class AssistantService:
         self.event_service = event_service
 
     async def process(self, token: str, text: str, current_datetime: str, weekday: str, days_in_month: int):
+        user_id = get_user_id_from_token(token)
+        return await self.process_for_user(user_id, text, current_datetime, weekday, days_in_month)
+
+    async def process_for_user(self, user_id: int, text: str, current_datetime: str, weekday: str, days_in_month: int):
         try:
-            user_id = get_user_id_from_token(token)
             flow = await FlowBuilder().create_flow()
             config: RunnableConfig = {'configurable': {'thread_id': str(user_id)}}
 
@@ -31,13 +34,11 @@ class AssistantService:
 
             route = response["route"].get('route') if isinstance(response["route"], dict) else None
 
-            # Scheduling operations (create, update, delete, list) use scheduling_result
             if route in ("create", "update", "delete", "list"):
                 scheduling_result = response.get("scheduling_result") or {}
-                message = scheduling_result.get("message", "Operation completed.")
+                message = scheduling_result.get("message") or "Operation completed."
                 needs_clarification = scheduling_result.get("needs_clarification", False)
 
-                # Send events for LIST, and candidate_events for ambiguous DELETE
                 if route == "list":
                     raw_events = scheduling_result.get("events")
                 elif route == "delete" and needs_clarification:
@@ -60,18 +61,25 @@ class AssistantService:
                     "events": events,
                 }
 
-            # Conversation response
-            message = (
-                response["router_messages"][-1].content
-                if response.get("router_messages")
-                else "How can I help you with your calendar?"
-            )
-            return {"message": message}
+            last_msg = response.get("router_messages", [])
+            if last_msg:
+                content = last_msg[-1].content
+                # content can be a list when the message has tool calls
+                if isinstance(content, list):
+                    text_parts = [p.get("text", "") for p in content if isinstance(p, dict) and p.get("type") == "text"]
+                    message = " ".join(text_parts).strip()
+                else:
+                    message = str(content).strip()
+            else:
+                message = ""
+
+            logger.debug(f"Router fallback message: {repr(message)}")
+            return {"message": message or "How can I help you with your calendar?"}
 
         except HTTPException:
             raise
         except Exception as e:
-            logger.error(f"Error in process: {e}")
+            logger.error(f"Error in process_for_user: {e}")
             raise
 
 

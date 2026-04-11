@@ -51,6 +51,11 @@ class Settings(BaseSettings):
     TAVILY_API_KEY: Optional[str] = Field(default=None, description="Tavily search API key")
     RESEND_API_KEY: Optional[str] = Field(default=None, description="Resend email API key")
     NOTIFICATION_FROM_EMAIL: str = Field(default="onboarding@resend.dev", description="From address for notification emails")
+
+    # Linq iMessage integration
+    LINQ_API_TOKEN: Optional[str] = Field(default=None, description="Linq partner API token")
+    LINQ_SIGNING_SECRET: Optional[str] = Field(default=None, description="Linq webhook signing secret")
+    LINQ_DEFAULT_TIMEZONE: str = Field(default="America/New_York", description="Default timezone for new Linq users")
     
     
     # Logging settings

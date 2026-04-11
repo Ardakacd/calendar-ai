@@ -28,9 +28,13 @@ class UserAdapter:
             user_id=user_model.user_id,
             name=user_model.name,
             email=user_model.email,
-            password=user_model.password
+            password=user_model.password,
+            phone_number=user_model.phone_number,
+            timezone=user_model.timezone,
+            linq_chat_id=user_model.linq_chat_id,
+            push_token=user_model.push_token,
         )
-    
+
     def _convert_to_db_model(self, user_data: UserCreate) -> UserModel:
         """Convert UserCreate Pydantic model to UserModel."""
         logger.debug(f"UserAdapter: Converting UserCreate to UserModel: {user_data.name}")
@@ -38,7 +42,9 @@ class UserAdapter:
             user_id=user_data.user_id,
             name=user_data.name,
             email=user_data.email,
-            password=user_data.password
+            password=user_data.password,
+            phone_number=user_data.phone_number,
+            timezone=user_data.timezone,
         )
        
     def _handle_integrity_error(self, e: IntegrityError, operation: str) -> None:
@@ -160,6 +166,20 @@ class UserAdapter:
             logger.error(f"UserAdapter: Unexpected error retrieving user by email {email}: {e}", exc_info=True)
             return None
     
+    async def get_user_by_phone(self, phone_number: str) -> Optional[User]:
+        """Get user by phone number."""
+        logger.info(f"UserAdapter: Looking up user by phone: {phone_number}")
+        try:
+            stmt = select(UserModel).where(UserModel.phone_number == phone_number)
+            result = await self.db.execute(stmt)
+            db_user = result.scalar_one_or_none()
+            if db_user:
+                return self._convert_to_model(db_user)
+            return None
+        except SQLAlchemyError as e:
+            logger.error(f"UserAdapter: Database error retrieving user by phone {phone_number}: {e}")
+            return None
+
     async def update_user(self, user_id: int, user_data: UserUpdate) -> Optional[User]:
         """
         Update an existing user efficiently.
@@ -211,6 +231,19 @@ class UserAdapter:
             await self.db.rollback()
             return None
     
+    async def get_all_linq_users(self) -> list:
+        """Return all users who have a phone number and a stored linq_chat_id."""
+        try:
+            stmt = select(UserModel).where(
+                UserModel.phone_number.isnot(None),
+                UserModel.linq_chat_id.isnot(None),
+            )
+            result = await self.db.execute(stmt)
+            return [self._convert_to_model(u) for u in result.scalars().all()]
+        except Exception as e:
+            logger.error(f"UserAdapter: Error fetching linq users: {e}")
+            return []
+
     async def delete_user(self, user_id: int) -> bool:
         """
         Delete a user.

@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Optional
 from sqlalchemy import String, DateTime, CheckConstraint, Integer
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func 
@@ -17,6 +17,10 @@ class UserModel(Base):
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     email: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
     password: Mapped[str] = mapped_column(String(255), nullable=False)
+    phone_number: Mapped[Optional[str]] = mapped_column(String(255), nullable=True, unique=True)
+    timezone: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    linq_chat_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
+    push_token: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     events: Mapped[List["EventModel"]] = relationship(

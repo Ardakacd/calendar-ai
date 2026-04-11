@@ -133,6 +133,8 @@ def init_db():
             logger.info("Tables created successfully")
         else:
             logger.info("Tables already exist, skipping creation")
+            # Create any new tables added after initial deployment (e.g. processed_webhooks)
+            Base.metadata.create_all(bind=engine, checkfirst=True)
         
         # Log pool status
         pool_status = get_pool_status()
