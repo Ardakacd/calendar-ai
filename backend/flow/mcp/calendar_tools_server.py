@@ -77,11 +77,28 @@ async def create_event(
     startDate: str,
     endDate: Optional[str] = None,
     location: Optional[str] = None,
+    description: Optional[str] = None,
+    category: Optional[str] = None,
+    recurrence_type: Optional[str] = None,
+    recurrence_count: Optional[int] = None,
+    recurrence_interval: Optional[int] = None,
+    recurrence_byweekday: Optional[str] = None,
+    recurrence_bysetpos: Optional[int] = None,
 ) -> dict:
-    """Create a new calendar event."""
+    """Create a new calendar event. For recurring events set recurrence_type ('daily','weekly','monthly','yearly') and recurrence_count.
+    Use recurrence_interval for bi-weekly (2) etc., recurrence_byweekday for specific days ('MO,WE,FR'),
+    and recurrence_bysetpos for positional rules (1=first, -1=last occurrence in period)."""
     start = datetime.fromisoformat(startDate)
     end = datetime.fromisoformat(endDate) if endDate else None
-    return await create_event_impl(title, start, end, location, _USER_ID)
+    return await create_event_impl(
+        title, start, end, location, description, category,
+        recurrence_type=recurrence_type,
+        recurrence_count=recurrence_count,
+        recurrence_interval=recurrence_interval,
+        recurrence_byweekday=recurrence_byweekday,
+        recurrence_bysetpos=recurrence_bysetpos,
+        user_id=_USER_ID,
+    )
 
 
 @mcp.tool()
@@ -91,10 +108,12 @@ async def update_event(
     startDate: Optional[str] = None,
     duration: Optional[int] = None,
     location: Optional[str] = None,
+    description: Optional[str] = None,
+    category: Optional[str] = None,
 ) -> dict:
     """Update an existing calendar event. Only supply fields to change."""
     start = datetime.fromisoformat(startDate) if startDate else None
-    return await update_event_impl(event_id, _USER_ID, title, start, duration, location)
+    return await update_event_impl(event_id, _USER_ID, title, start, duration, location, description, category)
 
 
 @mcp.tool()

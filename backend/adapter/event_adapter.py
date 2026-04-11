@@ -1,12 +1,16 @@
-from typing import List, Optional
+from typing import List, Optional, Tuple
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy import select, delete, update, func, or_, and_
 import logging
+import uuid
 from database import EventModel
+from database.models.user import UserModel
 from models import EventCreate, EventUpdate, Event
 from datetime import datetime, timedelta
-from exceptions import EventNotFoundError, EventPermissionError,  DatabaseError
+from dateutil.relativedelta import relativedelta
+from dateutil.rrule import rrule, rrulestr, DAILY, WEEKLY, MONTHLY, YEARLY, MO, TU, WE, TH, FR, SA, SU
+from exceptions import EventNotFoundError, EventPermissionError, DatabaseError, RecurringConflictError
 from fastapi import HTTPException, status
 
 logger = logging.getLogger(__name__)
@@ -32,31 +36,93 @@ class EventAdapter:
 
         
         return Event(
-            id=event_model.event_id, 
+            id=event_model.event_id,
             title=event_model.title,
+            category=event_model.category,
+            description=event_model.description,
             startDate=event_model.startDate,
             endDate=event_model.endDate,
-            duration=duration,  
+            duration=duration,
             location=event_model.location,
             user_id=event_model.user_id,
+            recurrence_id=event_model.recurrence_id,
+            recurrence_type=event_model.recurrence_type,
+            rrule_string=event_model.rrule_string,
         )
     
-    def _convert_to_db_model(self, user_id: int, event_data: EventCreate) -> EventModel:
+    def _convert_to_db_model(
+        self,
+        user_id: int,
+        event_data: EventCreate,
+        recurrence_id: Optional[str] = None,
+        recurrence_type: Optional[str] = None,
+        rrule_string: Optional[str] = None,
+    ) -> EventModel:
         """Convert EventCreate Pydantic model to EventModel."""
-        
+
         end_date = None
         if event_data.duration and event_data.duration > 0:
             end_date = event_data.startDate + timedelta(minutes=event_data.duration)
         else:
             end_date = event_data.startDate
-            
+
         return EventModel(
             title=event_data.title,
+            category=event_data.category,
+            description=event_data.description,
             startDate=event_data.startDate,
             endDate=end_date,
             location=event_data.location,
-            user_id=user_id
+            user_id=user_id,
+            recurrence_id=recurrence_id,
+            recurrence_type=recurrence_type,
+            rrule_string=rrule_string,
         )
+
+    _FREQ_MAP = {"daily": DAILY, "weekly": WEEKLY, "monthly": MONTHLY, "yearly": YEARLY}
+    _WEEKDAY_MAP = {"MO": MO, "TU": TU, "WE": WE, "TH": TH, "FR": FR, "SA": SA, "SU": SU}
+
+    def _build_rrule(
+        self,
+        start: datetime,
+        recurrence_type: str,
+        count: int,
+        interval: int = 1,
+        byweekday: Optional[str] = None,
+        bysetpos: Optional[int] = None,
+    ) -> tuple[List[datetime], str]:
+        """
+        Build an rrule from recurrence parameters.
+        Returns (list_of_datetimes, rrule_string).
+        """
+        freq = self._FREQ_MAP.get(recurrence_type.lower() if recurrence_type else "")
+        if freq is None:
+            valid = ", ".join(self._FREQ_MAP.keys())
+            raise ValueError(f"Unknown recurrence_type '{recurrence_type}'. Must be one of: {valid}")
+
+        kwargs: dict = {
+            "freq": freq,
+            "count": count,
+            "dtstart": start,
+            "interval": interval,
+        }
+        if byweekday:
+            tokens = [d.strip().upper() for d in byweekday.split(",")]
+            invalid = [t for t in tokens if t not in self._WEEKDAY_MAP]
+            if invalid:
+                raise ValueError(f"Unknown weekday token(s): {', '.join(invalid)}. Must be MO,TU,WE,TH,FR,SA,SU")
+            days = [self._WEEKDAY_MAP[t] for t in tokens]
+            kwargs["byweekday"] = days
+        if bysetpos is not None:
+            kwargs["bysetpos"] = bysetpos
+
+        rule = rrule(**kwargs)
+        dates = list(rule)
+        # Strip DTSTART line — we store it separately as the event's startDate
+        rule_str = "\n".join(
+            line for line in str(rule).splitlines() if not line.startswith("DTSTART")
+        )
+        return dates, rule_str
     
     def _ensure_datetime(self, value: Optional[datetime | str]) -> Optional[datetime]:
         if isinstance(value, str):
@@ -119,7 +185,92 @@ class EventAdapter:
             raise DatabaseError(f"Failed to create events: {e}")
         except Exception as e:
             logger.error(f"Unexpected error creating events: {e}")
-    
+
+    async def create_recurring_events(
+        self,
+        user_id: int,
+        event_data: EventCreate,
+        recurrence_type: str,
+        count: int,
+        interval: int = 1,
+        byweekday: Optional[str] = None,
+        bysetpos: Optional[int] = None,
+    ) -> List[Event]:
+        """
+        Create a series of recurring events sharing a recurrence_id.
+
+        Args:
+            user_id: Owner user ID
+            event_data: Template event (startDate is the first occurrence)
+            recurrence_type: daily / weekly / monthly / yearly
+            count: Number of occurrences to create
+            interval: Repeat every N periods (default 1; 2 = bi-weekly)
+            byweekday: Comma-separated weekday codes e.g. "MO,WE,FR"
+            bysetpos: Position within period (1=first, -1=last)
+
+        Returns:
+            List of created Event instances
+        """
+        try:
+            shared_recurrence_id = str(uuid.uuid4())
+            dates, rule_str = self._build_rrule(
+                event_data.startDate, recurrence_type, count,
+                interval=interval, byweekday=byweekday, bysetpos=bysetpos,
+            )
+
+            # All-or-nothing conflict check: verify every occurrence before writing.
+            duration_minutes = event_data.duration or 0
+            conflicts = []
+            for i, occurrence_start in enumerate(dates):
+                occurrence_end = occurrence_start + timedelta(minutes=duration_minutes)
+                conflicting = await self.check_event_conflict(user_id, occurrence_start, occurrence_end)
+                if conflicting:
+                    conflicts.append({
+                        "index": i,
+                        "startDate": occurrence_start.isoformat(),
+                        "conflicting_title": conflicting.title,
+                        "conflicting_id": conflicting.id,
+                    })
+            if conflicts:
+                raise RecurringConflictError(conflicts)
+
+            db_events = []
+            for occurrence_start in dates:
+                occurrence = EventCreate(
+                    title=event_data.title,
+                    category=event_data.category,
+                    description=event_data.description,
+                    startDate=occurrence_start,
+                    duration=event_data.duration,
+                    location=event_data.location,
+                )
+                db_events.append(
+                    self._convert_to_db_model(
+                        user_id,
+                        occurrence,
+                        recurrence_id=shared_recurrence_id,
+                        recurrence_type=recurrence_type,
+                        rrule_string=rule_str,
+                    )
+                )
+
+            self.db.add_all(db_events)
+            await self.db.commit()
+
+            logger.info(f"Created {len(db_events)} recurring events (recurrence_id={shared_recurrence_id})")
+            return [self._convert_to_model(e) for e in db_events]
+
+        except RecurringConflictError:
+            raise  # propagate with full conflict details intact
+        except SQLAlchemyError as e:
+            logger.error(f"Database error creating recurring events: {e}")
+            await self.db.rollback()
+            raise DatabaseError(f"Failed to create recurring events: {e}")
+        except Exception as e:
+            logger.error(f"Unexpected error creating recurring events: {e}")
+            await self.db.rollback()
+            raise DatabaseError(f"Unexpected error creating recurring events: {e}")
+
     async def get_event_by_event_id(self, event_id: str) -> Event:
         """
         Get event by event_id (UUID).
@@ -238,10 +389,17 @@ class EventAdapter:
         try:
             conditions = [EventModel.user_id == user_id]
 
-            if start_date:
-                conditions.append(EventModel.startDate >= self._ensure_datetime(start_date))
-            if end_date:
-                conditions.append(EventModel.endDate <= self._ensure_datetime(end_date))
+            # Overlap condition: event overlaps [start_date, end_date] if
+            # event.startDate < end_date AND event.endDate > start_date
+            if start_date and end_date:
+                sd = self._ensure_datetime(start_date)
+                ed = self._ensure_datetime(end_date)
+                conditions.append(EventModel.startDate < ed)
+                conditions.append(EventModel.endDate > sd)
+            elif start_date:
+                conditions.append(EventModel.endDate > self._ensure_datetime(start_date))
+            elif end_date:
+                conditions.append(EventModel.startDate < self._ensure_datetime(end_date))
 
             stmt = select(EventModel).where(*conditions).order_by(EventModel.startDate.asc())
             
@@ -296,6 +454,10 @@ class EventAdapter:
             
             if event_data.title is not None:
                 update_data['title'] = event_data.title
+            if event_data.category is not None:
+                update_data['category'] = event_data.category
+            if event_data.description is not None:
+                update_data['description'] = event_data.description
             if event_data.startDate is not None:
                 update_data['startDate'] = event_data.startDate
             if event_data.location is not None:
@@ -515,6 +677,127 @@ class EventAdapter:
             logger.error(f"Unexpected error in bulk delete operation: {e}")
             await self.db.rollback()
             return False
+
+    async def get_upcoming_events_for_reminder(
+        self, window_start: datetime, window_end: datetime
+    ) -> List[Tuple[Event, str]]:
+        """
+        Return (Event, push_token) pairs for events starting in [window_start, window_end]
+        that have not yet had a reminder sent, and whose user has a push_token.
+        """
+        try:
+            stmt = (
+                select(EventModel, UserModel.push_token)
+                .join(UserModel, EventModel.user_id == UserModel.id)
+                .where(
+                    EventModel.startDate >= window_start,
+                    EventModel.startDate < window_end,
+                    EventModel.reminder_sent == False,
+                    UserModel.push_token.isnot(None),
+                )
+            )
+            result = await self.db.execute(stmt)
+            return [(self._convert_to_model(row[0]), row[1]) for row in result.all()]
+        except SQLAlchemyError as e:
+            logger.error(f"Database error fetching upcoming reminder events: {e}")
+            return []
+
+    async def mark_reminders_sent(self, event_ids: List[str]) -> None:
+        """Bulk-mark reminder_sent=True for a list of event UUIDs."""
+        if not event_ids:
+            return
+        try:
+            stmt = (
+                update(EventModel)
+                .where(EventModel.event_id.in_(event_ids))
+                .values(reminder_sent=True)
+            )
+            await self.db.execute(stmt)
+            await self.db.commit()
+        except SQLAlchemyError as e:
+            logger.error(f"Database error marking reminders sent: {e}")
+            await self.db.rollback()
+
+    async def delete_by_recurrence_id(
+        self, recurrence_id: str, user_id: int, from_date: Optional[datetime] = None
+    ) -> int:
+        """
+        Delete all events in a recurring series for a user.
+        If from_date is given, only deletes occurrences starting on or after that date.
+        Returns the number of deleted events.
+        """
+        try:
+            conditions = [
+                EventModel.recurrence_id == recurrence_id,
+                EventModel.user_id == user_id,
+            ]
+            if from_date:
+                conditions.append(EventModel.startDate >= from_date)
+            stmt = delete(EventModel).where(*conditions)
+            result = await self.db.execute(stmt)
+            await self.db.commit()
+            deleted = result.rowcount
+            logger.info(f"Deleted {deleted} events for recurrence_id={recurrence_id} (from_date={from_date})")
+            return deleted
+        except SQLAlchemyError as e:
+            logger.error(f"Database error deleting series {recurrence_id}: {e}")
+            await self.db.rollback()
+            return 0
+
+    async def update_by_recurrence_id(
+        self,
+        recurrence_id: str,
+        user_id: int,
+        event_data: "EventUpdate",
+        from_date: Optional[datetime] = None,
+        time_shift: Optional[timedelta] = None,
+    ) -> List[Event]:
+        """
+        Update all events in a recurring series for a user.
+        - from_date: if set, only updates occurrences starting on or after that date.
+        - time_shift: if set, shifts each event's startDate and endDate by this delta.
+        - event_data: non-time fields (title, location, category, description) applied uniformly.
+        Returns the list of updated events.
+        """
+        try:
+            conditions = [
+                EventModel.recurrence_id == recurrence_id,
+                EventModel.user_id == user_id,
+            ]
+            if from_date:
+                conditions.append(EventModel.startDate >= from_date)
+
+            stmt = select(EventModel).where(*conditions).order_by(EventModel.startDate.asc())
+            result = await self.db.execute(stmt)
+            db_events = list(result.scalars().all())
+
+            if not db_events:
+                return []
+
+            for ev in db_events:
+                if event_data.title is not None:
+                    ev.title = event_data.title
+                if event_data.category is not None:
+                    ev.category = event_data.category
+                if event_data.description is not None:
+                    ev.description = event_data.description
+                if event_data.location is not None:
+                    ev.location = event_data.location
+                if time_shift is not None:
+                    ev.startDate = ev.startDate + time_shift
+                    ev.endDate = ev.endDate + time_shift
+                if event_data.duration is not None and event_data.duration >= 0:
+                    # Explicit duration change: recalculate endDate from (shifted) startDate
+                    ev.endDate = ev.startDate + timedelta(minutes=event_data.duration)
+
+            await self.db.commit()
+            logger.info(f"Updated {len(db_events)} events for recurrence_id={recurrence_id}")
+            return [self._convert_to_model(ev) for ev in db_events]
+
+        except SQLAlchemyError as e:
+            logger.error(f"Database error updating series {recurrence_id}: {e}")
+            await self.db.rollback()
+            return []
 
     async def delete_all_events(self, user_id: int) -> int:
         """

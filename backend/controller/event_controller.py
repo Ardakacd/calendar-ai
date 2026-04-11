@@ -3,7 +3,7 @@ from typing import List, Optional, Dict, Any
 from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from models import EventCreate, EventUpdate, Event
+from models import EventCreate, EventUpdate, Event, SeriesUpdateRequest, SeriesUpdateResponse, SeriesDeleteResponse
 from services.event_service import EventService, get_event_service
 
 # Configure logging
@@ -160,6 +160,62 @@ async def get_events_by_date_range(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An error occurred. Please try again later."
+        )
+
+
+@router.patch("/series/{recurrence_id}", response_model=SeriesUpdateResponse)
+async def update_series(
+        recurrence_id: str,
+        request: SeriesUpdateRequest,
+        credentials: HTTPAuthorizationCredentials = Depends(security),
+        event_service: EventService = Depends(get_event_service),
+):
+    """
+    Update all or future occurrences of a recurring series.
+
+    - **scope=all**: Update every occurrence in the series.
+    - **scope=future**: Update occurrences on or after `from_date` (required).
+    - **time_shift_minutes**: Shift start/end time of each occurrence by N minutes.
+    """
+    logger.info(f"Updating series {recurrence_id} (scope={request.scope})")
+    try:
+        token = credentials.credentials
+        return await event_service.update_series(token, recurrence_id, request)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Unexpected error updating series {recurrence_id}: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An error occurred. Please try again later.",
+        )
+
+
+@router.delete("/series/{recurrence_id}", response_model=SeriesDeleteResponse)
+async def delete_series(
+        recurrence_id: str,
+        scope: str = Query(..., description="'all' to delete entire series, 'future' to delete from from_date onward"),
+        from_date: Optional[datetime] = Query(None, description="Required when scope='future': ISO 8601 datetime of earliest occurrence to delete"),
+        credentials: HTTPAuthorizationCredentials = Depends(security),
+        event_service: EventService = Depends(get_event_service),
+):
+    """
+    Delete all or future occurrences of a recurring series.
+
+    - **scope=all**: Delete every occurrence.
+    - **scope=future**: Delete occurrences on or after `from_date` (required).
+    """
+    logger.info(f"Deleting series {recurrence_id} (scope={scope}, from_date={from_date})")
+    try:
+        token = credentials.credentials
+        return await event_service.delete_series(token, recurrence_id, scope, from_date)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Unexpected error deleting series {recurrence_id}: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An error occurred. Please try again later.",
         )
 
 

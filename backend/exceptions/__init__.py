@@ -6,14 +6,16 @@ from .event_exceptions import (
     EventNotFoundError,
     EventPermissionError,
     EventConflictError,
+    RecurringConflictError,
     DatabaseError,
     ValidationError
 )
 
 __all__ = [
     "EventNotFoundError",
-    "EventPermissionError", 
+    "EventPermissionError",
     "EventConflictError",
+    "RecurringConflictError",
     "DatabaseError",
     "ValidationError"
 ] 

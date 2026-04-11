@@ -50,11 +50,16 @@ def _event_to_dict(event: Event, user_tz=None) -> dict:
     return {
         "event_id": event.id,
         "title": event.title,
+        "category": event.category,
+        "description": event.description,
         "startDate": _fmt(event.startDate),
         "endDate": _fmt(event.endDate),
         "location": event.location,
         "user_id": event.user_id,
-        "duration": event.duration
+        "duration": event.duration,
+        "recurrence_id": event.recurrence_id,
+        "recurrence_type": event.recurrence_type,
+        "rrule_string": event.rrule_string,
     }
 
 
