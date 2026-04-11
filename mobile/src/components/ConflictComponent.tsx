@@ -2,6 +2,7 @@ import React from "react";
 import { View, StyleSheet } from "react-native";
 import { Text } from "react-native-paper";
 import { MaterialIcons } from "@expo/vector-icons";
+import { Colors, Radius } from "../theme";
 
 export interface ConflictSuggestion {
   startDate: string;
@@ -33,31 +34,28 @@ function formatDateTime(iso: string): { date: string; time: string } {
   }
 }
 
-export default function ConflictComponent({
-  conflictMessage,
-  suggestions,
-}: ConflictComponentProps) {
-  // Show only the first sentence (e.g. "There's a conflict with 'X'.")
+export default function ConflictComponent({ conflictMessage, suggestions }: ConflictComponentProps) {
   const headline = conflictMessage.split("\n")[0];
 
   return (
     <View style={styles.container}>
-      {/* Conflict warning */}
       <View style={styles.warningRow}>
-        <MaterialIcons name="warning" size={18} color="#ffcc00" />
+        <View style={styles.warningIcon}>
+          <MaterialIcons name="warning-amber" size={16} color={Colors.warning} />
+        </View>
         <Text style={styles.warningText}>{headline}</Text>
       </View>
 
       {suggestions.length > 0 && (
         <>
-          <Text style={styles.altLabel}>Available times:</Text>
+          <Text style={styles.altLabel}>Available times</Text>
           {suggestions.map((s, i) => {
             const start = formatDateTime(s.startDate);
             const end = formatDateTime(s.endDate);
             const sameDay = start.date === end.date;
             return (
               <View key={i} style={styles.slotCard}>
-                <MaterialIcons name="schedule" size={16} color="#a78bfa" style={styles.slotIcon} />
+                <MaterialIcons name="schedule" size={15} color={Colors.primary} />
                 <View style={styles.slotText}>
                   <Text style={styles.slotTime}>
                     {start.time} – {end.time}
@@ -77,47 +75,56 @@ export default function ConflictComponent({
 
 const styles = StyleSheet.create({
   container: {
-    gap: 8,
+    gap: 10,
   },
   warningRow: {
     flexDirection: "row",
     alignItems: "flex-start",
-    gap: 8,
+    gap: 10,
+  },
+  warningIcon: {
+    width: 28,
+    height: 28,
+    borderRadius: Radius.sm,
+    backgroundColor: "#FFFBEB",
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 1,
+    flexShrink: 0,
   },
   warningText: {
     flex: 1,
-    fontSize: 15,
-    color: "rgba(255,255,255,0.95)",
+    fontSize: 14,
+    color: Colors.textPrimary,
     lineHeight: 21,
   },
   altLabel: {
-    fontSize: 13,
-    color: "rgba(255,255,255,0.6)",
-    marginTop: 4,
+    fontSize: 12,
+    fontWeight: "600",
+    color: Colors.textTertiary,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
   },
   slotCard: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "rgba(255,255,255,0.12)",
-    borderRadius: 10,
+    backgroundColor: Colors.primaryLight,
+    borderRadius: Radius.md,
     paddingHorizontal: 12,
     paddingVertical: 10,
     gap: 10,
-  },
-  slotIcon: {
-    marginTop: 1,
   },
   slotText: {
     flex: 1,
   },
   slotTime: {
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: "600",
-    color: "white",
+    color: Colors.textPrimary,
   },
   slotDate: {
-    fontSize: 13,
-    color: "rgba(255,255,255,0.65)",
-    marginTop: 2,
+    fontSize: 12,
+    color: Colors.textSecondary,
+    marginTop: 1,
   },
 });

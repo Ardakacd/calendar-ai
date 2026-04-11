@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import {
   View,
   StyleSheet,
@@ -6,15 +6,14 @@ import {
   Alert,
   KeyboardAvoidingView,
   Platform,
+  TouchableOpacity,
 } from "react-native";
-import { Text, Button, Avatar, TextInput } from "react-native-paper";
-import { LinearGradient } from "expo-linear-gradient";
+import { Text, Avatar, TextInput } from "react-native-paper";
+import { MaterialIcons } from "@expo/vector-icons";
 import { useAuth } from "../contexts/AuthContext";
 import { useCalendarAPI } from "../services/api";
-import {
-  showSuccessToast,
-  showErrorToast,
-} from "../common/toast/toast-message";
+import { showSuccessToast, showErrorToast } from "../common/toast/toast-message";
+import { Colors, Radius, Shadow } from "../theme";
 
 export default function ProfileScreen() {
   const { user, logout } = useAuth();
@@ -30,30 +29,23 @@ export default function ProfileScreen() {
       showErrorToast("Please fill in all fields");
       return;
     }
-
     if (newPassword !== confirmPassword) {
       showErrorToast("New passwords do not match");
       return;
     }
-
     if (newPassword.length < 6) {
       showErrorToast("New password must be at least 6 characters");
       return;
     }
-
     setIsChangingPassword(true);
     try {
-      await changePassword({
-        current_password: currentPassword,
-        new_password: newPassword,
-      });
-
+      await changePassword({ current_password: currentPassword, new_password: newPassword });
       setCurrentPassword("");
       setNewPassword("");
       setConfirmPassword("");
       setShowPasswordForm(false);
       showSuccessToast("Password changed successfully");
-    } catch (error) {
+    } catch {
       showErrorToast("Password could not be changed. Please try again.");
     } finally {
       setIsChangingPassword(false);
@@ -69,10 +61,8 @@ export default function ProfileScreen() {
         onPress: async () => {
           try {
             await logout();
-          } catch (error) {
-            showErrorToast(
-              "An error occurred while logging out. Please try again later."
-            );
+          } catch {
+            showErrorToast("An error occurred while logging out. Please try again.");
           }
         },
       },
@@ -86,232 +76,243 @@ export default function ProfileScreen() {
     setConfirmPassword("");
   };
 
+  const initials = user?.name?.charAt(0)?.toUpperCase() || "U";
+
   return (
-    <LinearGradient colors={["#667eea", "#764ba2"]} style={styles.container}>
+    <View style={styles.container}>
       <KeyboardAvoidingView
-        style={styles.content}
+        style={{ flex: 1 }}
         behavior={Platform.OS === "ios" ? "padding" : "height"}
       >
         <ScrollView
-          style={styles.scrollView}
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
         >
-          <View style={styles.profileSection}>
-            <View style={styles.avatarContainer}>
-              <Avatar.Text
-                size={100}
-                label={user?.name?.charAt(0)?.toUpperCase() || "U"}
-                style={styles.profileAvatar}
-              />
-              <Text style={styles.userName}>{user?.name || "User"}</Text>
+          {/* Profile card */}
+          <View style={styles.profileCard}>
+            <Avatar.Text
+              size={80}
+              label={initials}
+              style={styles.avatar}
+              labelStyle={styles.avatarLabel}
+            />
+            <Text style={styles.userName}>{user?.name || "User"}</Text>
+            {user?.email ? (
+              <Text style={styles.userEmail}>{user.email}</Text>
+            ) : null}
+          </View>
+
+          {/* Security section */}
+          <View style={styles.section}>
+            <Text style={styles.sectionLabel}>SECURITY</Text>
+
+            <View style={styles.card}>
+              <TouchableOpacity style={styles.row} onPress={togglePasswordForm} activeOpacity={0.7}>
+                <View style={styles.rowLeft}>
+                  <View style={styles.rowIcon}>
+                    <MaterialIcons name="lock-outline" size={18} color={Colors.primary} />
+                  </View>
+                  <Text style={styles.rowTitle}>Change Password</Text>
+                </View>
+                <MaterialIcons
+                  name={showPasswordForm ? "keyboard-arrow-up" : "keyboard-arrow-right"}
+                  size={20}
+                  color={Colors.textTertiary}
+                />
+              </TouchableOpacity>
+
+              {showPasswordForm && (
+                <View style={styles.passwordForm}>
+                  <View style={styles.formDivider} />
+                  <TextInput
+                    label="Current Password"
+                    value={currentPassword}
+                    onChangeText={setCurrentPassword}
+                    mode="outlined"
+                    secureTextEntry
+                    style={styles.formInput}
+                    outlineColor={Colors.border}
+                    activeOutlineColor={Colors.primary}
+                    textColor={Colors.textPrimary}
+                    theme={{ roundness: Radius.md }}
+                  />
+                  <TextInput
+                    label="New Password"
+                    value={newPassword}
+                    onChangeText={setNewPassword}
+                    mode="outlined"
+                    secureTextEntry
+                    style={styles.formInput}
+                    outlineColor={Colors.border}
+                    activeOutlineColor={Colors.primary}
+                    textColor={Colors.textPrimary}
+                    theme={{ roundness: Radius.md }}
+                  />
+                  <TextInput
+                    label="Confirm New Password"
+                    value={confirmPassword}
+                    onChangeText={setConfirmPassword}
+                    mode="outlined"
+                    secureTextEntry
+                    style={styles.formInput}
+                    outlineColor={Colors.border}
+                    activeOutlineColor={Colors.primary}
+                    textColor={Colors.textPrimary}
+                    theme={{ roundness: Radius.md }}
+                  />
+                  <TouchableOpacity
+                    style={[styles.saveBtn, isChangingPassword && styles.btnDisabled]}
+                    onPress={handleChangePassword}
+                    disabled={isChangingPassword}
+                    activeOpacity={0.85}
+                  >
+                    <Text style={styles.saveBtnText}>
+                      {isChangingPassword ? "Saving..." : "Save Password"}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              )}
             </View>
           </View>
 
-          <View style={styles.actionSection}>
-            <Text style={styles.sectionTitle}>Security</Text>
-
-            <Button
-              mode="contained"
-              onPress={togglePasswordForm}
-              style={styles.actionButton}
-              buttonColor="rgba(255, 255, 255, 0.2)"
-              labelStyle={styles.actionButtonLabel}
-              icon="lock-outline"
-              contentStyle={styles.buttonContent}
-            >
-              {showPasswordForm ? "Cancel" : "Change Password"}
-            </Button>
-
-            {showPasswordForm && (
-              <View style={styles.passwordForm}>
-                <TextInput
-                  label="Current Password"
-                  value={currentPassword}
-                  onChangeText={setCurrentPassword}
-                  mode="flat"
-                  secureTextEntry
-                  style={styles.passwordInput}
-                  textColor="white"
-                  theme={{
-                    colors: {
-                      primary: "white",
-                      onSurface: "white",
-                      onSurfaceVariant: "rgba(255, 255, 255, 0.7)",
-                      surface: "rgba(255, 255, 255, 0.15)",
-                      backdrop: "transparent",
-                    },
-                  }}
-                />
-
-                <TextInput
-                  label="New Password"
-                  value={newPassword}
-                  onChangeText={setNewPassword}
-                  mode="flat"
-                  secureTextEntry
-                  style={styles.passwordInput}
-                  textColor="white"
-                  theme={{
-                    colors: {
-                      primary: "white",
-                      onSurface: "white",
-                      onSurfaceVariant: "rgba(255, 255, 255, 0.7)",
-                      surface: "rgba(255, 255, 255, 0.15)",
-                      backdrop: "transparent",
-                    },
-                  }}
-                />
-
-                <TextInput
-                  label="Password Confirmation"
-                  value={confirmPassword}
-                  onChangeText={setConfirmPassword}
-                  mode="flat"
-                  secureTextEntry
-                  style={styles.passwordInput}
-                  textColor="white"
-                  theme={{
-                    colors: {
-                      primary: "white",
-                      onSurface: "white",
-                      onSurfaceVariant: "rgba(255, 255, 255, 0.7)",
-                      surface: "rgba(255, 255, 255, 0.15)",
-                      backdrop: "transparent",
-                    },
-                  }}
-                />
-
-                <Button
-                  mode="contained"
-                  onPress={handleChangePassword}
-                  loading={isChangingPassword}
-                  disabled={isChangingPassword}
-                  style={styles.savePasswordButton}
-                  buttonColor="white"
-                  textColor="#667eea"
-                  contentStyle={styles.buttonContent}
-                >
-                  Save Password
-                </Button>
-              </View>
-            )}
-          </View>
-
-          {/* Logout Section */}
-          <View style={styles.actionSection}>
-            <Text style={styles.sectionTitle}>Account</Text>
-
-            <Button
-              mode="contained"
-              onPress={handleLogout}
-              style={styles.logoutButton}
-              buttonColor="rgba(231, 76, 60, 0.8)"
-              labelStyle={styles.actionButtonLabel}
-              icon="logout"
-              contentStyle={styles.buttonContent}
-            >
-              Log Out
-            </Button>
+          {/* Account section */}
+          <View style={styles.section}>
+            <Text style={styles.sectionLabel}>ACCOUNT</Text>
+            <View style={styles.card}>
+              <TouchableOpacity style={styles.row} onPress={handleLogout} activeOpacity={0.7}>
+                <View style={styles.rowLeft}>
+                  <View style={[styles.rowIcon, styles.rowIconDanger]}>
+                    <MaterialIcons name="logout" size={18} color={Colors.error} />
+                  </View>
+                  <Text style={[styles.rowTitle, styles.rowTitleDanger]}>Log Out</Text>
+                </View>
+                <MaterialIcons name="keyboard-arrow-right" size={20} color={Colors.textTertiary} />
+              </TouchableOpacity>
+            </View>
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
-    </LinearGradient>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-  },
-  header: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingHorizontal: 20,
-    paddingTop: 60,
-    paddingBottom: 20,
-  },
-  headerTitle: {
-    fontSize: 20,
-    fontWeight: "bold",
-    color: "white",
-  },
-  content: {
-    flex: 1,
-  },
-  scrollView: {
-    flex: 1,
+    backgroundColor: Colors.background,
   },
   scrollContent: {
     padding: 20,
-    paddingBottom: 40,
+    paddingBottom: 48,
   },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: "center",
+  // Profile card
+  profileCard: {
+    backgroundColor: Colors.surface,
+    borderRadius: Radius.xl,
     alignItems: "center",
+    paddingVertical: 32,
+    paddingHorizontal: 20,
+    marginBottom: 28,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    ...Shadow.sm,
   },
-  loadingText: {
-    color: "white",
-    fontSize: 16,
+  avatar: {
+    backgroundColor: Colors.primary,
+    marginBottom: 16,
   },
-  profileSection: {
-    alignItems: "center",
-    marginBottom: 20,
-  },
-  avatarContainer: {
-    alignItems: "center",
-    marginBottom: 10,
-  },
-  profileAvatar: {
-    backgroundColor: "rgba(255, 255, 255, 0.2)",
-    borderRadius: 50,
+  avatarLabel: {
+    color: Colors.surface,
+    fontWeight: "700",
+    fontSize: 32,
   },
   userName: {
     fontSize: 20,
-    fontWeight: "bold",
-    color: "white",
-    marginTop: 10,
+    fontWeight: "700",
+    color: Colors.textPrimary,
+    marginBottom: 4,
   },
-  actionSection: {
-    backgroundColor: "rgba(255, 255, 255, 0.1)",
-    borderRadius: 16,
-    padding: 20,
-    marginBottom: 16,
+  userEmail: {
+    fontSize: 14,
+    color: Colors.textSecondary,
   },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: "bold",
-    color: "white",
-    marginBottom: 15,
+  // Sections
+  section: {
+    marginBottom: 24,
   },
-  actionButton: {
-    borderColor: "rgba(255, 255, 255, 0.5)",
+  sectionLabel: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: Colors.textTertiary,
+    letterSpacing: 1,
+    marginBottom: 8,
+    marginLeft: 4,
+  },
+  card: {
+    backgroundColor: Colors.surface,
+    borderRadius: Radius.lg,
     borderWidth: 1,
-    borderRadius: 12,
-  },
-  actionButtonLabel: {
-    color: "white",
-  },
-  buttonContent: {
-    paddingVertical: 8,
-  },
-  passwordForm: {
-    marginTop: 15,
-  },
-  passwordInput: {
-    marginBottom: 16,
-    backgroundColor: "rgba(255, 255, 255, 0.1)",
-    borderRadius: 8,
+    borderColor: Colors.border,
     overflow: "hidden",
+    ...Shadow.sm,
   },
-  savePasswordButton: {
-    marginTop: 10,
-    borderRadius: 12,
+  row: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    padding: 16,
   },
-  logoutButton: {
-    width: "100%",
-    borderRadius: 12,
+  rowLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
+  rowIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: Radius.sm,
+    backgroundColor: Colors.primaryLight,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  rowIconDanger: {
+    backgroundColor: "#FEF2F2",
+  },
+  rowTitle: {
+    fontSize: 15,
+    fontWeight: "500",
+    color: Colors.textPrimary,
+  },
+  rowTitleDanger: {
+    color: Colors.error,
+  },
+  // Password form
+  passwordForm: {
+    paddingHorizontal: 16,
+    paddingBottom: 16,
+    gap: 12,
+  },
+  formDivider: {
+    height: 1,
+    backgroundColor: Colors.border,
+    marginBottom: 4,
+  },
+  formInput: {
+    backgroundColor: Colors.surface,
+  },
+  saveBtn: {
+    backgroundColor: Colors.primary,
+    borderRadius: Radius.md,
+    paddingVertical: 13,
+    alignItems: "center",
+    marginTop: 4,
+  },
+  btnDisabled: {
+    opacity: 0.7,
+  },
+  saveBtnText: {
+    color: Colors.surface,
+    fontSize: 15,
+    fontWeight: "600",
   },
 });

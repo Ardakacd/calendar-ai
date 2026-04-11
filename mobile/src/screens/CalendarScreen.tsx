@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
+import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { View, StyleSheet, Alert, FlatList } from "react-native";
 import { Text, FAB, ActivityIndicator, IconButton } from "react-native-paper";
 import { Calendar, DateData } from "react-native-calendars";
@@ -7,13 +7,11 @@ import { MaterialIcons } from "@expo/vector-icons";
 import { useCalendarAPI } from "../services/api";
 import UpdateEventModal from "../components/UpdateEventModal";
 import AddEventModal from "../components/AddEventModal";
-import { Event, EventCreate } from "../models/event";
+import { Event, EventCreate, SeriesUpdateRequest } from "../models/event";
 import { formatDuration, formatLocation } from "../common/formatting";
 import { formatTime, getDateKey } from "../utils/datetime/dateUtils";
-import {
-  showErrorToast,
-  showSuccessToast,
-} from "../common/toast/toast-message";
+import { showErrorToast, showSuccessToast } from "../common/toast/toast-message";
+import { Colors, Radius, Shadow, getCategoryColor } from "../theme";
 
 export default function CalendarScreen() {
   const [events, setEvents] = useState<Event[]>([]);
@@ -24,7 +22,7 @@ export default function CalendarScreen() {
   const [updateModalVisible, setUpdateModalVisible] = useState(false);
   const [selectedEvent, setSelectedEvent] = useState<Event | null>(null);
   const [addModalVisible, setAddModalVisible] = useState(false);
-  const { getEvents, updateEvent, deleteEvent, addEvent } = useCalendarAPI();
+  const { getEvents, updateEvent, updateSeries, deleteEvent, deleteSeries, addEvent } = useCalendarAPI();
 
   useFocusEffect(
     useCallback(() => {
@@ -32,42 +30,36 @@ export default function CalendarScreen() {
     }, [])
   );
 
-  const loadEvents = async () => {
+  const loadEvents = useCallback(async () => {
     try {
       setLoading(true);
       const fetchedEvents = await getEvents();
       setEvents(fetchedEvents);
-    } catch (error) {
+    } catch {
       showErrorToast("Events could not be loaded");
     } finally {
       setLoading(false);
     }
-  };
+  }, [getEvents]);
 
-  // Build marked dates for the calendar dots
   const markedDates = useMemo(() => {
     const marks: Record<string, any> = {};
     events.forEach((event) => {
       const key = getDateKey(event.startDate);
-      marks[key] = { marked: true, dotColor: "#6200ee" };
+      marks[key] = { marked: true, dotColor: Colors.primary };
     });
-    // Highlight selected date
     marks[selectedDate] = {
       ...(marks[selectedDate] || {}),
       selected: true,
-      selectedColor: "#6200ee",
+      selectedColor: Colors.primary,
     };
     return marks;
   }, [events, selectedDate]);
 
-  // Events for the selected day
   const selectedDayEvents = useMemo(() => {
     return events
       .filter((e) => getDateKey(e.startDate) === selectedDate)
-      .sort(
-        (a, b) =>
-          new Date(a.startDate).getTime() - new Date(b.startDate).getTime()
-      );
+      .sort((a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime());
   }, [events, selectedDate]);
 
   const handleDayPress = useCallback((day: DateData) => {
@@ -79,46 +71,95 @@ export default function CalendarScreen() {
     setUpdateModalVisible(true);
   }, []);
 
-  const handleUpdateEventSubmit = async (
-    eventId: string,
-    updatedEvent: Partial<Event>
-  ) => {
+  const handleUpdateEventSubmit = async (eventId: string, updatedEvent: Partial<Event>) => {
     try {
       const response = await updateEvent(eventId, updatedEvent);
       if (response) {
-        setEvents((prev) =>
-          prev.map((e) => (e.id === eventId ? response : e))
-        );
+        setEvents((prev) => prev.map((e) => (e.id === eventId ? response : e)));
       }
     } catch (error) {
       throw error;
     }
   };
 
+  const handleUpdateSeriesSubmit = async (recurrenceId: string, request: SeriesUpdateRequest) => {
+    try {
+      await updateSeries(recurrenceId, request);
+      // Reload all events so every updated occurrence reflects the new data
+      await loadEvents();
+    } catch (error) {
+      throw error;
+    }
+  };
+
   const handleDeleteEvent = useCallback(
-    (eventId: string) => {
-      Alert.alert(
-        "Delete Event",
-        "Are you sure you want to delete this event?",
-        [
+    (event: Event) => {
+      if (event.recurrence_id) {
+        Alert.alert(
+          "Delete Recurring Event",
+          "Which occurrences do you want to delete?",
+          [
+            { text: "Cancel", style: "cancel" },
+            {
+              text: "This event only",
+              onPress: async () => {
+                try {
+                  await deleteEvent(event.id);
+                  setEvents((prev) => prev.filter((e) => e.id !== event.id));
+                  showSuccessToast("Event deleted");
+                } catch {
+                  showErrorToast("Event could not be deleted");
+                }
+              },
+            },
+            {
+              text: "This & future events",
+              style: "destructive",
+              onPress: async () => {
+                try {
+                  await deleteSeries(event.recurrence_id!, "future", event.startDate);
+                  await loadEvents();
+                  showSuccessToast("Future events deleted");
+                } catch {
+                  showErrorToast("Events could not be deleted");
+                }
+              },
+            },
+            {
+              text: "All events in series",
+              style: "destructive",
+              onPress: async () => {
+                try {
+                  await deleteSeries(event.recurrence_id!, "all");
+                  await loadEvents();
+                  showSuccessToast("All events in series deleted");
+                } catch {
+                  showErrorToast("Events could not be deleted");
+                }
+              },
+            },
+          ]
+        );
+      } else {
+        Alert.alert("Delete Event", "Are you sure you want to delete this event?", [
           { text: "Cancel", style: "cancel" },
           {
             text: "Delete",
             style: "destructive",
             onPress: async () => {
               try {
-                await deleteEvent(eventId);
-                setEvents((prev) => prev.filter((e) => e.id !== eventId));
+                await deleteEvent(event.id);
+                setEvents((prev) => prev.filter((e) => e.id !== event.id));
                 showSuccessToast("Event deleted successfully");
-              } catch (error) {
+              } catch {
                 showErrorToast("Event could not be deleted");
               }
             },
           },
-        ]
-      );
+        ]);
+      }
     },
-    [deleteEvent]
+    [deleteEvent, deleteSeries, loadEvents]
   );
 
   const handleAddEvent = async (newEvent: EventCreate) => {
@@ -136,53 +177,78 @@ export default function CalendarScreen() {
       const durationInMinutes = event.duration || 0;
       const endDate = new Date(startDate.getTime() + durationInMinutes * 60000);
 
+      const catColor = getCategoryColor(event.category);
+
       return (
         <View style={styles.eventCard}>
-          <View style={styles.eventHeader}>
-            <View style={styles.eventTitleContainer}>
-              <Text style={styles.eventTitle}>{event.title}</Text>
-              <View style={styles.eventTimeContainer}>
-                <MaterialIcons name="access-time" size={14} color="#6200ee" />
-                <Text style={styles.eventTime}>
-                  {durationInMinutes > 0
-                    ? `${formatTime(event.startDate)} - ${formatTime(
-                        endDate.toISOString()
-                      )}`
-                    : formatTime(event.startDate)}
-                </Text>
+          <View style={[styles.eventAccent, { backgroundColor: catColor.accent }]} />
+          <View style={styles.eventBody}>
+            <View style={styles.eventTop}>
+              <View style={styles.eventMeta}>
+                <View style={styles.titleRow}>
+                  <Text style={styles.eventTitle} numberOfLines={1}>
+                    {event.title}
+                  </Text>
+                  {event.category ? (
+                    <View style={[styles.categoryBadge, { backgroundColor: catColor.bg }]}>
+                      <Text style={[styles.categoryBadgeText, { color: catColor.text }]}>
+                        {event.category}
+                      </Text>
+                    </View>
+                  ) : null}
+                  {event.recurrence_type ? (
+                    <View style={styles.recurrenceBadge}>
+                      <MaterialIcons name="repeat" size={11} color={Colors.primary} />
+                      <Text style={styles.recurrenceBadgeText}>{event.recurrence_type}</Text>
+                    </View>
+                  ) : null}
+                </View>
+                <View style={styles.timeRow}>
+                  <MaterialIcons name="access-time" size={13} color={Colors.primary} />
+                  <Text style={styles.eventTime}>
+                    {durationInMinutes > 0
+                      ? `${formatTime(event.startDate)} – ${formatTime(endDate.toISOString())}`
+                      : formatTime(event.startDate)}
+                  </Text>
+                </View>
+              </View>
+              <View style={styles.eventActions}>
+                <TouchableIconBtn
+                  icon="edit"
+                  color={Colors.primary}
+                  onPress={() => handleUpdateEvent(event)}
+                />
+                <TouchableIconBtn
+                  icon="delete-outline"
+                  color={Colors.error}
+                  onPress={() => handleDeleteEvent(event)}
+                />
               </View>
             </View>
-            <View style={styles.eventActions}>
-              <IconButton
-                icon={() => (
-                  <MaterialIcons name="edit" size={18} color="#6200ee" />
-                )}
-                onPress={() => handleUpdateEvent(event)}
-                style={styles.actionButton}
-              />
-              <IconButton
-                icon={() => (
-                  <MaterialIcons name="delete" size={18} color="#ff4444" />
-                )}
-                onPress={() => handleDeleteEvent(event.id)}
-                style={styles.actionButton}
-              />
-            </View>
-          </View>
 
-          <View style={styles.eventDetails}>
-            <View style={styles.eventDetailRow}>
-              <MaterialIcons name="timer" size={16} color="#666" />
-              <Text style={styles.eventDetailText}>
-                {formatDuration(event.duration)}
+            {(event.duration || event.location) && (
+              <View style={styles.eventDetails}>
+                {event.duration ? (
+                  <View style={styles.detailChip}>
+                    <MaterialIcons name="timer" size={12} color={Colors.textTertiary} />
+                    <Text style={styles.detailChipText}>{formatDuration(event.duration)}</Text>
+                  </View>
+                ) : null}
+                {event.location ? (
+                  <View style={styles.detailChip}>
+                    <MaterialIcons name="location-on" size={12} color={Colors.textTertiary} />
+                    <Text style={styles.detailChipText} numberOfLines={1}>
+                      {formatLocation(event.location)}
+                    </Text>
+                  </View>
+                ) : null}
+              </View>
+            )}
+            {event.description ? (
+              <Text style={styles.eventDescription} numberOfLines={2}>
+                {event.description}
               </Text>
-            </View>
-            <View style={styles.eventDetailRow}>
-              <MaterialIcons name="location-on" size={16} color="#666" />
-              <Text style={styles.eventDetailText}>
-                {formatLocation(event.location)}
-              </Text>
-            </View>
+            ) : null}
           </View>
         </View>
       );
@@ -191,49 +257,67 @@ export default function CalendarScreen() {
   );
 
   const renderEmptyDay = () => (
-    <View style={styles.emptyDateContainer}>
-      <MaterialIcons
-        name="event-busy"
-        size={48}
-        color="#ccc"
-        style={styles.emptyIcon}
-      />
-      <Text style={styles.emptyText}>No events planned for this day</Text>
+    <View style={styles.emptyState}>
+      <View style={styles.emptyIconBox}>
+        <MaterialIcons name="event-available" size={28} color={Colors.primary} />
+      </View>
+      <Text style={styles.emptyTitle}>No events</Text>
+      <Text style={styles.emptySubtitle}>Tap + to add an event for this day</Text>
     </View>
   );
 
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator animating color="#6200ee" size="large" />
+        <ActivityIndicator animating color={Colors.primary} size="large" />
       </View>
     );
   }
 
   return (
     <View style={styles.container}>
-      <Calendar
-        onDayPress={handleDayPress}
-        markedDates={markedDates}
-        theme={{
-          todayTextColor: "#6200ee",
-          dayTextColor: "#2d4150",
-          textDisabledColor: "#d9e1e8",
-          dotColor: "#6200ee",
-          selectedDotColor: "#ffffff",
-          arrowColor: "#6200ee",
-          monthTextColor: "#2d4150",
-          indicatorColor: "#6200ee",
-          textDayFontWeight: "300",
-          textMonthFontWeight: "bold",
-          textDayHeaderFontWeight: "300",
-          textDayFontSize: 16,
-          textMonthFontSize: 16,
-          textDayHeaderFontSize: 13,
-          backgroundColor: "#ffffff",
-          calendarBackground: "#ffffff",
-        }}
-      />
+      <View style={styles.calendarWrapper}>
+        <Calendar
+          onDayPress={handleDayPress}
+          markedDates={markedDates}
+          enableSwipeMonths
+          renderArrow={(direction) => (
+            <View style={styles.arrowBtn}>
+              <MaterialIcons
+                name={direction === "left" ? "chevron-left" : "chevron-right"}
+                size={20}
+                color={Colors.primary}
+              />
+            </View>
+          )}
+          theme={{
+            todayTextColor: Colors.primary,
+            dayTextColor: Colors.textPrimary,
+            textDisabledColor: Colors.textTertiary,
+            dotColor: Colors.primary,
+            selectedDotColor: Colors.surface,
+            arrowColor: Colors.primary,
+            monthTextColor: Colors.textPrimary,
+            indicatorColor: Colors.primary,
+            textDayFontWeight: "400",
+            textMonthFontWeight: "700",
+            textDayHeaderFontWeight: "500",
+            textDayFontSize: 15,
+            textMonthFontSize: 16,
+            textDayHeaderFontSize: 12,
+            backgroundColor: Colors.surface,
+            calendarBackground: Colors.surface,
+          }}
+        />
+      </View>
+
+      <View style={styles.listHeader}>
+        <Text style={styles.listHeaderText}>
+          {selectedDayEvents.length > 0
+            ? `${selectedDayEvents.length} event${selectedDayEvents.length > 1 ? "s" : ""}`
+            : "No events"}
+        </Text>
+      </View>
 
       <FlatList
         data={selectedDayEvents}
@@ -242,26 +326,23 @@ export default function CalendarScreen() {
         ListEmptyComponent={renderEmptyDay}
         contentContainerStyle={styles.listContent}
         style={styles.list}
+        showsVerticalScrollIndicator={false}
       />
 
       <FAB
         style={styles.fab}
-        icon={() => <MaterialIcons name="add" size={24} color="white" />}
-        color="white"
+        icon={() => <MaterialIcons name="add" size={24} color={Colors.surface} />}
+        color={Colors.surface}
         onPress={() => setAddModalVisible(true)}
-        label="Add Event"
       />
 
       <UpdateEventModal
         visible={updateModalVisible}
         event={selectedEvent}
-        onDismiss={() => {
-          setUpdateModalVisible(false);
-          setSelectedEvent(null);
-        }}
+        onDismiss={() => { setUpdateModalVisible(false); setSelectedEvent(null); }}
         onUpdate={handleUpdateEventSubmit}
+        onUpdateSeries={handleUpdateSeriesSubmit}
       />
-
       <AddEventModal
         visible={addModalVisible}
         onDismiss={() => setAddModalVisible(false)}
@@ -271,100 +352,206 @@ export default function CalendarScreen() {
   );
 }
 
+// Small helper for icon buttons in event cards
+function TouchableIconBtn({ icon, color, onPress }: { icon: string; color: string; onPress: () => void }) {
+  return (
+    <View
+      style={{
+        width: 32,
+        height: 32,
+        borderRadius: 8,
+        backgroundColor: color === Colors.error ? "#FEF2F2" : Colors.primaryLight,
+        alignItems: "center",
+        justifyContent: "center",
+      }}
+    >
+      <IconButton
+        icon={() => <MaterialIcons name={icon as any} size={16} color={color} />}
+        onPress={onPress}
+        size={16}
+        style={{ margin: 0, padding: 0 }}
+      />
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#f5f5f5",
+    backgroundColor: Colors.background,
   },
   loadingContainer: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
-    backgroundColor: "#f5f5f5",
+    backgroundColor: Colors.background,
+  },
+  calendarWrapper: {
+    backgroundColor: Colors.surface,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border,
+    ...Shadow.sm,
+  },
+  arrowBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: Radius.sm,
+    backgroundColor: Colors.primaryLight,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  listHeader: {
+    paddingHorizontal: 20,
+    paddingTop: 16,
+    paddingBottom: 8,
+  },
+  listHeaderText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: Colors.textTertiary,
+    textTransform: "uppercase",
+    letterSpacing: 0.8,
   },
   list: {
     flex: 1,
   },
   listContent: {
     paddingHorizontal: 16,
-    paddingTop: 8,
-    paddingBottom: 80,
+    paddingBottom: 100,
+    gap: 10,
   },
+  // Event card
   eventCard: {
-    backgroundColor: "#fff",
-    marginVertical: 6,
-    padding: 16,
-    borderRadius: 8,
-    elevation: 3,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
+    backgroundColor: Colors.surface,
+    borderRadius: Radius.lg,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    flexDirection: "row",
+    overflow: "hidden",
+    ...Shadow.sm,
   },
-  eventHeader: {
+  eventAccent: {
+    width: 4,
+    backgroundColor: Colors.primary,
+  },
+  eventBody: {
+    flex: 1,
+    padding: 14,
+  },
+  eventTop: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "flex-start",
-    marginBottom: 8,
   },
-  eventTitleContainer: {
+  eventMeta: {
     flex: 1,
-    marginRight: 12,
+    marginRight: 8,
   },
-  eventTitle: {
-    fontSize: 18,
-    fontWeight: "600",
-    color: "#333",
-  },
-  eventTimeContainer: {
+  titleRow: {
     flexDirection: "row",
     alignItems: "center",
-    marginTop: 4,
+    gap: 6,
+    marginBottom: 4,
+  },
+  eventTitle: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: Colors.textPrimary,
+    flexShrink: 1,
+  },
+  categoryBadge: {
+    borderRadius: Radius.full,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+  },
+  categoryBadgeText: {
+    fontSize: 10,
+    fontWeight: "600",
+    textTransform: "capitalize",
+  },
+  recurrenceBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 3,
+    backgroundColor: Colors.primaryLight,
+    borderRadius: Radius.full,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+  },
+  recurrenceBadgeText: {
+    fontSize: 10,
+    fontWeight: "600",
+    color: Colors.primary,
+    textTransform: "capitalize",
+  },
+  timeRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
   },
   eventTime: {
-    fontSize: 14,
-    color: "#666",
-    marginLeft: 4,
+    fontSize: 13,
+    color: Colors.primary,
+    fontWeight: "500",
   },
   eventActions: {
     flexDirection: "row",
-    alignItems: "center",
-  },
-  actionButton: {
-    marginLeft: -8,
+    gap: 6,
   },
   eventDetails: {
-    marginTop: 8,
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 6,
+    marginTop: 10,
   },
-  eventDetailRow: {
+  detailChip: {
     flexDirection: "row",
     alignItems: "center",
+    gap: 4,
+    backgroundColor: Colors.borderLight,
+    borderRadius: Radius.full,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  detailChipText: {
+    fontSize: 12,
+    color: Colors.textSecondary,
+  },
+  eventDescription: {
+    fontSize: 13,
+    color: Colors.textSecondary,
+    marginTop: 8,
+    lineHeight: 18,
+  },
+  // Empty state
+  emptyState: {
+    alignItems: "center",
+    paddingTop: 48,
+    gap: 8,
+  },
+  emptyIconBox: {
+    width: 56,
+    height: 56,
+    borderRadius: Radius.xl,
+    backgroundColor: Colors.primaryLight,
+    alignItems: "center",
+    justifyContent: "center",
     marginBottom: 4,
   },
-  eventDetailText: {
-    fontSize: 14,
-    color: "#666",
-    marginLeft: 8,
-  },
-  emptyDateContainer: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    paddingTop: 40,
-  },
-  emptyIcon: {
-    marginBottom: 10,
-  },
-  emptyText: {
+  emptyTitle: {
     fontSize: 16,
-    color: "#999",
-    textAlign: "center",
+    fontWeight: "600",
+    color: Colors.textSecondary,
+  },
+  emptySubtitle: {
+    fontSize: 13,
+    color: Colors.textTertiary,
   },
   fab: {
     position: "absolute",
-    margin: 16,
-    right: 0,
-    bottom: 0,
-    backgroundColor: "#6200ee",
+    right: 16,
+    bottom: 24,
+    backgroundColor: Colors.primary,
+    borderRadius: Radius.full,
   },
 });

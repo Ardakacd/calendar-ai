@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {NavigationContainer} from '@react-navigation/native';
 import {createStackNavigator} from '@react-navigation/stack';
 import {Provider as PaperProvider} from 'react-native-paper';
@@ -7,6 +7,7 @@ import {GestureHandlerRootView} from 'react-native-gesture-handler';
 import {ActivityIndicator, StyleSheet, View} from 'react-native';
 
 import {AuthProvider, useAuth} from './src/contexts/AuthContext';
+import { registerForPushNotifications } from './src/services/notifications';
 import LoginScreen from './src/screens/LoginScreen';
 import HomeScreen from './src/screens/HomeScreen';
 import CalendarScreen from './src/screens/CalendarScreen';
@@ -22,6 +23,12 @@ const Stack = createStackNavigator();
 const AppContent: React.FC = () => {
     const {isAuthenticated, isLoading} = useAuth();
     const [showSignup, setShowSignup] = useState(false);
+
+    useEffect(() => {
+        if (isAuthenticated) {
+            registerForPushNotifications();
+        }
+    }, [isAuthenticated]);
 
     if (isLoading) {
         return (
@@ -52,13 +59,20 @@ const AppContent: React.FC = () => {
             <Stack.Navigator
                 screenOptions={{
                     headerStyle: {
-                        backgroundColor: '#667eea',
+                        backgroundColor: '#FFFFFF',
                         elevation: 0,
-                        shadowOpacity: 0,
+                        shadowColor: '#000',
+                        shadowOffset: { width: 0, height: 1 },
+                        shadowOpacity: 0.06,
+                        shadowRadius: 4,
+                        borderBottomWidth: 1,
+                        borderBottomColor: '#E5E7EB',
                     },
-                    headerTintColor: '#fff',
+                    headerTintColor: '#6366F1',
                     headerTitleStyle: {
-                        fontWeight: 'bold',
+                        fontWeight: '600',
+                        color: '#111827',
+                        fontSize: 17,
                     },
                 }}
             >
@@ -100,6 +114,6 @@ const styles = StyleSheet.create({
         flex: 1,
         justifyContent: 'center',
         alignItems: 'center',
-        backgroundColor: '#f5f5f5',
+        backgroundColor: '#FFFFFF',
     },
 }); 

@@ -1,9 +1,11 @@
 import axios from "axios";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { getUserDateTime } from "../utils/datetime/get_current_time";
-import { Event, EventCreate } from "../models/event";
+import { Event, EventCreate, SeriesUpdateRequest, SeriesUpdateResponse, SeriesDeleteResponse } from "../models/event";
 
-const API_BASE_URL = "http://localhost:8000";
+// Set EXPO_PUBLIC_API_URL in a .env file (e.g. http://192.168.1.x:8000 on same WiFi) or `expo start` env.
+// Physical devices cannot reach localhost on your Mac; use LAN IP or a running ngrok URL.
+const API_BASE_URL = "http://192.168.1.145:8000";
 
 // Token storage keys
 const ACCESS_TOKEN_KEY = "access_token";
@@ -47,6 +49,9 @@ class CalendarAPI {
   private api = axios.create({
     baseURL: API_BASE_URL,
     timeout: 30000,
+    headers: {
+      "ngrok-skip-browser-warning": "true",
+    },
   });
 
   private onAuthFailure?: () => void;
@@ -71,7 +76,7 @@ class CalendarAPI {
       },
       (error) => {
         return Promise.reject(error);
-      }
+      },
     );
 
     // Response interceptor to handle token refresh
@@ -96,9 +101,8 @@ class CalendarAPI {
             originalRequest._retry = true;
 
             try {
-              const refreshToken = await AsyncStorage.getItem(
-                REFRESH_TOKEN_KEY
-              );
+              const refreshToken =
+                await AsyncStorage.getItem(REFRESH_TOKEN_KEY);
               if (refreshToken) {
                 const response = await this.refreshToken(refreshToken);
                 await this.storeTokens(response);
@@ -120,7 +124,7 @@ class CalendarAPI {
         }
 
         return Promise.reject(error);
-      }
+      },
     );
   }
 
@@ -182,12 +186,12 @@ class CalendarAPI {
   }
 
   async changePassword(
-    passwordRequest: PasswordChangeRequest
+    passwordRequest: PasswordChangeRequest,
   ): Promise<{ message: string }> {
     try {
       const response = await this.api.patch(
         "/auth/change-password",
-        passwordRequest
+        passwordRequest,
       );
       return response.data;
     } catch (error) {
@@ -312,12 +316,55 @@ class CalendarAPI {
     }
   }
 
+  async updateSeries(
+    recurrenceId: string,
+    request: SeriesUpdateRequest,
+  ): Promise<SeriesUpdateResponse> {
+    try {
+      const response = await this.api.patch(
+        `/events/series/${recurrenceId}`,
+        request,
+      );
+      return response.data;
+    } catch (error) {
+      console.error("Error updating series:", error);
+      throw error;
+    }
+  }
+
+  async deleteSeries(
+    recurrenceId: string,
+    scope: 'all' | 'future',
+    fromDate?: string,
+  ): Promise<SeriesDeleteResponse> {
+    try {
+      const params: Record<string, string> = { scope };
+      if (fromDate) params.from_date = fromDate;
+      const response = await this.api.delete(
+        `/events/series/${recurrenceId}`,
+        { params },
+      );
+      return response.data;
+    } catch (error) {
+      console.error("Error deleting series:", error);
+      throw error;
+    }
+  }
+
   async deleteAllEvents(): Promise<{ message: string }> {
     try {
       const response = await this.api.delete("/events/all");
       return response.data;
     } catch (error) {
       throw new Error("Events could not be deleted");
+    }
+  }
+
+  async updatePushToken(pushToken: string): Promise<void> {
+    try {
+      await this.api.patch("/auth/push-token", { push_token: pushToken });
+    } catch (error) {
+      console.error("Error updating push token:", error);
     }
   }
 
@@ -379,6 +426,8 @@ export const useCalendarAPI = () => {
     updateEvent: calendarAPI.updateEvent.bind(calendarAPI),
     deleteEvent: calendarAPI.deleteEvent.bind(calendarAPI),
     deleteMultipleEvents: calendarAPI.deleteMultipleEvents.bind(calendarAPI),
+    updateSeries: calendarAPI.updateSeries.bind(calendarAPI),
+    deleteSeries: calendarAPI.deleteSeries.bind(calendarAPI),
     processText: calendarAPI.processText.bind(calendarAPI),
     resetMemory: calendarAPI.resetMemory.bind(calendarAPI),
     deleteAllEvents: calendarAPI.deleteAllEvents.bind(calendarAPI),
