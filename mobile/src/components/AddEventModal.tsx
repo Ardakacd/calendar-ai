@@ -6,11 +6,17 @@ import { MaterialIcons } from "@expo/vector-icons";
 import NumericInput from "./NumericInput";
 import { EventCreate } from "../models/event";
 import { showErrorToast, showSuccessToast } from "../common/toast/toast-message";
-import { formatDateTime, toLocalISOString } from "../utils/datetime/dateUtils";
+import {
+  defaultDateTimeForCalendarDay,
+  formatCalendarDayHeading,
+  formatDateTime,
+  toLocalISOString,
+} from "../utils/datetime/dateUtils";
 import { Colors, Radius, Shadow, getCategoryColor } from "../theme";
 import { EventCategory } from "../models/event";
 
 const CATEGORIES: EventCategory[] = ['work', 'personal', 'health', 'social'];
+const MAX_DESCRIPTION_LENGTH = 5000;
 
 interface AddEventModalProps {
   visible: boolean;
@@ -19,6 +25,8 @@ interface AddEventModalProps {
   onEdit?: (event: EventCreate) => Promise<void>;
   initialEvent?: EventCreate;
   mode?: "add" | "edit";
+  /** When adding, pre-fill date/time for this calendar day (YYYY-MM-DD). */
+  defaultCalendarDayKey?: string;
 }
 
 export default function AddEventModal({
@@ -28,6 +36,7 @@ export default function AddEventModal({
   onEdit,
   initialEvent,
   mode = "add",
+  defaultCalendarDayKey,
 }: AddEventModalProps) {
   const [title, setTitle] = useState("");
   const [category, setCategory] = useState<EventCategory | undefined>(undefined);
@@ -52,14 +61,22 @@ export default function AddEventModal({
       setDescription("");
       setLocation("");
       setDuration("");
-      setDatetime(new Date());
+      setDatetime(
+        defaultCalendarDayKey
+          ? defaultDateTimeForCalendarDay(defaultCalendarDayKey)
+          : new Date()
+      );
     }
-  }, [initialEvent, mode, visible]);
+  }, [initialEvent, mode, visible, defaultCalendarDayKey]);
 
   const handleSubmit = async () => {
     const trimmedTitle = title.trim();
     if (!trimmedTitle) { showErrorToast("Title is required"); return; }
     if (trimmedTitle.length > 255) { showErrorToast("Title cannot be longer than 255 characters"); return; }
+    if (description.trim().length > MAX_DESCRIPTION_LENGTH) {
+      showErrorToast(`Notes cannot be longer than ${MAX_DESCRIPTION_LENGTH} characters`);
+      return;
+    }
 
     let durationMinutes: number | undefined;
     if (duration) {
@@ -67,10 +84,14 @@ export default function AddEventModal({
       if (durationMinutes <= 0) { showErrorToast("Duration must be greater than 0"); return; }
     }
 
+    const trimmedDescription = description.trim();
     const eventData: EventCreate = {
       title: trimmedTitle,
       category,
-      description: description.trim() || undefined,
+      description:
+        mode === "edit" && onEdit && initialEvent
+          ? trimmedDescription
+          : trimmedDescription || undefined,
       location: location.trim() || undefined,
       duration: durationMinutes,
       startDate: toLocalISOString(datetime),
@@ -84,7 +105,14 @@ export default function AddEventModal({
         await onAdd(eventData);
         showSuccessToast("Event created successfully");
       }
-      setTitle(""); setLocation(""); setDuration(""); setDatetime(new Date());
+      setTitle("");
+      setLocation("");
+      setDuration("");
+      setDatetime(
+        defaultCalendarDayKey
+          ? defaultDateTimeForCalendarDay(defaultCalendarDayKey)
+          : new Date()
+      );
       onDismiss();
     } catch (error: any) {
       showErrorToast(error.response?.data?.detail || "Event could not be created");
@@ -107,9 +135,16 @@ export default function AddEventModal({
         <View style={styles.sheet}>
           {/* Header */}
           <View style={styles.header}>
-            <Text style={styles.title}>
-              {mode === "edit" ? "Edit Event" : "New Event"}
-            </Text>
+            <View style={styles.headerTitleBlock}>
+              <Text style={styles.title}>
+                {mode === "edit" ? "Edit Event" : "New Event"}
+              </Text>
+              {mode === "add" && defaultCalendarDayKey ? (
+                <Text style={styles.headerSubtitle}>
+                  {formatCalendarDayHeading(defaultCalendarDayKey)}
+                </Text>
+              ) : null}
+            </View>
             <TouchableOpacity onPress={onDismiss} style={styles.closeBtn}>
               <MaterialIcons name="close" size={20} color={Colors.textSecondary} />
             </TouchableOpacity>
@@ -279,7 +314,7 @@ const styles = StyleSheet.create({
   },
   header: {
     flexDirection: "row",
-    alignItems: "center",
+    alignItems: "flex-start",
     justifyContent: "space-between",
     paddingHorizontal: 20,
     paddingTop: 20,
@@ -287,10 +322,20 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: Colors.border,
   },
+  headerTitleBlock: {
+    flex: 1,
+    marginRight: 12,
+  },
   title: {
     fontSize: 18,
     fontWeight: "700",
     color: Colors.textPrimary,
+  },
+  headerSubtitle: {
+    fontSize: 13,
+    color: Colors.textSecondary,
+    marginTop: 4,
+    fontWeight: "500",
   },
   closeBtn: {
     width: 32,

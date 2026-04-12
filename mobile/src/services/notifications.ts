@@ -1,4 +1,5 @@
 import * as Notifications from "expo-notifications";
+import Constants from "expo-constants";
 import { Platform } from "react-native";
 import { calendarAPI } from "./api";
 
@@ -39,9 +40,13 @@ export async function registerForPushNotifications(): Promise<void> {
   }
 
   try {
-    const tokenData = await Notifications.getExpoPushTokenAsync({
-      projectId: "calendar-ai", // matches app.json slug
-    });
+    // Prefer the EAS project UUID (extra.eas.projectId in app.json) which is required
+    // for standalone/EAS builds. Falls back to the slug for local Expo Go development.
+    const projectId =
+      Constants.expoConfig?.extra?.eas?.projectId ??
+      Constants.easConfig?.projectId ??
+      Constants.expoConfig?.slug;
+    const tokenData = await Notifications.getExpoPushTokenAsync({ projectId });
     await calendarAPI.updatePushToken(tokenData.data);
     console.log("Push token registered:", tokenData.data);
   } catch (error) {

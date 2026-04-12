@@ -15,9 +15,11 @@ interface TranscribeMessage {
   message: string;
 }
 
-interface User {
-  id?: string;
+/** Matches GET /auth/me */
+export interface User {
+  user_id?: string;
   name: string;
+  email?: string;
 }
 
 interface LoginCredentials {

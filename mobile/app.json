@@ -2,6 +2,7 @@
   "expo": {
     "name": "Calendar AI",
     "slug": "calendar-ai",
+    "scheme": "calendarai",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -19,7 +20,9 @@
       "bundleIdentifier": "com.ardaka.calendarai",
       "infoPlist": {
         "NSMicrophoneUsageDescription": "This app needs access to microphone to record voice commands for calendar management.",
-        "UIBackgroundModes": ["remote-notification"]
+        "UIBackgroundModes": [
+          "remote-notification"
+        ]
       }
     },
     "android": {
@@ -57,6 +60,12 @@
       ],
       "expo-localization",
       "./plugins/withExpoModulesCoreSwiftVersion"
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "12da7286-bb7c-4e1e-b0d7-500cf1ba15b2"
+      }
+    },
+    "owner": "ardaka"
   }
 }

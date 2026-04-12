@@ -11,6 +11,7 @@ import { Colors, Radius, Shadow, getCategoryColor } from "../theme";
 import { EventCategory } from "../models/event";
 
 const CATEGORIES: EventCategory[] = ['work', 'personal', 'health', 'social'];
+const MAX_DESCRIPTION_LENGTH = 5000;
 type UpdateScope = 'single' | 'all' | 'future';
 
 interface UpdateEventModalProps {
@@ -49,6 +50,10 @@ export default function UpdateEventModal({ visible, event, onDismiss, onUpdate, 
     const trimmedTitle = title.trim();
     if (!trimmedTitle) { showErrorToast("Title is required"); return; }
     if (trimmedTitle.length > 255) { showErrorToast("Title cannot be longer than 255 characters"); return; }
+    if (description.trim().length > MAX_DESCRIPTION_LENGTH) {
+      showErrorToast(`Notes cannot be longer than ${MAX_DESCRIPTION_LENGTH} characters`);
+      return;
+    }
 
     let durationMinutes: number | undefined;
     if (duration) {
@@ -73,7 +78,7 @@ export default function UpdateEventModal({ visible, event, onDismiss, onUpdate, 
           from_date: scope === 'future' ? toLocalISOString(new Date(event.startDate)) : undefined,
           title: trimmedTitle,
           category,
-          description: description.trim() || undefined,
+          description: description.trim(),
           location: location.trim() || undefined,
           duration: durationMinutes,
           time_shift_minutes: timeShiftMinutes !== 0 ? timeShiftMinutes : undefined,
@@ -83,7 +88,7 @@ export default function UpdateEventModal({ visible, event, onDismiss, onUpdate, 
         await onUpdate(event.id, {
           title: trimmedTitle,
           category,
-          description: description.trim() || undefined,
+          description: description.trim(),
           location: location.trim() || undefined,
           duration: durationMinutes,
           startDate: toLocalISOString(datetime),

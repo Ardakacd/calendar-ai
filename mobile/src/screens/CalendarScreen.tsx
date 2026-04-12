@@ -1,19 +1,26 @@
 import React, { useState, useEffect, useMemo, useCallback } from "react";
-import { View, StyleSheet, Alert, FlatList } from "react-native";
+import { View, StyleSheet, Alert, FlatList, RefreshControl } from "react-native";
 import { Text, FAB, ActivityIndicator, IconButton } from "react-native-paper";
 import { Calendar, DateData } from "react-native-calendars";
-import { useFocusEffect } from "@react-navigation/native";
+import { useFocusEffect, useNavigation, useRoute, RouteProp } from "@react-navigation/native";
+import type { StackNavigationProp } from "@react-navigation/stack";
+import type { RootStackParamList } from "../navigation/types";
 import { MaterialIcons } from "@expo/vector-icons";
 import { useCalendarAPI } from "../services/api";
 import UpdateEventModal from "../components/UpdateEventModal";
 import AddEventModal from "../components/AddEventModal";
 import { Event, EventCreate, SeriesUpdateRequest } from "../models/event";
 import { formatDuration, formatLocation } from "../common/formatting";
-import { formatTime, getDateKey } from "../utils/datetime/dateUtils";
+import { formatCalendarDayHeading, formatTime, getDateKey } from "../utils/datetime/dateUtils";
 import { showErrorToast, showSuccessToast } from "../common/toast/toast-message";
 import { Colors, Radius, Shadow, getCategoryColor } from "../theme";
 
+type CalendarRoute = RouteProp<RootStackParamList, "Calendar">;
+type CalendarNavigation = StackNavigationProp<RootStackParamList, "Calendar">;
+
 export default function CalendarScreen() {
+  const route = useRoute<CalendarRoute>();
+  const navigation = useNavigation<CalendarNavigation>();
   const [events, setEvents] = useState<Event[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedDate, setSelectedDate] = useState(
@@ -22,7 +29,25 @@ export default function CalendarScreen() {
   const [updateModalVisible, setUpdateModalVisible] = useState(false);
   const [selectedEvent, setSelectedEvent] = useState<Event | null>(null);
   const [addModalVisible, setAddModalVisible] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const { getEvents, updateEvent, updateSeries, deleteEvent, deleteSeries, addEvent } = useCalendarAPI();
+
+  // Deep link: calendarai://calendar?eventId=… or calendarai://calendar/<id>
+  useEffect(() => {
+    const eventId = route.params?.eventId;
+    if (!eventId || loading) return;
+    const ev = events.find((e) => e.id === eventId);
+    if (!ev) {
+      showErrorToast("Event not found or no longer available");
+      navigation.setParams({ eventId: undefined });
+      return;
+    }
+    const key = getDateKey(ev.startDate);
+    if (key) setSelectedDate(key);
+    setSelectedEvent(ev);
+    setUpdateModalVisible(true);
+    navigation.setParams({ eventId: undefined });
+  }, [loading, route.params?.eventId, events, navigation]);
 
   useFocusEffect(
     useCallback(() => {
@@ -42,11 +67,34 @@ export default function CalendarScreen() {
     }
   }, [getEvents]);
 
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      const fetchedEvents = await getEvents();
+      setEvents(fetchedEvents);
+    } catch {
+      showErrorToast("Events could not be loaded");
+    } finally {
+      setRefreshing(false);
+    }
+  }, [getEvents]);
+
   const markedDates = useMemo(() => {
     const marks: Record<string, any> = {};
+    const byDay = new Map<string, Event[]>();
     events.forEach((event) => {
       const key = getDateKey(event.startDate);
-      marks[key] = { marked: true, dotColor: Colors.primary };
+      if (!key) return;
+      if (!byDay.has(key)) byDay.set(key, []);
+      byDay.get(key)!.push(event);
+    });
+    byDay.forEach((dayEvents, key) => {
+      const sorted = [...dayEvents].sort(
+        (a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime()
+      );
+      const first = sorted[0];
+      const dotColor = getCategoryColor(first.category).accent;
+      marks[key] = { marked: true, dotColor };
     });
     marks[selectedDate] = {
       ...(marks[selectedDate] || {}),
@@ -261,8 +309,10 @@ export default function CalendarScreen() {
       <View style={styles.emptyIconBox}>
         <MaterialIcons name="event-available" size={28} color={Colors.primary} />
       </View>
-      <Text style={styles.emptyTitle}>No events</Text>
-      <Text style={styles.emptySubtitle}>Tap + to add an event for this day</Text>
+      <Text style={styles.emptyTitle}>Nothing scheduled</Text>
+      <Text style={styles.emptySubtitle}>
+        {formatCalendarDayHeading(selectedDate)} · Tap + to add an event
+      </Text>
     </View>
   );
 
@@ -312,10 +362,11 @@ export default function CalendarScreen() {
       </View>
 
       <View style={styles.listHeader}>
+        <Text style={styles.listHeaderDate}>{formatCalendarDayHeading(selectedDate)}</Text>
         <Text style={styles.listHeaderText}>
           {selectedDayEvents.length > 0
             ? `${selectedDayEvents.length} event${selectedDayEvents.length > 1 ? "s" : ""}`
-            : "No events"}
+            : "No events scheduled"}
         </Text>
       </View>
 
@@ -327,6 +378,9 @@ export default function CalendarScreen() {
         contentContainerStyle={styles.listContent}
         style={styles.list}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary} />
+        }
       />
 
       <FAB
@@ -334,6 +388,7 @@ export default function CalendarScreen() {
         icon={() => <MaterialIcons name="add" size={24} color={Colors.surface} />}
         color={Colors.surface}
         onPress={() => setAddModalVisible(true)}
+        accessibilityLabel="Add event"
       />
 
       <UpdateEventModal
@@ -347,6 +402,7 @@ export default function CalendarScreen() {
         visible={addModalVisible}
         onDismiss={() => setAddModalVisible(false)}
         onAdd={handleAddEvent}
+        defaultCalendarDayKey={selectedDate}
       />
     </View>
   );
@@ -404,6 +460,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingTop: 16,
     paddingBottom: 8,
+    gap: 4,
+  },
+  listHeaderDate: {
+    fontSize: 17,
+    fontWeight: "700",
+    color: Colors.textPrimary,
   },
   listHeaderText: {
     fontSize: 13,
