@@ -535,7 +535,7 @@ class EventAdapter:
     
     async def search_events(self, user_id: int, query: str) -> List[Event]:
         """
-        Search events by title or location for a specific user.
+        Search events by title, location, or description for a specific user.
         
         Args:
             user_id: User ID to filter events
@@ -548,7 +548,11 @@ class EventAdapter:
             search_term = f"%{query}%"
             stmt = select(EventModel).where(
                 EventModel.user_id == user_id,
-                (EventModel.title.ilike(search_term) | EventModel.location.ilike(search_term))
+                (
+                    EventModel.title.ilike(search_term)
+                    | EventModel.location.ilike(search_term)
+                    | EventModel.description.ilike(search_term)
+                ),
             ).order_by(EventModel.startDate.desc())
             
             result = await self.db.execute(stmt)
@@ -678,16 +682,24 @@ class EventAdapter:
             await self.db.rollback()
             return False
 
-    async def get_upcoming_events_for_reminder(
+    async def claim_and_get_reminder_events(
         self, window_start: datetime, window_end: datetime
-    ) -> List[Tuple[Event, str]]:
+    ) -> List[Tuple[Event, str, Optional[str]]]:
         """
-        Return (Event, push_token) pairs for events starting in [window_start, window_end]
-        that have not yet had a reminder sent, and whose user has a push_token.
+        Atomically claim unclaimed reminder events in [window_start, window_end].
+
+        Two-step approach safe against concurrent workers:
+          1. SELECT candidate event_ids (reminder_sent=False, user has push_token).
+          2. UPDATE ... WHERE event_id IN (...) AND reminder_sent=FALSE RETURNING event_id
+             — only the process whose UPDATE wins gets a non-empty RETURNING set.
+          3. Fetch full event + user info for claimed IDs only.
+
+        Returns List of (Event, push_token, user_timezone) for events this process claimed.
         """
         try:
-            stmt = (
-                select(EventModel, UserModel.push_token)
+            # Step 1: find candidates
+            candidate_stmt = (
+                select(EventModel.event_id)
                 .join(UserModel, EventModel.user_id == UserModel.id)
                 .where(
                     EventModel.startDate >= window_start,
@@ -696,26 +708,89 @@ class EventAdapter:
                     UserModel.push_token.isnot(None),
                 )
             )
-            result = await self.db.execute(stmt)
-            return [(self._convert_to_model(row[0]), row[1]) for row in result.all()]
+            candidate_result = await self.db.execute(candidate_stmt)
+            candidate_ids = [row[0] for row in candidate_result.all()]
+
+            if not candidate_ids:
+                return []
+
+            # Step 2: atomic claim — only rows still unclaimed are returned
+            claim_stmt = (
+                update(EventModel)
+                .where(
+                    EventModel.event_id.in_(candidate_ids),
+                    EventModel.reminder_sent == False,
+                )
+                .values(reminder_sent=True)
+                .returning(EventModel.event_id)
+            )
+            claim_result = await self.db.execute(claim_stmt)
+            claimed_ids = {row[0] for row in claim_result.all()}
+            await self.db.commit()
+
+            if not claimed_ids:
+                return []
+
+            # Step 3: fetch full details for claimed events
+            fetch_stmt = (
+                select(EventModel, UserModel.push_token, UserModel.timezone)
+                .join(UserModel, EventModel.user_id == UserModel.id)
+                .where(EventModel.event_id.in_(claimed_ids))
+            )
+            fetch_result = await self.db.execute(fetch_stmt)
+            return [
+                (self._convert_to_model(row[0]), row[1], row[2])
+                for row in fetch_result.all()
+            ]
+
         except SQLAlchemyError as e:
-            logger.error(f"Database error fetching upcoming reminder events: {e}")
+            logger.error(f"Database error claiming reminder events: {e}")
+            await self.db.rollback()
             return []
 
-    async def mark_reminders_sent(self, event_ids: List[str]) -> None:
-        """Bulk-mark reminder_sent=True for a list of event UUIDs."""
+    async def clear_push_tokens_for_events(self, event_ids: List[str]) -> int:
+        """
+        Clear push_token for users who own the given events.
+        Called when Expo reports DeviceNotRegistered / InvalidCredentials so stale
+        tokens are removed and the user is prompted to re-register on next app open.
+        Returns the number of users whose token was cleared.
+        """
+        if not event_ids:
+            return 0
+        try:
+            subq = select(EventModel.user_id).where(EventModel.event_id.in_(event_ids))
+            stmt = (
+                update(UserModel)
+                .where(UserModel.id.in_(subq))
+                .values(push_token=None)
+            )
+            result = await self.db.execute(stmt)
+            await self.db.commit()
+            cleared = result.rowcount
+            logger.info(f"Cleared push tokens for {cleared} user(s) with invalid/unregistered devices")
+            return cleared
+        except SQLAlchemyError as e:
+            logger.error(f"Database error clearing push tokens: {e}")
+            await self.db.rollback()
+            return 0
+
+    async def revert_reminder_claims(self, event_ids: List[str]) -> None:
+        """Reset reminder_sent=False for events whose push notification failed."""
         if not event_ids:
             return
         try:
             stmt = (
                 update(EventModel)
-                .where(EventModel.event_id.in_(event_ids))
-                .values(reminder_sent=True)
+                .where(
+                    EventModel.event_id.in_(event_ids),
+                    EventModel.reminder_sent == True,  # only undo what we set
+                )
+                .values(reminder_sent=False)
             )
             await self.db.execute(stmt)
             await self.db.commit()
         except SQLAlchemyError as e:
-            logger.error(f"Database error marking reminders sent: {e}")
+            logger.error(f"Database error reverting reminder claims: {e}")
             await self.db.rollback()
 
     async def delete_by_recurrence_id(
@@ -798,6 +873,29 @@ class EventAdapter:
             logger.error(f"Database error updating series {recurrence_id}: {e}")
             await self.db.rollback()
             return []
+
+    async def migrate_events_to_user(self, from_user_id: int, to_user_id: int) -> int:
+        """
+        Reassign all events from one user to another.
+        Called before deleting the SMS-created account when a user links their phone
+        to an existing account — prevents cascade-delete from wiping their events.
+        Returns the number of events migrated.
+        """
+        try:
+            stmt = (
+                update(EventModel)
+                .where(EventModel.user_id == from_user_id)
+                .values(user_id=to_user_id)
+            )
+            result = await self.db.execute(stmt)
+            await self.db.commit()
+            migrated = result.rowcount
+            logger.info(f"Migrated {migrated} events from user {from_user_id} to user {to_user_id}")
+            return migrated
+        except SQLAlchemyError as e:
+            logger.error(f"Database error migrating events: {e}")
+            await self.db.rollback()
+            return 0
 
     async def delete_all_events(self, user_id: int) -> int:
         """

@@ -1,5 +1,5 @@
 from typing import Optional, List
-from datetime import datetime as dt
+from datetime import datetime as dt, date
 from pydantic import BaseModel, EmailStr, Field, field_validator
 
 
@@ -34,6 +34,7 @@ class User(UserBase):
     timezone: Optional[str] = None
     linq_chat_id: Optional[str] = None
     push_token: Optional[str] = None
+    summary_sent_date: Optional[date] = None
     created_at: Optional[str] = None
 
     class Config:
@@ -44,7 +45,7 @@ class User(UserBase):
 class EventBase(BaseModel):
     title: str
     category: Optional[str] = None  # work / personal / health / social
-    description: Optional[str] = None
+    description: Optional[str] = Field(None, max_length=5000)
     startDate: dt  # Use proper datetime type with timezone support
     endDate: dt  # End date
     duration: Optional[int] = None  # Duration in minutes for input
@@ -65,7 +66,7 @@ class RecurrenceCreate(BaseModel):
 class EventCreate(BaseModel):
     title: str
     category: Optional[str] = None
-    description: Optional[str] = None
+    description: Optional[str] = Field(None, max_length=5000)
     startDate: dt
     duration: Optional[int] = None  # Duration in minutes for input
     location: Optional[str] = None
@@ -79,7 +80,7 @@ class EventCreate(BaseModel):
 class EventUpdate(BaseModel):
     title: Optional[str] = None
     category: Optional[str] = None
-    description: Optional[str] = None
+    description: Optional[str] = Field(None, max_length=5000)
     startDate: Optional[dt] = None
     duration: Optional[int] = None  # Duration in minutes for input
     location: Optional[str] = None
@@ -95,7 +96,7 @@ class SeriesUpdateRequest(BaseModel):
     from_date: Optional[dt] = Field(None, description="Required when scope='future': earliest occurrence to update (inclusive)")
     title: Optional[str] = None
     category: Optional[str] = None
-    description: Optional[str] = None
+    description: Optional[str] = Field(None, max_length=5000)
     location: Optional[str] = None
     duration: Optional[int] = Field(None, description="New duration in minutes")
     time_shift_minutes: Optional[int] = Field(None, description="Shift every occurrence's start/end time by N minutes (negative = earlier)")

@@ -15,7 +15,7 @@ Flow per operation:
 import logging
 import json
 from typing import Optional, List
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone, tzinfo
 from langchain_core.messages import SystemMessage, AIMessage, HumanMessage, ToolMessage
 from langchain_core.prompts import PromptTemplate
 from pydantic import BaseModel, Field
@@ -428,6 +428,7 @@ async def _handle_update(state: FlowState, system_prompt: str, tools_map: dict) 
             "recurrence_id": plan.recurrence_id,
             "series_from_date": plan.series_from_date.isoformat() if plan.series_from_date else None,
             "time_shift_seconds": time_shift_seconds,
+            "existing_startDate": plan.existing_startDate.isoformat() if plan.existing_startDate else None,
         },
         "conflict_check_request": {
             "startDate": check_start.isoformat() if check_start else None,
@@ -449,6 +450,7 @@ async def _handle_delete(state: FlowState, system_prompt: str, tools_map: dict) 
     Phase 2: Keyword-filter, then delete if unambiguous or ask user.
     Conversation history is included for multi-turn context.
     """
+    display_tz = _extract_tz(state.get("current_datetime", ""))
     list_tool = tools_map['list_event']
     delete_tool = tools_map['delete_event']
 
@@ -466,7 +468,7 @@ async def _handle_delete(state: FlowState, system_prompt: str, tools_map: dict) 
     # and use the candidate_events stored from that turn so we delete exactly the right events.
     stored_candidates = state.get('scheduling_result', {}).get('candidate_events', [])
     if user_wants_all and already_asked and stored_candidates:
-        return await _delete_events(stored_candidates, delete_tool)
+        return await _delete_events(stored_candidates, delete_tool, display_tz=display_tz)
 
     # --- Normal flow: list → filter → decide ---
     model_with_tools = model.bind_tools([list_tool])
@@ -553,21 +555,17 @@ async def _handle_delete(state: FlowState, system_prompt: str, tools_map: dict) 
 
     # Non-recurring path (or recurring single-occurrence): delete matched event(s) by ID
     if len(filtered_events) == 1:
-        return await _delete_events(filtered_events, delete_tool)
+        return await _delete_events(filtered_events, delete_tool, display_tz=display_tz)
 
     # Multiple matches — if user already said "both/all" in this same message, delete all
     if user_wants_all:
-        return await _delete_events(filtered_events, delete_tool)
+        return await _delete_events(filtered_events, delete_tool, display_tz=display_tz)
 
     # Ask the user which one
     lines = ["Multiple events match your request. Which one did you mean?\n"]
     for i, e in enumerate(filtered_events, 1):
-        start = e.get('startDate', '')
-        try:
-            dt = datetime.fromisoformat(start)
-            start_fmt = dt.strftime("%a %b %-d, %-I:%M %p")
-        except Exception:
-            start_fmt = start
+        start_iso = _event_start_iso(e) or ""
+        start_fmt = _format_suggestion_dt(start_iso, display_tz) if start_iso else "?"
         lines.append(f"{i}. {e.get('title')} — {start_fmt}")
     msg = "\n".join(lines)
     return {
@@ -584,7 +582,9 @@ async def _handle_delete(state: FlowState, system_prompt: str, tools_map: dict) 
     }
 
 
-async def _delete_events(events: list, delete_tool) -> dict:
+async def _delete_events(
+    events: list, delete_tool, display_tz: Optional[tzinfo] = None
+) -> dict:
     """Execute delete for one or more events and return a result dict."""
     deleted_events = []
     failed_titles = []
@@ -614,9 +614,17 @@ async def _delete_events(events: list, delete_tool) -> dict:
 
     if deleted_events and not failed_titles:
         if len(deleted_events) == 1:
-            msg = f"Done — removed “{deleted_events[0].get('title')}” from your calendar."
+            ev0 = deleted_events[0]
+            t0 = _event_start_iso(ev0)
+            when = f" ({_format_suggestion_dt(t0, display_tz)})" if t0 else ""
+            msg = f"Done — removed “{ev0.get('title')}”{when} from your calendar."
         elif len(deleted_events) == 2:
-            msg = f"Done — removed “{deleted_events[0].get('title')}” and “{deleted_events[1].get('title')}”."
+            ev0, ev1 = deleted_events[0], deleted_events[1]
+            w0 = f" ({_format_suggestion_dt(_event_start_iso(ev0), display_tz)})" if _event_start_iso(ev0) else ""
+            w1 = f" ({_format_suggestion_dt(_event_start_iso(ev1), display_tz)})" if _event_start_iso(ev1) else ""
+            msg = (
+                f"Done — removed “{ev0.get('title')}”{w0} and “{ev1.get('title')}”{w1} from your calendar."
+            )
         else:
             msg = f"Done — removed {len(deleted_events)} events from your calendar."
     elif deleted_events:
@@ -722,12 +730,23 @@ async def _handle_list(state: FlowState, system_prompt: str, tools_map: dict) ->
 # Scheduling finalize node
 # ---------------------------------------------------------------------------
 
-def _format_suggestion_dt(iso: str | None) -> str:
-    """Format an ISO datetime string as 'Mon Mar 28, 6:30 PM'."""
-    if not iso:
+def _format_suggestion_dt(
+    iso: str | datetime | None,
+    display_tz: Optional[tzinfo] = None,
+) -> str:
+    """Format a datetime for display as 'Mon Mar 28, 6:30 PM' in the user's local zone when display_tz is set."""
+    if iso is None:
         return "?"
     try:
-        dt = datetime.fromisoformat(iso)
+        if isinstance(iso, datetime):
+            dt = iso
+        else:
+            s = iso.replace("Z", "+00:00") if isinstance(iso, str) else iso
+            dt = datetime.fromisoformat(s)
+        if display_tz is not None:
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            dt = dt.astimezone(display_tz)
         day = str(dt.day)
         hour = dt.hour % 12 or 12
         minute = dt.strftime("%M")
@@ -736,7 +755,16 @@ def _format_suggestion_dt(iso: str | None) -> str:
         weekday = dt.strftime("%a")
         return f"{weekday} {month} {day}, {hour}:{minute} {ampm}"
     except Exception:
-        return iso
+        return iso if isinstance(iso, str) else "?"
+
+
+def _event_start_iso(ev: dict) -> str | None:
+    s = ev.get("startDate")
+    if s is None:
+        return None
+    if isinstance(s, datetime):
+        return s.isoformat()
+    return str(s)
 
 
 async def scheduling_finalize(state: FlowState):
@@ -747,6 +775,7 @@ async def scheduling_finalize(state: FlowState):
     For DELETE and LIST, scheduling_agent already handled everything — this is a pass-through.
     """
     operation = state.get('scheduling_operation')
+    display_tz = _extract_tz(state.get("current_datetime", ""))
 
     # DELETE and LIST are fully handled by scheduling_agent
     if operation in ('delete', 'list', None):
@@ -770,13 +799,14 @@ async def scheduling_finalize(state: FlowState):
         # Still execute if we have event data (title/location-only update)
         if event_data:
             try:
-                user_tz = _extract_tz(state.get('current_datetime', ''))
-                async with get_calendar_tools(user_id, user_tz) as mcp_tools:
+                async with get_calendar_tools(user_id, display_tz) as mcp_tools:
                     tools_map = {t.name: t for t in mcp_tools}
                     if operation == 'create':
-                        return await _execute_create(event_data, tools_map)
+                        return await _execute_create(event_data, tools_map, display_tz=display_tz)
                     elif operation == 'update':
-                        return await _execute_update(event_data, tools_map, user_id=user_id)
+                        return await _execute_update(
+                            event_data, tools_map, user_id=user_id, display_tz=display_tz
+                        )
             except Exception as e:
                 logger.error(f"Error in scheduling_finalize ({operation}): {e}", exc_info=True)
                 msg = "Something went wrong while updating your calendar. Please try again."
@@ -796,8 +826,8 @@ async def scheduling_finalize(state: FlowState):
         if suggestions:
             lines = ["\n\nHere are some open slots nearby:"]
             for i, s in enumerate(suggestions, 1):
-                start = _format_suggestion_dt(s.get('startDate'))
-                end = _format_suggestion_dt(s.get('endDate'))
+                start = _format_suggestion_dt(s.get('startDate'), display_tz)
+                end = _format_suggestion_dt(s.get('endDate'), display_tz)
                 lines.append(f"  {i}. {start} – {end}")
             lines.append("\nPick one of these, or tell me another time you’d like.")
             msg += "\n".join(lines)
@@ -817,13 +847,14 @@ async def scheduling_finalize(state: FlowState):
 
     # No conflict — execute
     try:
-        user_tz = _extract_tz(state.get('current_datetime', ''))
-        async with get_calendar_tools(user_id, user_tz) as mcp_tools:
+        async with get_calendar_tools(user_id, display_tz) as mcp_tools:
             tools_map = {t.name: t for t in mcp_tools}
             if operation == 'create':
-                result = await _execute_create(event_data, tools_map)
+                result = await _execute_create(event_data, tools_map, display_tz=display_tz)
             elif operation == 'update':
-                result = await _execute_update(event_data, tools_map, user_id=user_id)
+                result = await _execute_update(
+                    event_data, tools_map, user_id=user_id, display_tz=display_tz
+                )
             else:
                 return {"is_success": True}
         # Mirror to router_messages for multi-turn context
@@ -842,7 +873,7 @@ async def scheduling_finalize(state: FlowState):
         }
 
 
-async def _execute_create(event_data: dict, tools_map: dict) -> dict:
+async def _execute_create(event_data: dict, tools_map: dict, display_tz: Optional[tzinfo] = None) -> dict:
     create_tool = tools_map['create_event']
     events_to_create = event_data.get("events", [])
     created = []
@@ -877,7 +908,7 @@ async def _execute_create(event_data: dict, tools_map: dict) -> dict:
                 f"Couldn’t add “{title}” — {n} proposed time{'s' if n != 1 else ''} overlap something already on your calendar:"
             ]
             for c in conflicts:
-                start_fmt = _format_suggestion_dt(c.get("startDate"))
+                start_fmt = _format_suggestion_dt(c.get("startDate"), display_tz)
                 lines.append(
                     f"  • Occurrence {c['index'] + 1} ({start_fmt}) — overlaps with “{c['conflicting_title']}”"
                 )
@@ -894,7 +925,7 @@ async def _execute_create(event_data: dict, tools_map: dict) -> dict:
         r = created[0]
         n = r.get('occurrences_created', 0)
         title = r.get('title', '')
-        start_fmt = _format_suggestion_dt(r.get('startDate', ''))
+        start_fmt = _format_suggestion_dt(r.get('startDate', ''), display_tz)
         if n:
             freq = r.get('recurrence_type', '')
             freq_label = f"{freq} " if freq else ""
@@ -905,7 +936,7 @@ async def _execute_create(event_data: dict, tools_map: dict) -> dict:
     else:
         lines = [f"Done — added {len(created)} events:"]
         for e in created:
-            start_fmt = _format_suggestion_dt(e.get('startDate', ''))
+            start_fmt = _format_suggestion_dt(e.get('startDate', ''), display_tz)
             n = e.get('occurrences_created', 0)
             if n:
                 freq = e.get('recurrence_type', '')
@@ -922,10 +953,12 @@ async def _execute_create(event_data: dict, tools_map: dict) -> dict:
     }
 
 
-async def _execute_update(event_data: dict, tools_map: dict, user_id: int = 0) -> dict:
+async def _execute_update(
+    event_data: dict, tools_map: dict, user_id: int = 0, display_tz: Optional[tzinfo] = None
+) -> dict:
     # Series update — bypass MCP and go directly to the adapter
     if event_data.get("series_update") and event_data.get("recurrence_id"):
-        return await _execute_series_update(event_data, user_id)
+        return await _execute_series_update(event_data, user_id, display_tz=display_tz)
 
     update_tool = tools_map['update_event']
     event_ids = event_data.get("event_ids", [])
@@ -951,10 +984,37 @@ async def _execute_update(event_data: dict, tools_map: dict, user_id: int = 0) -
 
     if len(updated) == 1:
         ev = updated[0]
-        start_fmt = _format_suggestion_dt(ev.get('startDate'))
-        msg = f"Done — “{ev.get('title')}” is updated" + (f", now at {start_fmt}." if start_fmt else ".")
+        update_args = event_data.get("update_args", {})
+        new_start_iso = update_args.get("startDate")
+        existing_start_iso = event_data.get("existing_startDate")
+
+        if new_start_iso and existing_start_iso:
+            old_fmt = _format_suggestion_dt(existing_start_iso, display_tz)
+            new_fmt = _format_suggestion_dt(new_start_iso, display_tz)
+            msg = f"Done — \"{ev.get('title')}\" moved from {old_fmt} → {new_fmt}."
+        elif new_start_iso:
+            msg = f"Done — \"{ev.get('title')}\" is updated, now at {_format_suggestion_dt(new_start_iso, display_tz)}."
+        else:
+            parts = []
+            if update_args.get("title"):
+                parts.append(f"renamed to \"{update_args['title']}\"")
+            if update_args.get("location"):
+                parts.append(f"location → {update_args['location']}")
+            if update_args.get("duration"):
+                h, m = divmod(update_args["duration"], 60)
+                dur_str = f"{h}h {m}m" if h and m else (f"{h}h" if h else f"{m}m")
+                parts.append(f"duration → {dur_str}")
+            msg = (
+                f"Done — \"{ev.get('title')}\": {', '.join(parts)}."
+                if parts
+                else f"Done — \"{ev.get('title')}\" is updated."
+            )
     else:
-        titles = " and ".join(f"“{e.get('title')}”" for e in updated) if len(updated) == 2 else f"{len(updated)} events"
+        titles = (
+            " and ".join(f'"{e.get("title")}"' for e in updated)
+            if len(updated) == 2
+            else f"{len(updated)} events"
+        )
         msg = f"Done — {titles} updated."
 
     return {
@@ -964,7 +1024,9 @@ async def _execute_update(event_data: dict, tools_map: dict, user_id: int = 0) -
     }
 
 
-async def _execute_series_update(event_data: dict, user_id: int) -> dict:
+async def _execute_series_update(
+    event_data: dict, user_id: int, display_tz: Optional[tzinfo] = None
+) -> dict:
     """Update an entire recurring series (or future occurrences) directly via the adapter."""
     from database.config import get_async_db_context_manager
     from adapter.event_adapter import EventAdapter
@@ -1021,10 +1083,23 @@ async def _execute_series_update(event_data: dict, user_id: int) -> dict:
 
     title = updated[0].title if updated else ""
     n = len(updated)
+
+    time_detail = ""
+    existing_start_iso = event_data.get("existing_startDate")
+    if time_shift_seconds and existing_start_iso:
+        try:
+            old_dt = datetime.fromisoformat(existing_start_iso)
+            new_dt = old_dt + timedelta(seconds=time_shift_seconds)
+            old_fmt = _format_suggestion_dt(old_dt.isoformat(), display_tz)
+            new_fmt = _format_suggestion_dt(new_dt.isoformat(), display_tz)
+            time_detail = f" — moved from {old_fmt} → {new_fmt}"
+        except Exception:
+            pass
+
     if update_scope == "future":
-        msg = f"Done — updated {n} upcoming occurrence{'s' if n != 1 else ''} of “{title}”."
+        msg = f"Done — {n} upcoming occurrence{'s' if n != 1 else ''} of \"{title}\" updated{time_detail}."
     else:
-        msg = f"Done — all {n} occurrence{'s' if n != 1 else ''} of “{title}” are updated."
+        msg = f"Done — all {n} occurrence{'s' if n != 1 else ''} of \"{title}\" updated{time_detail}."
     return {
         "scheduling_result": {"message": msg, "success": True},
         "scheduling_messages": [AIMessage(content=msg)],

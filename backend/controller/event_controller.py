@@ -330,12 +330,12 @@ async def delete_multiple_events(
 
 @router.get("/search/", response_model=List[Event])
 async def search_events(
-        query: str = Query(..., min_length=1, description="Search query for title"),
+        query: str = Query(..., min_length=1, description="Search query (title, location, description)"),
         credentials: HTTPAuthorizationCredentials = Depends(security),
         event_service: EventService = Depends(get_event_service)
 ):
     """
-    Search events by title for the authenticated user.
+    Search events by title, location, or description for the authenticated user.
     
     Returns a list of matching events.
     """

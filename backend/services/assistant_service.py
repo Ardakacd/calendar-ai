@@ -43,6 +43,8 @@ class AssistantService:
                     raw_events = scheduling_result.get("events")
                 elif route == "delete" and needs_clarification:
                     raw_events = scheduling_result.get("candidate_events")
+                elif route in ("create", "update"):
+                    raw_events = scheduling_result.get("events")
                 else:
                     raw_events = None
 
@@ -53,6 +55,7 @@ class AssistantService:
                         for e in raw_events
                     ]
                 return {
+                    "type": route,
                     "message": message,
                     "success": scheduling_result.get("success", True),
                     "has_conflict": scheduling_result.get("has_conflict", False),

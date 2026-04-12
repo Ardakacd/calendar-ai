@@ -1,7 +1,7 @@
 from typing import Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import SQLAlchemyError, IntegrityError
-from sqlalchemy import select, delete, update
+from sqlalchemy import select, delete, update, or_
 import logging
 from database import UserModel
 from models import UserCreate, UserUpdate, User
@@ -33,6 +33,7 @@ class UserAdapter:
             timezone=user_model.timezone,
             linq_chat_id=user_model.linq_chat_id,
             push_token=user_model.push_token,
+            summary_sent_date=user_model.summary_sent_date,
         )
 
     def _convert_to_db_model(self, user_data: UserCreate) -> UserModel:
@@ -231,13 +232,61 @@ class UserAdapter:
             await self.db.rollback()
             return None
     
-    async def get_all_linq_users(self) -> list:
-        """Return all users who have a phone number and a stored linq_chat_id."""
+    async def mark_summary_sent(self, user_id: int, sent_date) -> bool:
+        """
+        Atomically claim this user's summary slot for sent_date.
+
+        Only updates the row if summary_sent_date is NULL or a different date,
+        so two concurrent workers racing on the same user will only one succeed.
+
+        Returns True if the row was updated (this process owns the send),
+        False if another process already claimed it.
+        """
         try:
-            stmt = select(UserModel).where(
-                UserModel.phone_number.isnot(None),
-                UserModel.linq_chat_id.isnot(None),
+            stmt = (
+                update(UserModel)
+                .where(
+                    UserModel.id == user_id,
+                    or_(
+                        UserModel.summary_sent_date.is_(None),
+                        UserModel.summary_sent_date != sent_date,
+                    ),
+                )
+                .values(summary_sent_date=sent_date)
             )
+            result = await self.db.execute(stmt)
+            await self.db.commit()
+            return result.rowcount == 1
+        except SQLAlchemyError as e:
+            logger.error(f"UserAdapter: Error marking summary sent for user {user_id}: {e}")
+            await self.db.rollback()
+            return False
+
+    async def revert_summary_claim(self, user_id: int, sent_date) -> None:
+        """
+        Clear summary_sent_date only if it still equals sent_date.
+
+        Used when we claimed the slot but failed to send — allows retry later the same morning.
+        """
+        try:
+            stmt = (
+                update(UserModel)
+                .where(
+                    UserModel.id == user_id,
+                    UserModel.summary_sent_date == sent_date,
+                )
+                .values(summary_sent_date=None)
+            )
+            await self.db.execute(stmt)
+            await self.db.commit()
+        except SQLAlchemyError as e:
+            logger.error(f"UserAdapter: Error reverting summary claim for user {user_id}: {e}")
+            await self.db.rollback()
+
+    async def get_all_linq_users(self) -> list:
+        """Return all users who have a linq_chat_id (sufficient to send Linq messages)."""
+        try:
+            stmt = select(UserModel).where(UserModel.linq_chat_id.isnot(None))
             result = await self.db.execute(stmt)
             return [self._convert_to_model(u) for u in result.scalars().all()]
         except Exception as e:

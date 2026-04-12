@@ -14,6 +14,7 @@ from database import init_db
 from exceptions.validation_exception_handler import validation_exception_handler
 from services.morning_summary_service import send_morning_summaries
 from services.reminder_service import send_event_reminders
+from services.webhook_cleanup_service import purge_old_webhooks
 
 logging.basicConfig(
     level=logging.INFO,
@@ -28,8 +29,9 @@ scheduler = AsyncIOScheduler()
 async def lifespan(app: FastAPI):
     scheduler.add_job(send_morning_summaries, "cron", minute=0)
     scheduler.add_job(send_event_reminders, "interval", minutes=5)
+    scheduler.add_job(purge_old_webhooks, "cron", hour=3, minute=0)
     scheduler.start()
-    logger.info("APScheduler started — morning summary + reminder jobs registered")
+    logger.info("APScheduler started — morning summary + reminder + webhook cleanup jobs registered")
     yield
     scheduler.shutdown(wait=False)
     logger.info("APScheduler shut down")

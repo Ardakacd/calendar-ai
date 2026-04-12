@@ -3,6 +3,14 @@ import hmac
 import json
 import logging
 import time
+from datetime import datetime
+from urllib.parse import quote
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+
+def _handle_label(handle: str) -> str:
+    """Return a non-reversible 8-char hex label for a phone/email handle — keeps PII out of logs."""
+    return hashlib.sha256(handle.encode()).hexdigest()[:8]
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -20,6 +28,29 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/linq", tags=["linq"])
 
 WEBHOOK_TOLERANCE_SECONDS = 300  # reject requests older than 5 minutes
+
+
+def _calendar_event_app_url(event_id: str) -> str:
+    """Custom-scheme deep link (mobile app registers scheme `calendarai`)."""
+    return f"calendarai://calendar?eventId={quote(event_id, safe='')}"
+
+
+def _format_event_dt(iso: str, user_tz: str | None) -> str:
+    """Format an ISO datetime string for display in the user's local timezone."""
+    try:
+        dt = datetime.fromisoformat(iso)
+        if user_tz:
+            try:
+                dt = dt.astimezone(ZoneInfo(user_tz))
+            except (ZoneInfoNotFoundError, KeyError):
+                pass
+        h = dt.hour % 12 or 12
+        minute = dt.strftime("%M")
+        ampm = "AM" if dt.hour < 12 else "PM"
+        day_str = dt.strftime("%a %b") + f" {dt.day}"
+        return f"{day_str} {h}:{minute} {ampm}"
+    except Exception:
+        return iso
 
 
 def _verify_signature(raw_body: bytes, timestamp: str, signature: str) -> None:
@@ -69,7 +100,11 @@ WELCOME_TEXT_SMS = (
 )
 
 
-async def _handle_chat_created(chat_id: str, phone_number: str) -> None:
+async def _handle_chat_created(chat_id: str, phone_number: str, event_id: str | None) -> None:
+    if event_id and not await _mark_processed(event_id):
+        logger.info(f"Duplicate chat.created ignored: event_id={event_id}")
+        return
+    label = _handle_label(phone_number)
     async with get_async_db_context_manager() as db:
         linq_service = LinqService(db)
         try:
@@ -80,30 +115,51 @@ async def _handle_chat_created(chat_id: str, phone_number: str) -> None:
             welcome = WELCOME_TEXT_SMS if phone_number.startswith("+") else WELCOME_TEXT
             await linq_service.send_message(chat_id, welcome)
         except Exception as e:
-            logger.error(f"Error sending welcome to {phone_number}: {e}", exc_info=True)
+            logger.error(f"Error sending welcome [{label}]: {e}", exc_info=True)
             try:
                 await linq_service.send_message(chat_id, "Something went wrong getting started. Please send a message to try again.")
             except Exception:
                 pass
 
 
-async def _handle_message_failed(message_id: str, chat_id: str, error: str) -> None:
-    logger.error(f"Linq message delivery failed: message_id={message_id} chat_id={chat_id} error={error}")
+async def _handle_message_failed(message_id: str, error: str, event_id: str | None) -> None:
+    if event_id and not await _mark_processed(event_id):
+        return
+    logger.error(f"Linq message delivery failed: message_id={message_id} error={error}")
 
 
-async def _handle_message(chat_id: str, phone_number: str, text: str) -> None:
+async def _handle_message(chat_id: str, phone_number: str, text: str, event_id: str | None) -> None:
+    if event_id and not await _mark_processed(event_id):
+        logger.info(f"Duplicate message.received ignored: event_id={event_id}")
+        return
+
+    label = _handle_label(phone_number)
+    reply = "Something went wrong. Please try again in a moment."
+    reply_effect: str | None = None
+    linq_svc = None
+
     async with get_async_db_context_manager() as db:
-        linq_service = LinqService(db)
+        linq_svc = LinqService(db)
+
+        # Show typing bubble and mark as read immediately — before any processing
+        await linq_svc.start_typing(chat_id)
+        await linq_svc.mark_read(chat_id)
+
+        # Dedup check — bubble already visible so user sees activity during DB call
+        if event_id and not await _mark_processed(event_id):
+            logger.info(f"Duplicate message.received ignored: event_id={event_id}")
+            await linq_svc.stop_typing(chat_id)
+            return
+
         event_service = EventService(db)
         assistant_service = AssistantService(event_service)
 
-        await linq_service.start_typing(chat_id)
         try:
-            user = await linq_service.get_or_create_user(phone_number)
+            user = await linq_svc.get_or_create_user(phone_number)
             # Persist chat_id so we can send proactive messages (e.g. morning summary)
             if user.linq_chat_id != chat_id:
                 from models import UserUpdate
-                await linq_service.user_adapter.update_user(user.id, UserUpdate(linq_chat_id=chat_id))
+                await linq_svc.user_adapter.update_user(user.id, UserUpdate(linq_chat_id=chat_id))
 
             # ---- Built-in commands ----------------------------------------
             lower = text.strip().lower()
@@ -116,7 +172,7 @@ async def _handle_message(chat_id: str, phone_number: str, text: str) -> None:
 
             elif lower.startswith("link "):
                 email = text.strip()[len("link "):].strip()
-                ok = await linq_service.link_account(user.id, email, phone_number)
+                ok = await linq_svc.link_account(user.id, email, phone_number)
                 reply = (
                     f"Linked! Your phone is now connected to {email}. "
                     "Future messages will use that account."
@@ -126,7 +182,7 @@ async def _handle_message(chat_id: str, phone_number: str, text: str) -> None:
 
             elif lower.startswith("set password "):
                 pwd = text.strip()[len("set password "):]
-                ok = await linq_service.update_user_password(user.id, pwd)
+                ok = await linq_svc.update_user_password(user.id, pwd)
                 if ok:
                     reply = (
                         f"Password set! Log in to the app with:\n"
@@ -138,7 +194,7 @@ async def _handle_message(chat_id: str, phone_number: str, text: str) -> None:
 
             elif lower.startswith("set timezone "):
                 tz = text.strip()[len("set timezone "):]
-                ok = await linq_service.update_user_timezone(user.id, tz)
+                ok = await linq_svc.update_user_timezone(user.id, tz)
                 reply = (
                     f"Timezone updated to {tz}."
                     if ok
@@ -153,7 +209,7 @@ async def _handle_message(chat_id: str, phone_number: str, text: str) -> None:
 
             else:
                 # ---- Run the AI agent ------------------------------------
-                dt_context = linq_service.build_datetime_context(user.timezone)
+                dt_context = linq_svc.build_datetime_context(user.timezone)
                 result = await assistant_service.process_for_user(
                     user_id=user.id,
                     text=text,
@@ -161,27 +217,39 @@ async def _handle_message(chat_id: str, phone_number: str, text: str) -> None:
                 )
                 reply = result.get("message") or "I couldn't process that. Please try again."
 
+                if result.get("type") == "create":
+                    reply_effect = "confetti"
+
                 # Append formatted event list for LIST responses
                 events = result.get("events")
                 if events:
                     lines = ["\n"]
                     for e in events:
-                        lines.append(f"• {e['title']} — {e['startDate']}")
+                        time_str = _format_event_dt(e["startDate"], user.timezone)
+                        eid = e.get("id")
+                        if eid:
+                            lines.append(
+                                f"• {e['title']} — {time_str}\n"
+                                f"  {_calendar_event_app_url(eid)}"
+                            )
+                        else:
+                            lines.append(f"• {e['title']} — {time_str}")
                     reply += "\n".join(lines)
 
         except Exception as e:
-            logger.error(f"Error handling Linq message from {phone_number}: {e}", exc_info=True)
+            logger.error(f"Error handling Linq message [{label}]: {e}", exc_info=True)
             reply = "Something went wrong. Please try again in a moment."
-        finally:
-            await linq_service.stop_typing(chat_id)
 
-        reply = (reply or "").strip() or "Something went wrong. Please try again in a moment."
-        logger.info(f"Sending reply to {phone_number}: {repr(reply[:80])}")
-
-        try:
-            await linq_service.send_message(chat_id, reply)
-        except Exception as e:
-            logger.error(f"Failed to send reply to {phone_number} (chat={chat_id}): {e}", exc_info=True)
+    # DB session is now closed — send_message and stop_typing use HTTP headers only.
+    reply = (reply or "").strip() or "Something went wrong. Please try again in a moment."
+    logger.info(f"Sending reply [{label}]: {repr(reply[:80])}")
+    try:
+        await linq_svc.send_message(chat_id, reply, screen_effect=reply_effect)
+    except Exception as e:
+        logger.error(f"Failed to send reply [{label}] (chat={chat_id}): {e}", exc_info=True)
+    finally:
+        # Stop bubble only after message is sent (or failed) — bubble stays up the entire time
+        await linq_svc.stop_typing(chat_id)
 
 
 # ---------------------------------------------------------------------------
@@ -224,30 +292,31 @@ async def webhook(request: Request, background_tasks: BackgroundTasks):
     event = body.get("event_type")
     event_id = body.get("event_id")
     data = body.get("data", {})
-    logger.info(f"Linq webhook received: event={event} event_id={event_id} trace={body.get('trace_id')}")
-
-    # Deduplicate — Linq delivers at-least-once; skip already-processed events
-    if event_id:
-        is_new = await _mark_processed(event_id)
-        if not is_new:
-            logger.info(f"Duplicate webhook ignored: event_id={event_id}")
-            return {"status": "duplicate"}
+    webhook_version = body.get("webhook_version", "2025-01-01")
+    logger.info(f"Linq webhook received: event={event} event_id={event_id} version={webhook_version} trace={body.get('trace_id')}")
 
     # ---- message.received ------------------------------------------------
     if event == "message.received":
-        chat_id = data.get("chat", {}).get("id")
-        phone_number = data.get("sender_handle", {}).get("handle")
+        # Normalize v2025-01-01 layout to v2026-02-03 shape so the rest of the
+        # handler is version-agnostic.
+        if webhook_version < "2026-02-03":
+            chat_id = data.get("chat_id")
+            phone_number = (data.get("from_handle") or {}).get("handle") or data.get("from")
+            parts = (data.get("message") or {}).get("parts", [])
+        else:
+            chat_id = (data.get("chat") or {}).get("id")
+            phone_number = (data.get("sender_handle") or {}).get("handle")
+            parts = data.get("parts", [])
 
-        parts = data.get("parts", [])
         text = " ".join(
             p.get("value", "") for p in parts if p.get("type") == "text"
         ).strip()
 
         if not chat_id or not phone_number or not text:
-            logger.warning(f"Linq webhook missing required fields: chat_id={chat_id} phone={phone_number} text={bool(text)}")
+            logger.warning(f"Linq webhook missing required fields: chat_id={chat_id} phone={bool(phone_number)} text={bool(text)}")
             return {"status": "ignored"}
 
-        background_tasks.add_task(_handle_message, chat_id, phone_number, text)
+        background_tasks.add_task(_handle_message, chat_id, phone_number, text, event_id)
 
     # ---- chat.created ----------------------------------------------------
     elif event == "chat.created":
@@ -259,18 +328,33 @@ async def webhook(request: Request, background_tasks: BackgroundTasks):
         )
 
         if not chat_id or not phone_number:
-            logger.warning(f"chat.created missing fields: chat_id={chat_id} phone={phone_number}")
+            logger.warning(f"chat.created missing fields: chat_id={chat_id} phone={bool(phone_number)}")
             return {"status": "ignored"}
 
-        background_tasks.add_task(_handle_chat_created, chat_id, phone_number)
+        background_tasks.add_task(_handle_chat_created, chat_id, phone_number, event_id)
 
     # ---- message.failed --------------------------------------------------
     elif event == "message.failed":
+        code = data.get("code")
         background_tasks.add_task(
             _handle_message_failed,
-            message_id=data.get("id"),
-            chat_id=data.get("chat", {}).get("id"),
-            error=data.get("error") or "unknown",
+            message_id=data.get("message_id"),
+            error=data.get("reason") or (str(code) if code is not None else "unknown"),
+            event_id=event_id,
+        )
+
+    # ---- message.delivered -----------------------------------------------
+    elif event == "message.delivered":
+        logger.info(
+            f"Linq message delivered: message_id={data.get('message_id')} "
+            f"chat={data.get('chat_id')} event_id={event_id}"
+        )
+
+    # ---- message.read ----------------------------------------------------
+    elif event == "message.read":
+        logger.info(
+            f"Linq message read: chat={data.get('chat_id')} "
+            f"message_id={data.get('message_id')} event_id={event_id}"
         )
 
     else:

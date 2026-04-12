@@ -1,7 +1,8 @@
 from typing import List, Optional
-from sqlalchemy import String, DateTime, CheckConstraint, Integer
+from sqlalchemy import String, DateTime, Date, CheckConstraint, Integer
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy.sql import func 
+from sqlalchemy.sql import func
+from datetime import date
 import uuid
 
 from .base import Base
@@ -21,6 +22,7 @@ class UserModel(Base):
     timezone: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     linq_chat_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
     push_token: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    summary_sent_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
     created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     events: Mapped[List["EventModel"]] = relationship(
