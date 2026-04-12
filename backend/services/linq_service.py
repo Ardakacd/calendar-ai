@@ -20,8 +20,10 @@ logger = logging.getLogger(__name__)
 HELP_TEXT = (
     "Calendar AI — available commands:\n"
     "• Just chat naturally to create, update, delete, or list events\n"
-    "• set timezone <tz> — e.g. 'set timezone America/Chicago'\n"
-    "• set password <pw> — set a password to log in to the app\n"
+    "• link <your-email> — connect this chat to your existing app account (do this first if you already signed up in the app)\n"
+    "• set password <pw> — set an app password if you don't have an account yet (min 6 characters)\n"
+    "• my email — show the email to use when logging into the app (copy/paste)\n"
+    "• set timezone <tz> — e.g. set timezone America/Chicago\n"
     "• reset — clear conversation history\n"
     "• help — show this message"
 )

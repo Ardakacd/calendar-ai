@@ -35,6 +35,25 @@ def _calendar_event_app_url(event_id: str) -> str:
     return f"calendarai://calendar?eventId={quote(event_id, safe='')}"
 
 
+def _is_sms_synthetic_email(email: str | None) -> bool:
+    """Phone-SMS auto-created users get {digits}@sms.linqapp.com — not a mailbox they know until we show it."""
+    return bool(email and email.strip().lower().endswith("@sms.linqapp.com"))
+
+
+def _apple_id_style_handle(phone_number: str) -> bool:
+    """Linq handle is a real email (e.g. user@icloud.com), not a +E.164 phone mapped to @sms.linqapp.com."""
+    if "@" not in phone_number:
+        return False
+    return not phone_number.strip().lower().endswith("@sms.linqapp.com")
+
+
+def _welcome_for_handle(phone_number: str) -> str:
+    """Shorter app hints for Apple ID / iCloud handles; full guidance for SMS phone users."""
+    if _apple_id_style_handle(phone_number):
+        return _WELCOME_BODY + _WELCOME_APP_HINT_APPLE
+    return WELCOME_TEXT
+
+
 def _format_event_dt(iso: str, user_tz: str | None) -> str:
     """Format an ISO datetime string for display in the user's local timezone."""
     try:
@@ -76,28 +95,35 @@ def _verify_signature(raw_body: bytes, timestamp: str, signature: str) -> None:
 # Background task — runs after 200 is returned to Linq
 # ---------------------------------------------------------------------------
 
-WELCOME_TEXT = (
+_WELCOME_BODY = (
     "Hey! I'm your AI calendar assistant 👋\n\n"
     "Just message me naturally to manage your schedule:\n"
     "• \"Schedule a meeting tomorrow at 3pm\"\n"
     "• \"Move my 2pm to Friday\"\n"
     "• \"What do I have this week?\"\n"
     "• \"Delete my dentist appointment\"\n\n"
+)
+
+_WELCOME_APP_HINT = (
+    "— Calendar AI app —\n"
+    "Already signed up in the app? Type:\n"
+    "link <your-email>\n"
+    "(connects this chat to that account.)\n\n"
+    "New to the app? Set a password, then log in with the same email we show you:\n"
+    "set password <your-password>\n"
+    "(After that, type my email anytime to copy your login email.)\n\n"
     "Type help anytime to see all commands."
 )
 
-WELCOME_TEXT_SMS = (
-    "Hey! I'm your AI calendar assistant 👋\n\n"
-    "Just message me naturally to manage your schedule:\n"
-    "• \"Schedule a meeting tomorrow at 3pm\"\n"
-    "• \"Move my 2pm to Friday\"\n"
-    "• \"What do I have this week?\"\n"
-    "• \"Delete my dentist appointment\"\n\n"
-    "Already have an account? Type:\n"
-    "link <your-email>\n"
-    "to connect this number to your existing account.\n\n"
+# iMessage / Apple ID handles: login email is already their handle — less copy than SMS synthetic path
+_WELCOME_APP_HINT_APPLE = (
+    "— Calendar AI app —\n"
+    "Already use the app? Type: link <your-email> to connect this chat.\n"
+    "Need a password for the app? Type: set password <your-password>\n\n"
     "Type help anytime to see all commands."
 )
+
+WELCOME_TEXT = _WELCOME_BODY + _WELCOME_APP_HINT
 
 
 async def _handle_chat_created(chat_id: str, phone_number: str, event_id: str | None) -> None:
@@ -112,8 +138,7 @@ async def _handle_chat_created(chat_id: str, phone_number: str, event_id: str | 
             if user.linq_chat_id != chat_id:
                 from models import UserUpdate
                 await linq_service.user_adapter.update_user(user.id, UserUpdate(linq_chat_id=chat_id))
-            welcome = WELCOME_TEXT_SMS if phone_number.startswith("+") else WELCOME_TEXT
-            await linq_service.send_message(chat_id, welcome)
+            await linq_service.send_message(chat_id, _welcome_for_handle(phone_number))
         except Exception as e:
             logger.error(f"Error sending welcome [{label}]: {e}", exc_info=True)
             try:
@@ -168,14 +193,40 @@ async def _handle_message(chat_id: str, phone_number: str, text: str, event_id: 
                 reply = HELP_TEXT
 
             elif lower in ("start", "welcome", "hi", "hello"):
-                reply = WELCOME_TEXT_SMS if phone_number.startswith("+") else WELCOME_TEXT
+                reply = _welcome_for_handle(phone_number)
+
+            elif lower == "my email":
+                em = (user.email or "").strip() or "(none on file)"
+                if _is_sms_synthetic_email(em):
+                    reply = (
+                        "Your app login email (copy this into Calendar AI):\n"
+                        f"{em}\n\n"
+                        "You need a password before sign-in works. If you haven’t set one yet, send:\n"
+                        "set password <your-password>\n"
+                        "Then open the app and sign in with this email and that password.\n\n"
+                        "Already have an account under another email? Use link <that-email> instead."
+                    )
+                else:
+                    reply = (
+                        "Your app login email (copy this into Calendar AI):\n"
+                        f"{em}\n\n"
+                        "Use this email with your app password. "
+                        "If you haven’t set one yet, send: set password <your-password>\n\n"
+                        "Already have an account under a different email? Use: link <that-email>"
+                    )
 
             elif lower.startswith("link "):
                 email = text.strip()[len("link "):].strip()
                 ok = await linq_svc.link_account(user.id, email, phone_number)
                 reply = (
-                    f"Linked! Your phone is now connected to {email}. "
-                    "Future messages will use that account."
+                    (
+                        f"Linked! Your phone is now connected to {email}. "
+                        "Future messages will use that account.\n\n"
+                        "Log in to the Calendar AI app with:\n"
+                        f"Email: {email}\n"
+                        "Password: the one you use for that account. "
+                        "If you haven’t set an app password yet, send: set password <your-password>"
+                    )
                     if ok
                     else f"No account found for {email}. Make sure you're using the email you registered with."
                 )
@@ -185,9 +236,12 @@ async def _handle_message(chat_id: str, phone_number: str, text: str, event_id: 
                 ok = await linq_svc.update_user_password(user.id, pwd)
                 if ok:
                     reply = (
-                        f"Password set! Log in to the app with:\n"
+                        "Password set! Open Calendar AI and sign in with:\n"
                         f"Email: {user.email}\n"
-                        f"Password: (the one you just set)"
+                        "Password: the one you just sent above.\n\n"
+                        "Already have an account in the app under a different email? "
+                        "Use link <that-email> next time instead — that merges this chat into your existing account.\n\n"
+                        "Need the email line again? Type: my email"
                     )
                 else:
                     reply = "Password must be at least 6 characters. Please try again."
