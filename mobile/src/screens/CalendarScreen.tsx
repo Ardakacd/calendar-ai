@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useMemo, useCallback } from "react";
-import { View, StyleSheet, Alert, FlatList, RefreshControl } from "react-native";
+import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
+import { View, StyleSheet, Alert, FlatList, RefreshControl, AppState } from "react-native";
 import { Text, FAB, ActivityIndicator, IconButton } from "react-native-paper";
 import { Calendar, DateData } from "react-native-calendars";
 import { useFocusEffect, useNavigation, useRoute, RouteProp } from "@react-navigation/native";
@@ -52,8 +52,19 @@ export default function CalendarScreen() {
   useFocusEffect(
     useCallback(() => {
       loadEvents();
-    }, [])
+    }, [loadEvents])
   );
+
+  const appState = useRef(AppState.currentState);
+  useEffect(() => {
+    const sub = AppState.addEventListener("change", (nextState) => {
+      if (appState.current.match(/inactive|background/) && nextState === "active") {
+        loadEvents();
+      }
+      appState.current = nextState;
+    });
+    return () => sub.remove();
+  }, [loadEvents]);
 
   const loadEvents = useCallback(async () => {
     try {

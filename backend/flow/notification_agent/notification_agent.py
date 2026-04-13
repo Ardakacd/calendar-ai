@@ -32,6 +32,9 @@ async def notification_agent(state: FlowState):
     operation = state.get("scheduling_operation")
     scheduling_result = state.get("scheduling_result") or {}
 
+    # Email notifications disabled until Resend domain is verified
+    return {}
+
     # Skip: not a mutation, not successful, or conflict/clarification pending
     if operation not in _NOTIFIABLE_OPERATIONS:
         return {}

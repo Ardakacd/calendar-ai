@@ -248,29 +248,49 @@ async def suggest_alternative_times_impl(
         )
         
         free_slots = free_slots_result.get("free_slots", [])
-        
-        # Convert to suggestions format
+
+        # Each "free slot" from find_free_slots_impl is one contiguous block, which can span
+        # hours or even days on a mostly-empty calendar.  Break each block into multiple
+        # candidate start-times spaced by duration so we can offer several suggestions.
+        candidate_times: list[tuple[datetime, float]] = []
+        for slot in free_slots:
+            block_start = datetime.fromisoformat(slot["startDate"])
+            block_end = datetime.fromisoformat(slot["endDate"])
+            # Walk through the block in duration-sized steps
+            t = block_start
+            while t + timedelta(minutes=duration_minutes) <= block_end + timedelta(seconds=1):
+                quality = _calculate_slot_quality(t, preferred_times=None)
+                candidate_times.append((t, quality))
+                t += timedelta(minutes=duration_minutes)
+
+        # Sort by quality desc, then by proximity to requested start
+        candidate_times.sort(key=lambda x: (-x[1], (x[0] - requested_startDate).total_seconds()))
+
+        # Deduplicate (shouldn't happen, but guard against overlapping blocks)
+        seen: set[str] = set()
         suggestions = []
-        for slot in free_slots[:max_suggestions]:
-            slot_start = datetime.fromisoformat(slot["startDate"])
+        for slot_start, quality in candidate_times:
+            key = slot_start.isoformat()
+            if key in seen:
+                continue
+            seen.add(key)
             slot_end = slot_start + timedelta(minutes=duration_minutes)
-            
-            # Generate reason
             hours_diff = (slot_start - requested_startDate).total_seconds() / 3600
             if hours_diff < 1:
                 reason = "Available within the next hour"
             elif hours_diff < 24:
-                reason = f"Available {int(hours_diff)} hours later"
+                reason = f"Available {int(hours_diff)} hours later today"
             else:
                 days_diff = int(hours_diff / 24)
                 reason = f"Available {days_diff} day(s) later"
-            
             suggestions.append({
                 "startDate": slot_start.isoformat(),
                 "endDate": slot_end.isoformat(),
                 "reason": reason,
-                "confidence": slot["quality_score"]
+                "confidence": quality,
             })
+            if len(suggestions) >= max_suggestions:
+                break
         
         # If no suggestions found, try next day same time
         if not suggestions:

@@ -154,10 +154,6 @@ async def _handle_message_failed(message_id: str, error: str, event_id: str | No
 
 
 async def _handle_message(chat_id: str, phone_number: str, text: str, event_id: str | None) -> None:
-    if event_id and not await _mark_processed(event_id):
-        logger.info(f"Duplicate message.received ignored: event_id={event_id}")
-        return
-
     label = _handle_label(phone_number)
     reply = "Something went wrong. Please try again in a moment."
     reply_effect: str | None = None
@@ -271,7 +267,7 @@ async def _handle_message(chat_id: str, phone_number: str, text: str, event_id: 
                 )
                 reply = result.get("message") or "I couldn't process that. Please try again."
 
-                if result.get("type") == "create":
+                if result.get("type") == "create" and result.get("success") and not result.get("has_conflict"):
                     reply_effect = "confetti"
 
                 # Append formatted event list for LIST responses

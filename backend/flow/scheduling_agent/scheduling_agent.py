@@ -279,9 +279,9 @@ async def _handle_create(state: FlowState, system_prompt: str) -> dict:
         "duration_minutes": first["duration_minutes"],
     }
 
-    titles_fmt = ", ".join(f"“{e['title']}”" for e in events_data)
+    titles_fmt = ", ".join(f'"{e["title"]}"' for e in events_data)
     if has_recurrence:
-        ack = f"Got it — I’ll set up {titles_fmt} as recurring on your calendar."
+        ack = f"Got it — I'll set up {titles_fmt} as recurring on your calendar."
     else:
         ack = f"Got it — adding {titles_fmt}. Checking the time for conflicts…"
 
@@ -335,7 +335,7 @@ async def _handle_update(state: FlowState, system_prompt: str, tools_map: dict) 
     filtered_events = await _filter_events(all_events, state['input_text'], intent="find the event to update", context=filter_context)
 
     if not filtered_events:
-        msg = "I couldn’t find anything that matches. A bit more detail (title, date, or place) would help."
+        msg = "I couldn't find anything that matches. A bit more detail (title, date, or place) would help."
         return {
             "scheduling_messages": [AIMessage(content=msg)],
             "scheduling_result": {"message": msg, "success": False},
@@ -372,7 +372,7 @@ async def _handle_update(state: FlowState, system_prompt: str, tools_map: dict) 
         }
 
     if not plan.event_ids:
-        msg = "I’m not sure which event you mean — which title or time should I change?"
+        msg = "I'm not sure which event you mean — which title or time should I change?"
         return {
             "scheduling_messages": [AIMessage(content=msg)],
             "scheduling_result": {"message": msg, "success": False},
@@ -492,7 +492,7 @@ async def _handle_delete(state: FlowState, system_prompt: str, tools_map: dict) 
     )
 
     if not filtered_events:
-        msg = "I couldn’t find any events that match."
+        msg = "I couldn't find any events that match."
         return {
             "scheduling_messages": [AIMessage(content=msg)],
             "scheduling_result": {"message": msg, "success": False},
@@ -617,13 +617,13 @@ async def _delete_events(
             ev0 = deleted_events[0]
             t0 = _event_start_iso(ev0)
             when = f" ({_format_suggestion_dt(t0, display_tz)})" if t0 else ""
-            msg = f"Done — removed “{ev0.get('title')}”{when} from your calendar."
+            msg = f'Done — removed "{ev0.get("title")}"{when} from your calendar.'
         elif len(deleted_events) == 2:
             ev0, ev1 = deleted_events[0], deleted_events[1]
             w0 = f" ({_format_suggestion_dt(_event_start_iso(ev0), display_tz)})" if _event_start_iso(ev0) else ""
             w1 = f" ({_format_suggestion_dt(_event_start_iso(ev1), display_tz)})" if _event_start_iso(ev1) else ""
             msg = (
-                f"Done — removed “{ev0.get('title')}”{w0} and “{ev1.get('title')}”{w1} from your calendar."
+                f'Done — removed "{ev0.get("title")}"{w0} and "{ev1.get("title")}"{w1} from your calendar.'
             )
         else:
             msg = f"Done — removed {len(deleted_events)} events from your calendar."
@@ -647,7 +647,7 @@ async def _delete_series(recurrence_id: str, user_id: int, from_date=None, title
     """Delete an entire recurring series (or all future occurrences) directly via the adapter."""
     from database.config import get_async_db_context_manager
     from adapter.event_adapter import EventAdapter
-    display = f"“{title}”" if title else "this series"
+    display = f'"{title}"' if title else "this series"
     try:
         async with get_async_db_context_manager() as db:
             adapter = EventAdapter(db)
@@ -714,7 +714,7 @@ async def _handle_list(state: FlowState, system_prompt: str, tools_map: dict) ->
         }
 
     count = len(filtered_events)
-    msg = f"Here’s what I found — {count} event{'s' if count != 1 else ''}."
+    msg = f"Here's what I found — {count} event{'s' if count != 1 else ''}."
 
     return {
         "scheduling_operation": "list",
@@ -787,7 +787,7 @@ async def scheduling_finalize(state: FlowState):
 
     # Conflict check failed (e.g. rate limit) — do not execute, ask user to retry
     if conflict_result and conflict_result.get('check_failed'):
-        msg = "I couldn’t check your calendar for conflicts just now. Try again in a moment."
+        msg = "I couldn't check your calendar for conflicts just now. Try again in a moment."
         return {
             "scheduling_result": {"message": msg, "success": False},
             "scheduling_messages": [AIMessage(content=msg)],
@@ -821,7 +821,7 @@ async def scheduling_finalize(state: FlowState):
         suggestions = conflict_result.get('suggestions', [])
         conflicting = conflict_result.get('conflicting_events', [])
 
-        conflict_titles = " and ".join(f"“{e.get('title', 'another event')}”" for e in conflicting) if conflicting else "another event"
+        conflict_titles = " and ".join(f'"{e.get("title", "another event")}"' for e in conflicting) if conflicting else "another event"
         msg = f"That time overlaps with {conflict_titles}."
         if suggestions:
             lines = ["\n\nHere are some open slots nearby:"]
@@ -829,10 +829,13 @@ async def scheduling_finalize(state: FlowState):
                 start = _format_suggestion_dt(s.get('startDate'), display_tz)
                 end = _format_suggestion_dt(s.get('endDate'), display_tz)
                 lines.append(f"  {i}. {start} – {end}")
-            lines.append("\nPick one of these, or tell me another time you’d like.")
+            if len(suggestions) == 1:
+                lines.append("\nWould you like this time instead, or tell me another time you'd like?")
+            else:
+                lines.append("\nPick one of these, or tell me another time you'd like.")
             msg += "\n".join(lines)
         else:
-            msg += " I couldn’t find open slots nearby — try another day or time?"
+            msg += " I couldn't find open slots nearby — try another day or time?"
         return {
             "scheduling_result": {
                 "message": msg,
@@ -905,12 +908,12 @@ async def _execute_create(event_data: dict, tools_map: dict, display_tz: Optiona
             title = ev.get('title', 'the event')
             n = len(conflicts)
             lines = [
-                f"Couldn’t add “{title}” — {n} proposed time{'s' if n != 1 else ''} overlap something already on your calendar:"
+                f'Couldn\'t add "{title}" — {n} proposed time{"s" if n != 1 else ""} overlap something already on your calendar:'
             ]
             for c in conflicts:
                 start_fmt = _format_suggestion_dt(c.get("startDate"), display_tz)
                 lines.append(
-                    f"  • Occurrence {c['index'] + 1} ({start_fmt}) — overlaps with “{c['conflicting_title']}”"
+                    f'  • Occurrence {c["index"] + 1} ({start_fmt}) — overlaps with "{c["conflicting_title"]}"'
                 )
             lines.append("\nNothing was added. Want to try different times?")
             msg = "\n".join(lines)
@@ -930,9 +933,9 @@ async def _execute_create(event_data: dict, tools_map: dict, display_tz: Optiona
             freq = r.get('recurrence_type', '')
             freq_label = f"{freq} " if freq else ""
             occ_label = f"{n} {freq_label}occurrence{'s' if n != 1 else ''}"
-            msg = f"Done — “{title}” is on your calendar ({occ_label}), starting {start_fmt}."
+            msg = f'Done — "{title}" is on your calendar ({occ_label}), starting {start_fmt}.'
         else:
-            msg = f"Done — “{title}” is on your calendar for {start_fmt}."
+            msg = f'Done — "{title}" is on your calendar for {start_fmt}.'
     else:
         lines = [f"Done — added {len(created)} events:"]
         for e in created:
@@ -941,9 +944,11 @@ async def _execute_create(event_data: dict, tools_map: dict, display_tz: Optiona
             if n:
                 freq = e.get('recurrence_type', '')
                 freq_label = f"{freq} " if freq else ""
-                lines.append(f"  • “{e.get('title', '')}” — {n} {freq_label}occurrence{'s' if n != 1 else ''} from {start_fmt}")
+                lines.append(
+                    f'  • "{e.get("title", "")}" — {n} {freq_label}occurrence{"s" if n != 1 else ""} from {start_fmt}'
+                )
             else:
-                lines.append(f"  • “{e.get('title', '')}” — {start_fmt}")
+                lines.append(f'  • "{e.get("title", "")}" — {start_fmt}')
         msg = "\n".join(lines)
 
     return {
@@ -975,7 +980,7 @@ async def _execute_update(
             updated.append(result['event'])
 
     if not updated:
-        msg = "Couldn’t update that event — it may have been removed, or you may not have access."
+        msg = "Couldn't update that event — it may have been removed, or you may not have access."
         return {
             "scheduling_result": {"message": msg, "success": False},
             "scheduling_messages": [AIMessage(content=msg)],
@@ -1074,7 +1079,7 @@ async def _execute_series_update(
         }
 
     if not updated:
-        msg = "Couldn’t find that series — it may have been removed already."
+        msg = "Couldn't find that series — it may have been removed already."
         return {
             "scheduling_result": {"message": msg, "success": False},
             "scheduling_messages": [AIMessage(content=msg)],

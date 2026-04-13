@@ -22,20 +22,12 @@ export const linking = {
   config: {
     screens: {
       Home: "",
-      Calendar: [
-        {
-          path: "calendar/:eventId",
-          parse: {
-            eventId: (eventId: string) => eventId,
-          },
+      Calendar: {
+        path: "calendar/:eventId?",
+        parse: {
+          eventId: (eventId?: string) => eventId ?? undefined,
         },
-        {
-          path: "calendar",
-          parse: {
-            eventId: (eventId?: string) => eventId ?? undefined,
-          },
-        },
-      ],
+      },
       Profile: "profile",
     },
   },

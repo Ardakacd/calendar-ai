@@ -71,6 +71,10 @@ const AppContent: React.FC = () => {
         return () => clearTimeout(t);
     }, [isAuthenticated, isLoading]);
 
+    const onNavigationReady = useCallback(() => {
+        flushPendingDeepLink();
+    }, []);
+
     if (isLoading) {
         return (
             <View style={styles.loadingContainer}>
@@ -92,11 +96,6 @@ const AppContent: React.FC = () => {
             </View>
         );
     }
-
-    // If authenticated, show main app with navigation
-    const onNavigationReady = useCallback(() => {
-        flushPendingDeepLink();
-    }, []);
 
     return (
         <NavigationContainer ref={navigationRef} linking={linking} onReady={onNavigationReady}>
