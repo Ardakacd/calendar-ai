@@ -263,6 +263,11 @@ class CalendarAPI {
     }
   }
 
+  async getEventById(eventId: string): Promise<Event> {
+    const response = await this.api.get(`/events/${eventId}`);
+    return response.data;
+  }
+
   async addEvent(event: EventCreate): Promise<Event> {
     try {
       const response = await this.api.post("/events", event);
@@ -423,6 +428,7 @@ export const useCalendarAPI = () => {
     // Calendar
     transcribeAudio: calendarAPI.transcribeAudio.bind(calendarAPI),
     getEvents: calendarAPI.getEvents.bind(calendarAPI),
+    getEventById: calendarAPI.getEventById.bind(calendarAPI),
     addEvent: calendarAPI.addEvent.bind(calendarAPI),
     addEvents: calendarAPI.addEvents.bind(calendarAPI),
     updateEvent: calendarAPI.updateEvent.bind(calendarAPI),

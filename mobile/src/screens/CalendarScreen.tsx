@@ -30,41 +30,7 @@ export default function CalendarScreen() {
   const [selectedEvent, setSelectedEvent] = useState<Event | null>(null);
   const [addModalVisible, setAddModalVisible] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-  const { getEvents, updateEvent, updateSeries, deleteEvent, deleteSeries, addEvent } = useCalendarAPI();
-
-  // Deep link: calendarai://calendar?eventId=… or calendarai://calendar/<id>
-  useEffect(() => {
-    const eventId = route.params?.eventId;
-    if (!eventId || loading) return;
-    const ev = events.find((e) => e.id === eventId);
-    if (!ev) {
-      showErrorToast("Event not found or no longer available");
-      navigation.setParams({ eventId: undefined });
-      return;
-    }
-    const key = getDateKey(ev.startDate);
-    if (key) setSelectedDate(key);
-    setSelectedEvent(ev);
-    setUpdateModalVisible(true);
-    navigation.setParams({ eventId: undefined });
-  }, [loading, route.params?.eventId, events, navigation]);
-
-  useFocusEffect(
-    useCallback(() => {
-      loadEvents();
-    }, [loadEvents])
-  );
-
-  const appState = useRef(AppState.currentState);
-  useEffect(() => {
-    const sub = AppState.addEventListener("change", (nextState) => {
-      if (appState.current.match(/inactive|background/) && nextState === "active") {
-        loadEvents();
-      }
-      appState.current = nextState;
-    });
-    return () => sub.remove();
-  }, [loadEvents]);
+  const { getEvents, getEventById, updateEvent, updateSeries, deleteEvent, deleteSeries, addEvent } = useCalendarAPI();
 
   const loadEvents = useCallback(async () => {
     try {
@@ -77,6 +43,44 @@ export default function CalendarScreen() {
       setLoading(false);
     }
   }, [getEvents]);
+
+  // Deep link: fetch the specific event by ID and open it directly.
+  // Uses a ref to guard against double-firing (strict mode / param flicker).
+  const handledDeepLinkRef = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    const eventId = route.params?.eventId;
+    if (!eventId || eventId === handledDeepLinkRef.current) return;
+    handledDeepLinkRef.current = eventId;
+    navigation.setParams({ eventId: undefined });
+    getEventById(eventId)
+      .then((ev) => {
+        const key = getDateKey(ev.startDate);
+        if (key) setSelectedDate(key);
+        setSelectedEvent(ev);
+        setUpdateModalVisible(true);
+      })
+      .catch(() => {
+        showErrorToast("Event not found or no longer available");
+      });
+  }, [route.params?.eventId, navigation, getEventById]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useFocusEffect(
+    useCallback(() => {
+      loadEvents();
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [])
+  );
+
+  const appState = useRef(AppState.currentState);
+  useEffect(() => {
+    const sub = AppState.addEventListener("change", (nextState) => {
+      if (appState.current.match(/inactive|background/) && nextState === "active") {
+        loadEvents();
+      }
+      appState.current = nextState;
+    });
+    return () => sub.remove();
+  }, [loadEvents]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -327,7 +331,7 @@ export default function CalendarScreen() {
     </View>
   );
 
-  if (loading) {
+  if (loading && events.length === 0) {
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator animating color={Colors.primary} size="large" />

@@ -145,7 +145,7 @@ async def send_event_reminders() -> None:
       - Clears stale push tokens for permanent device failures (DeviceNotRegistered).
     """
     now = datetime.now(timezone.utc)
-    window_start = now + timedelta(minutes=REMINDER_WINDOW_MINUTES)
+    window_start = now
     window_end = now + timedelta(minutes=REMINDER_WINDOW_MINUTES + REMINDER_LOOKAHEAD_MINUTES)
 
     logger.info(
@@ -167,10 +167,18 @@ async def send_event_reminders() -> None:
 
     for event, push_token, user_tz in triples:
         time_str = _format_time(event.startDate, user_tz)
+        event_start = event.startDate if event.startDate.tzinfo else event.startDate.replace(tzinfo=timezone.utc)
+        minutes_until = max(0, int((event_start - now).total_seconds() / 60))
+        if minutes_until <= 2:
+            countdown = "starting now"
+        elif minutes_until <= 5:
+            countdown = f"in {minutes_until} minutes"
+        else:
+            countdown = f"in about {minutes_until} minutes"
         messages.append({
             "to": push_token,
             "title": f"⏰ {event.title}",
-            "body": f"Starting at {time_str} — in about {REMINDER_WINDOW_MINUTES} minutes",
+            "body": f"Starting at {time_str} — {countdown}",
             "sound": "default",
             "data": {"event_id": event.id},
         })
