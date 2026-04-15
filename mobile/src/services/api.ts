@@ -3,9 +3,13 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { getUserDateTime } from "../utils/datetime/get_current_time";
 import { Event, EventCreate, SeriesUpdateRequest, SeriesUpdateResponse, SeriesDeleteResponse } from "../models/event";
 
-// Set EXPO_PUBLIC_API_URL in a .env file (e.g. http://192.168.1.x:8000 on same WiFi) or `expo start` env.
-// Physical devices cannot reach localhost on your Mac; use LAN IP or a running ngrok URL.
-const API_BASE_URL = "http://192.168.1.145:8000";
+// Set EXPO_PUBLIC_API_URL in mobile/.env (see mobile/.env.example). Restart Metro with --clear after changes.
+// Physical devices cannot reach localhost on your Mac; use your machine's LAN IP or an ngrok URL.
+const API_BASE_URL = (() => {
+  const raw = process.env.EXPO_PUBLIC_API_URL?.trim();
+  if (raw) return raw.replace(/\/$/, "");
+  return "http://localhost:8000";
+})();
 
 // Token storage keys
 const ACCESS_TOKEN_KEY = "access_token";

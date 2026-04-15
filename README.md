@@ -52,6 +52,8 @@ npx expo start
 
 Scan the QR code with the **Expo Go** app on your phone.
 
+Configure the backend URL by copying `mobile/.env.example` to `mobile/.env` and setting **`EXPO_PUBLIC_API_URL`** (API base URL, no trailing slash). On a physical device, use your computer’s LAN IP (for example `http://192.168.1.10:8000`) so the phone can reach the API; `localhost` only works on simulators. Restart Metro with `npx expo start --clear` after changing env vars.
+
 > To run on a simulator, you need to build a dev build first:
 > ```bash
 > npx expo run:ios    # iOS simulator
@@ -95,3 +97,13 @@ NOTIFICATION_FROM_EMAIL=onboarding@resend.dev
 | `NOTIFICATION_FROM_EMAIL` | No | Sender address (defaults to `onboarding@resend.dev`) |
 
 > **Note:** `TAVILY_API_KEY` and `RESEND_API_KEY` are optional. The app works without them — leisure search and email notifications will simply be disabled.
+
+### Mobile (`mobile/.env`)
+
+Create `mobile/.env` from `mobile/.env.example`:
+
+| Variable | Required | Description |
+|---|---|---|
+| `EXPO_PUBLIC_API_URL` | No | Backend API base URL (defaults to `http://localhost:8000` if unset). Use your machine’s LAN IP when testing on a real device. |
+
+Expo only exposes variables prefixed with `EXPO_PUBLIC_` to the app bundle.
