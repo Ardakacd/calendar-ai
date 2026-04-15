@@ -28,9 +28,11 @@ pip install -r requirements.txt
 # Start Redis (required for session management)
 docker compose up -d
 
-# Run the server
-ENV=development uvicorn main:app --reload --host 0.0.0.0 --port 8000
+# Run the server (listen on all interfaces so phones on the LAN can reach it)
+.venv/bin/uvicorn main:app --reload --host 0.0.0.0 --port 8000
 ```
+
+If the virtual environment is activated (`source .venv/bin/activate`), you can use `uvicorn main:app --reload --host 0.0.0.0 --port 8000` instead. To force which env file is loaded, prefix with `ENV=development` (or `staging` / `production`) to match `backend/.env.<ENV>`.
 
 The API will be available at `http://localhost:8000`.
 
