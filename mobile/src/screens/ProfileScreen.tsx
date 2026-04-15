@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useLayoutEffect } from "react";
 import {
   View,
   StyleSheet,
@@ -8,15 +8,33 @@ import {
   Platform,
   TouchableOpacity,
 } from "react-native";
-import { Text, Avatar, TextInput } from "react-native-paper";
+import { Text, Avatar, TextInput, IconButton } from "react-native-paper";
 import { MaterialIcons } from "@expo/vector-icons";
 import { useAuth } from "../contexts/AuthContext";
 import { useCalendarAPI } from "../services/api";
 import { showSuccessToast, showErrorToast } from "../common/toast/toast-message";
 import { Colors, Radius, Shadow } from "../theme";
+import { useNavigation } from "@react-navigation/native";
+import type { StackNavigationProp } from "@react-navigation/stack";
+import type { RootStackParamList } from "../navigation/types";
 
 export default function ProfileScreen() {
+  const navigation = useNavigation<StackNavigationProp<RootStackParamList, "Profile">>();
   const { user, logout } = useAuth();
+
+  useLayoutEffect(() => {
+    navigation.setOptions({
+      headerRight: () => (
+        <IconButton
+          icon="chat-outline"
+          iconColor="#6366F1"
+          size={24}
+          onPress={() => navigation.navigate("Home")}
+          accessibilityLabel="Open assistant"
+        />
+      ),
+    });
+  }, [navigation]);
   const { changePassword } = useCalendarAPI();
   const [isChangingPassword, setIsChangingPassword] = useState(false);
   const [currentPassword, setCurrentPassword] = useState("");

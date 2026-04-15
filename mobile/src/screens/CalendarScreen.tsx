@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
+import React, { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback } from "react";
 import { View, StyleSheet, Alert, FlatList, RefreshControl, AppState } from "react-native";
 import { Text, FAB, ActivityIndicator, IconButton } from "react-native-paper";
 import { Calendar, DateData } from "react-native-calendars";
@@ -21,6 +21,21 @@ type CalendarNavigation = StackNavigationProp<RootStackParamList, "Calendar">;
 export default function CalendarScreen() {
   const route = useRoute<CalendarRoute>();
   const navigation = useNavigation<CalendarNavigation>();
+
+  useLayoutEffect(() => {
+    navigation.setOptions({
+      headerRight: () => (
+        <IconButton
+          icon="chat-outline"
+          iconColor="#6366F1"
+          size={24}
+          onPress={() => navigation.navigate("Home")}
+          accessibilityLabel="Open assistant"
+        />
+      ),
+    });
+  }, [navigation]);
+
   const [events, setEvents] = useState<Event[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedDate, setSelectedDate] = useState(

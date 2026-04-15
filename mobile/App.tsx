@@ -121,12 +121,11 @@ const AppContent: React.FC = () => {
                     },
                 }}
             >
-                {/* Home (AI chat) screen hidden for demo — messaging is the main interface */}
-                {/* <Stack.Screen
+                <Stack.Screen
                     name="Home"
                     component={HomeScreen}
-                    options={{headerShown: false}}
-                /> */}
+                    options={{ headerShown: false, title: "Assistant" }}
+                />
                 <Stack.Screen
                     name="Calendar"
                     component={CalendarScreen}
