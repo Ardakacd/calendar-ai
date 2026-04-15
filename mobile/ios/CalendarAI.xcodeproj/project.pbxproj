@@ -7,27 +7,27 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		0466E5EE9AC3B94A12C9FEC1 /* libPods-CalendarAI.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 022F16AFD2E9C513FA80E808 /* libPods-CalendarAI.a */; };
 		13B07FBF1A68108700A75B9A /* Images.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 13B07FB51A68108700A75B9A /* Images.xcassets */; };
+		30C408D2CE895C086646DCE1 /* ExpoModulesProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 361A115B613CB3F247D9DEE2 /* ExpoModulesProvider.swift */; };
 		3E461D99554A48A4959DE609 /* SplashScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = AA286B85B6C04FC6940260E9 /* SplashScreen.storyboard */; };
-		4AE709930DA8E6854E06B283 /* ExpoModulesProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF86057EECA5B5B81DFFE1D2 /* ExpoModulesProvider.swift */; };
-		93E4CB1994D7BFD8C97CD9EE /* libPods-CalendarAI.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 57309FEF53D1C29E6C043643 /* libPods-CalendarAI.a */; };
+		59FDD896902D7F9D78B4492D /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 3138C396EE1714CFAAF2263A /* PrivacyInfo.xcprivacy */; };
 		BB2F792D24A3F905000567C9 /* Expo.plist in Resources */ = {isa = PBXBuildFile; fileRef = BB2F792C24A3F905000567C9 /* Expo.plist */; };
-		DA9318385FFC4850159AA1CB /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 2CECF6C5FF15F0C0775A54D5 /* PrivacyInfo.xcprivacy */; };
 		F11748422D0307B40044C1D9 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = F11748412D0307B40044C1D9 /* AppDelegate.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		022F16AFD2E9C513FA80E808 /* libPods-CalendarAI.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = "libPods-CalendarAI.a"; sourceTree = BUILT_PRODUCTS_DIR; };
 		13B07F961A680F5B00A75B9A /* CalendarAI.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = CalendarAI.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		13B07FB51A68108700A75B9A /* Images.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; name = Images.xcassets; path = CalendarAI/Images.xcassets; sourceTree = "<group>"; };
 		13B07FB61A68108700A75B9A /* Info.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; name = Info.plist; path = CalendarAI/Info.plist; sourceTree = "<group>"; };
-		23A81025C6574C1704871ACE /* Pods-CalendarAI.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-CalendarAI.release.xcconfig"; path = "Target Support Files/Pods-CalendarAI/Pods-CalendarAI.release.xcconfig"; sourceTree = "<group>"; };
-		2CECF6C5FF15F0C0775A54D5 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; includeInIndex = 1; name = PrivacyInfo.xcprivacy; path = CalendarAI/PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
-		57309FEF53D1C29E6C043643 /* libPods-CalendarAI.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = "libPods-CalendarAI.a"; sourceTree = BUILT_PRODUCTS_DIR; };
-		A113B8151FDF39A8FFBFCCB7 /* Pods-CalendarAI.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-CalendarAI.debug.xcconfig"; path = "Target Support Files/Pods-CalendarAI/Pods-CalendarAI.debug.xcconfig"; sourceTree = "<group>"; };
+		1498476030CAED71B522CFF7 /* Pods-CalendarAI.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-CalendarAI.release.xcconfig"; path = "Target Support Files/Pods-CalendarAI/Pods-CalendarAI.release.xcconfig"; sourceTree = "<group>"; };
+		1ABEC196DA77E55CC2D853B0 /* Pods-CalendarAI.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-CalendarAI.debug.xcconfig"; path = "Target Support Files/Pods-CalendarAI/Pods-CalendarAI.debug.xcconfig"; sourceTree = "<group>"; };
+		3138C396EE1714CFAAF2263A /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; includeInIndex = 1; name = PrivacyInfo.xcprivacy; path = CalendarAI/PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		361A115B613CB3F247D9DEE2 /* ExpoModulesProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ExpoModulesProvider.swift; path = "Pods/Target Support Files/Pods-CalendarAI/ExpoModulesProvider.swift"; sourceTree = "<group>"; };
 		AA286B85B6C04FC6940260E9 /* SplashScreen.storyboard */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = file.storyboard; name = SplashScreen.storyboard; path = CalendarAI/SplashScreen.storyboard; sourceTree = "<group>"; };
 		BB2F792C24A3F905000567C9 /* Expo.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; path = Expo.plist; sourceTree = "<group>"; };
 		ED297162215061F000B7C4FE /* JavaScriptCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = JavaScriptCore.framework; path = System/Library/Frameworks/JavaScriptCore.framework; sourceTree = SDKROOT; };
-		EF86057EECA5B5B81DFFE1D2 /* ExpoModulesProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ExpoModulesProvider.swift; path = "Pods/Target Support Files/Pods-CalendarAI/ExpoModulesProvider.swift"; sourceTree = "<group>"; };
 		F11748412D0307B40044C1D9 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AppDelegate.swift; path = CalendarAI/AppDelegate.swift; sourceTree = "<group>"; };
 		F11748442D0722820044C1D9 /* CalendarAI-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = "CalendarAI-Bridging-Header.h"; path = "CalendarAI/CalendarAI-Bridging-Header.h"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -37,7 +37,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				93E4CB1994D7BFD8C97CD9EE /* libPods-CalendarAI.a in Frameworks */,
+				0466E5EE9AC3B94A12C9FEC1 /* libPods-CalendarAI.a in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -53,7 +53,7 @@
 				13B07FB51A68108700A75B9A /* Images.xcassets */,
 				13B07FB61A68108700A75B9A /* Info.plist */,
 				AA286B85B6C04FC6940260E9 /* SplashScreen.storyboard */,
-				2CECF6C5FF15F0C0775A54D5 /* PrivacyInfo.xcprivacy */,
+				3138C396EE1714CFAAF2263A /* PrivacyInfo.xcprivacy */,
 			);
 			name = CalendarAI;
 			sourceTree = "<group>";
@@ -62,27 +62,9 @@
 			isa = PBXGroup;
 			children = (
 				ED297162215061F000B7C4FE /* JavaScriptCore.framework */,
-				57309FEF53D1C29E6C043643 /* libPods-CalendarAI.a */,
+				022F16AFD2E9C513FA80E808 /* libPods-CalendarAI.a */,
 			);
 			name = Frameworks;
-			sourceTree = "<group>";
-		};
-		37FA1645A940EE34E6171950 /* Pods */ = {
-			isa = PBXGroup;
-			children = (
-				A113B8151FDF39A8FFBFCCB7 /* Pods-CalendarAI.debug.xcconfig */,
-				23A81025C6574C1704871ACE /* Pods-CalendarAI.release.xcconfig */,
-			);
-			name = Pods;
-			path = Pods;
-			sourceTree = "<group>";
-		};
-		5E199525C7DC6FABEBBC249B /* CalendarAI */ = {
-			isa = PBXGroup;
-			children = (
-				EF86057EECA5B5B81DFFE1D2 /* ExpoModulesProvider.swift */,
-			);
-			name = CalendarAI;
 			sourceTree = "<group>";
 		};
 		832341AE1AAA6A7D00B99B32 /* Libraries */ = {
@@ -99,8 +81,8 @@
 				832341AE1AAA6A7D00B99B32 /* Libraries */,
 				83CBBA001A601CBA00E9B192 /* Products */,
 				2D16E6871FA4F8E400B85C8A /* Frameworks */,
-				37FA1645A940EE34E6171950 /* Pods */,
-				E4E5691DB6A4CB4C2926530C /* ExpoModulesProviders */,
+				E779A6FF1AE12EB064BF3823 /* Pods */,
+				A467076CF4ECCB7A9A81D5DA /* ExpoModulesProviders */,
 			);
 			indentWidth = 2;
 			sourceTree = "<group>";
@@ -115,6 +97,14 @@
 			name = Products;
 			sourceTree = "<group>";
 		};
+		A467076CF4ECCB7A9A81D5DA /* ExpoModulesProviders */ = {
+			isa = PBXGroup;
+			children = (
+				CE608D09C881DECD30266642 /* CalendarAI */,
+			);
+			name = ExpoModulesProviders;
+			sourceTree = "<group>";
+		};
 		BB2F792B24A3F905000567C9 /* Supporting */ = {
 			isa = PBXGroup;
 			children = (
@@ -124,12 +114,22 @@
 			path = CalendarAI/Supporting;
 			sourceTree = "<group>";
 		};
-		E4E5691DB6A4CB4C2926530C /* ExpoModulesProviders */ = {
+		CE608D09C881DECD30266642 /* CalendarAI */ = {
 			isa = PBXGroup;
 			children = (
-				5E199525C7DC6FABEBBC249B /* CalendarAI */,
+				361A115B613CB3F247D9DEE2 /* ExpoModulesProvider.swift */,
 			);
-			name = ExpoModulesProviders;
+			name = CalendarAI;
+			sourceTree = "<group>";
+		};
+		E779A6FF1AE12EB064BF3823 /* Pods */ = {
+			isa = PBXGroup;
+			children = (
+				1ABEC196DA77E55CC2D853B0 /* Pods-CalendarAI.debug.xcconfig */,
+				1498476030CAED71B522CFF7 /* Pods-CalendarAI.release.xcconfig */,
+			);
+			name = Pods;
+			path = Pods;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -140,13 +140,13 @@
 			buildConfigurationList = 13B07F931A680F5B00A75B9A /* Build configuration list for PBXNativeTarget "CalendarAI" */;
 			buildPhases = (
 				08A4A3CD28434E44B6B9DE2E /* [CP] Check Pods Manifest.lock */,
-				3BC13903979697A2D3F833F0 /* [Expo] Configure project */,
+				3CE2D3AF9FC0B3C3556AD579 /* [Expo] Configure project */,
 				13B07F871A680F5B00A75B9A /* Sources */,
 				13B07F8C1A680F5B00A75B9A /* Frameworks */,
 				13B07F8E1A680F5B00A75B9A /* Resources */,
 				00DD1BFF1BD5951E006B06BC /* Bundle React Native code and images */,
 				800E24972A6A228C8D4807E9 /* [CP] Copy Pods Resources */,
-				455561F0E9F1279FA7E27AFD /* [CP] Embed Pods Frameworks */,
+				DDF323FADE9D9C9153B6908B /* [CP] Embed Pods Frameworks */,
 			);
 			buildRules = (
 			);
@@ -198,7 +198,7 @@
 				BB2F792D24A3F905000567C9 /* Expo.plist in Resources */,
 				13B07FBF1A68108700A75B9A /* Images.xcassets in Resources */,
 				3E461D99554A48A4959DE609 /* SplashScreen.storyboard in Resources */,
-				DA9318385FFC4850159AA1CB /* PrivacyInfo.xcprivacy in Resources */,
+				59FDD896902D7F9D78B4492D /* PrivacyInfo.xcprivacy in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -244,7 +244,7 @@
 			shellScript = "diff \"${PODS_PODFILE_DIR_PATH}/Podfile.lock\" \"${PODS_ROOT}/Manifest.lock\" > /dev/null\nif [ $? != 0 ] ; then\n    # print error to STDERR\n    echo \"error: The sandbox is not in sync with the Podfile.lock. Run 'pod install' or update your CocoaPods installation.\" >&2\n    exit 1\nfi\n# This output is used by Xcode 'outputs' to avoid re-running this script phase.\necho \"SUCCESS\" > \"${SCRIPT_OUTPUT_FILE_0}\"\n";
 			showEnvVarsInLog = 0;
 		};
-		3BC13903979697A2D3F833F0 /* [Expo] Configure project */ = {
+		3CE2D3AF9FC0B3C3556AD579 /* [Expo] Configure project */ = {
 			isa = PBXShellScriptBuildPhase;
 			alwaysOutOfDate = 1;
 			buildActionMask = 2147483647;
@@ -267,28 +267,6 @@
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
 			shellScript = "# This script configures Expo modules and generates the modules provider file.\nbash -l -c \"./Pods/Target\\ Support\\ Files/Pods-CalendarAI/expo-configure-project.sh\"\n";
-		};
-		455561F0E9F1279FA7E27AFD /* [CP] Embed Pods Frameworks */ = {
-			isa = PBXShellScriptBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			inputPaths = (
-				"${PODS_ROOT}/Target Support Files/Pods-CalendarAI/Pods-CalendarAI-frameworks.sh",
-				"${PODS_XCFRAMEWORKS_BUILD_DIR}/React-Core-prebuilt/React.framework/React",
-				"${PODS_XCFRAMEWORKS_BUILD_DIR}/ReactNativeDependencies/ReactNativeDependencies.framework/ReactNativeDependencies",
-				"${PODS_XCFRAMEWORKS_BUILD_DIR}/hermes-engine/Pre-built/hermesvm.framework/hermesvm",
-			);
-			name = "[CP] Embed Pods Frameworks";
-			outputPaths = (
-				"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/React.framework",
-				"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/ReactNativeDependencies.framework",
-				"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/hermesvm.framework",
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-			shellPath = /bin/sh;
-			shellScript = "\"${PODS_ROOT}/Target Support Files/Pods-CalendarAI/Pods-CalendarAI-frameworks.sh\"\n";
-			showEnvVarsInLog = 0;
 		};
 		800E24972A6A228C8D4807E9 /* [CP] Copy Pods Resources */ = {
 			isa = PBXShellScriptBuildPhase;
@@ -362,6 +340,28 @@
 			shellScript = "\"${PODS_ROOT}/Target Support Files/Pods-CalendarAI/Pods-CalendarAI-resources.sh\"\n";
 			showEnvVarsInLog = 0;
 		};
+		DDF323FADE9D9C9153B6908B /* [CP] Embed Pods Frameworks */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+				"${PODS_ROOT}/Target Support Files/Pods-CalendarAI/Pods-CalendarAI-frameworks.sh",
+				"${PODS_XCFRAMEWORKS_BUILD_DIR}/React-Core-prebuilt/React.framework/React",
+				"${PODS_XCFRAMEWORKS_BUILD_DIR}/ReactNativeDependencies/ReactNativeDependencies.framework/ReactNativeDependencies",
+				"${PODS_XCFRAMEWORKS_BUILD_DIR}/hermes-engine/Pre-built/hermesvm.framework/hermesvm",
+			);
+			name = "[CP] Embed Pods Frameworks";
+			outputPaths = (
+				"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/React.framework",
+				"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/ReactNativeDependencies.framework",
+				"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/hermesvm.framework",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "\"${PODS_ROOT}/Target Support Files/Pods-CalendarAI/Pods-CalendarAI-frameworks.sh\"\n";
+			showEnvVarsInLog = 0;
+		};
 /* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
@@ -370,7 +370,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				F11748422D0307B40044C1D9 /* AppDelegate.swift in Sources */,
-				4AE709930DA8E6854E06B283 /* ExpoModulesProvider.swift in Sources */,
+				30C408D2CE895C086646DCE1 /* ExpoModulesProvider.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -379,7 +379,7 @@
 /* Begin XCBuildConfiguration section */
 		13B07F941A680F5B00A75B9A /* Debug */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = A113B8151FDF39A8FFBFCCB7 /* Pods-CalendarAI.debug.xcconfig */;
+			baseConfigurationReference = 1ABEC196DA77E55CC2D853B0 /* Pods-CalendarAI.debug.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
@@ -418,7 +418,7 @@
 		};
 		13B07F951A680F5B00A75B9A /* Release */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = 23A81025C6574C1704871ACE /* Pods-CalendarAI.release.xcconfig */;
+			baseConfigurationReference = 1498476030CAED71B522CFF7 /* Pods-CalendarAI.release.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;

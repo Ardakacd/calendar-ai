@@ -27,6 +27,7 @@
 		<dict>
 			<key>CFBundleURLSchemes</key>
 			<array>
+				<string>calendarai</string>
 				<string>com.ardaka.calendarai</string>
 			</array>
 		</dict>

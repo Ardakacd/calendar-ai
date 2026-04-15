@@ -18,12 +18,17 @@ logger = logging.getLogger(__name__)
 
 # Commands users can send via iMessage
 HELP_TEXT = (
-    "Calendar AI — available commands:\n"
-    "• Just chat naturally to create, update, delete, or list events\n"
-    "• set timezone <tz> — e.g. 'set timezone America/Chicago'\n"
-    "• set password <pw> — set a password to log in to the app\n"
+    "Just message me like you'd text a friend:\n"
+    "• \"Add lunch with Sarah tomorrow at noon\"\n"
+    "• \"What do I have this week?\"\n"
+    "• \"Move my 3pm to Friday\"\n"
+    "• \"Cancel tomorrow's meeting\"\n\n"
+    "Other commands:\n"
+    "• set timezone <tz> — e.g. America/Chicago\n"
     "• reset — clear conversation history\n"
-    "• help — show this message"
+    "• link <email> — connect to the Calen app\n"
+    "• set password <pw> — set an app password\n"
+    "• my email — show your app login email"
 )
 
 

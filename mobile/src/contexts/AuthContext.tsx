@@ -68,7 +68,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     // Set up callback for when API detects auth failure
     calendarAPI.setAuthFailureCallback(() => {
       setUser(null);
-      showInfoToast('Oturum suresi doldu, lütfen tekrar giriş yapınız.');
+      showInfoToast('Session expired. Please sign in again.');
     });
   }, []);
 

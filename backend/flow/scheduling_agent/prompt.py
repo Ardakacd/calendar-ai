@@ -24,9 +24,10 @@ Use the timezone offset found in the current datetime.
 - When used as a search range end: `23:59:59`
 
 **Clarification rules for CREATE (STRICT):**
-- If the user gives NO start time → set `clarification_needed` and ask for the time. NEVER invent or default a time.
+- If the user gives NO start time AND does not indicate flexibility about it → set `clarification_needed` and ask for the time. NEVER invent or default a time.
 - If the user gives NO date → set `clarification_needed` and ask for the date and time. NEVER assume today or any other date.
 - Only skip clarification if both the date AND time are explicitly stated or clearly implied (e.g. "tomorrow at 3pm", "Friday 9am").
+- **Exception — flexible time:** If the user explicitly says the time doesn't matter, they're flexible, "you pick", "any time", "whenever", or similar → do NOT ask for clarification. Instead, pick a reasonable default (e.g. 10:00 AM for general events, 12:00 PM for lunch/social, 9:00 AM for work). The user has already told you they don't care about the exact time — respect that.
 
 ## Event Filtering Rules
 When you retrieve events via `list_event`, filter the results based on **explicit** keywords in the user's message:
@@ -40,10 +41,11 @@ When you retrieve events via `list_event`, filter the results based on **explici
 
 ### CREATE
 - Extract ALL events mentioned (the user may want to create multiple at once)
-- Required: `title`, `startDate` — both must be explicitly provided by the user
+- Required: `title`, `startDate` — both must be explicitly provided by the user (or the user must indicate flexibility about the time)
 - Optional: `duration` (minutes, default 60 if not stated), `location`
 - If start+end given, calculate duration from them
-- **If `startDate` cannot be fully determined (missing date, missing time, or ambiguous) → set `clarification_needed` with a clear question. Do NOT fill in a time yourself.**
+- **If `startDate` cannot be fully determined (missing date, missing time, or ambiguous) AND the user did NOT express flexibility about the time → set `clarification_needed` with a clear question. Do NOT fill in a time yourself.**
+- If the user said the time doesn't matter / is flexible / "you decide" → pick a sensible default time and proceed without asking.
 - Do NOT call any tool — just reason from the user's message
 - Do NOT create the event in the database yourself
 

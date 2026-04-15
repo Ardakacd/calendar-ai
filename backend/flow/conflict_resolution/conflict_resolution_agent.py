@@ -93,13 +93,9 @@ async def _run_conflict_agent(state, request, check_conflict_tool, suggest_tool,
 
     prompt_text = CONFLICT_RESOLUTION_AGENT_PROMPT
 
-    if state.get("conflict_resolution_messages") and isinstance(state["conflict_resolution_messages"][0], SystemMessage):
-        state["conflict_resolution_messages"][0] = SystemMessage(content=prompt_text)
-        messages = list(state["conflict_resolution_messages"])
-    else:
-        messages = [SystemMessage(content=prompt_text)]
-        if "conflict_resolution_messages" in state:
-            messages.extend(state["conflict_resolution_messages"])
+    # Always start fresh — conflict checks are single-turn tool calls and don't need
+    # context from prior conflict checks. Reading stale messages would confuse the LLM.
+    messages = [SystemMessage(content=prompt_text)]
 
     request_text = (
         f"Please check for conflicts for the following time slot:\n"

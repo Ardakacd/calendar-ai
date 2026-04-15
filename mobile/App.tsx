@@ -71,6 +71,10 @@ const AppContent: React.FC = () => {
         return () => clearTimeout(t);
     }, [isAuthenticated, isLoading]);
 
+    const onNavigationReady = useCallback(() => {
+        flushPendingDeepLink();
+    }, []);
+
     if (isLoading) {
         return (
             <View style={styles.loadingContainer}>
@@ -93,15 +97,11 @@ const AppContent: React.FC = () => {
         );
     }
 
-    // If authenticated, show main app with navigation
-    const onNavigationReady = useCallback(() => {
-        flushPendingDeepLink();
-    }, []);
-
     return (
         <NavigationContainer ref={navigationRef} linking={linking} onReady={onNavigationReady}>
             <StatusBar style="auto"/>
             <Stack.Navigator
+                initialRouteName="Calendar"
                 screenOptions={{
                     headerStyle: {
                         backgroundColor: '#FFFFFF',
@@ -121,11 +121,12 @@ const AppContent: React.FC = () => {
                     },
                 }}
             >
-                <Stack.Screen
+                {/* Home (AI chat) screen hidden for demo — messaging is the main interface */}
+                {/* <Stack.Screen
                     name="Home"
                     component={HomeScreen}
                     options={{headerShown: false}}
-                />
+                /> */}
                 <Stack.Screen
                     name="Calendar"
                     component={CalendarScreen}

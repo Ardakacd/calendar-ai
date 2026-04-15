@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from "react";
-import { View, StyleSheet, ScrollView, Alert } from "react-native";
+import React, { useState, useEffect, useRef } from "react";
+import { View, StyleSheet, ScrollView, Alert, KeyboardAvoidingView, Platform } from "react-native";
 import {
   Modal,
   Portal,
@@ -30,37 +30,38 @@ export default function UpdateAgentEventModal({
   onDismiss,
   onUpdate,
 }: UpdateAgentEventModalProps) {
-  const [title, setTitle] = useState("");
-  const [location, setLocation] = useState("");
-  const [duration, setDuration] = useState("");
+  const titleRef = useRef("");
+  const locationRef = useRef("");
+  const durationRef = useRef("");
   const [datetime, setDatetime] = useState(new Date());
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [inputKey, setInputKey] = useState(0);
 
   useEffect(() => {
     if (event) {
-      setTitle(updateArguments.title || event.title);
-      setLocation(updateArguments.location || event.location || "");
-      setDuration(
-        updateArguments.duration
-          ? updateArguments.duration.toString()
-          : event.duration
-          ? event.duration.toString()
-          : ""
-      );
+      titleRef.current = updateArguments.title || event.title;
+      locationRef.current = updateArguments.location || event.location || "";
+      durationRef.current = updateArguments.duration
+        ? updateArguments.duration.toString()
+        : event.duration
+        ? event.duration.toString()
+        : "";
 
-      // Use update arguments startDate if available, otherwise use current event startDate
       const startDate = updateArguments.startDate
         ? new Date(updateArguments.startDate)
         : new Date(event.startDate);
       setDatetime(startDate);
+      setInputKey(k => k + 1);
     }
   }, [event, updateArguments]);
 
   const handleUpdate = async () => {
     if (!event) return;
 
-    const trimmedTitle = title.trim();
+    const trimmedTitle = titleRef.current.trim();
+    const trimmedLocation = locationRef.current.trim();
+    const durationStr = durationRef.current;
 
     if (!trimmedTitle) {
       showErrorToast("Title is required");
@@ -72,11 +73,10 @@ export default function UpdateAgentEventModal({
       return;
     }
 
-    // Duration is optional, but if provided, it must be valid
     let durationMinutes: number | undefined;
-    if (duration) {
+    if (durationStr) {
       try {
-        durationMinutes = parseInt(duration);
+        durationMinutes = parseInt(durationStr);
         if (durationMinutes <= 0) {
           showErrorToast("Duration must be greater than 0");
           return;
@@ -91,7 +91,7 @@ export default function UpdateAgentEventModal({
       setLoading(true);
       await onUpdate(event.id, {
         title: trimmedTitle,
-        location: location.trim() || undefined,
+        location: trimmedLocation || undefined,
         duration: durationMinutes,
         startDate: toLocalISOString(datetime),
       });
@@ -142,20 +142,24 @@ export default function UpdateAgentEventModal({
         onDismiss={onDismiss}
         contentContainerStyle={styles.modalContainer}
       >
+        <KeyboardAvoidingView
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
+        >
         <Card style={styles.card}>
           <Card.Content>
             <Title style={styles.title}>Update Event</Title>
 
-            <ScrollView>
+            <ScrollView keyboardShouldPersistTaps="handled">
               {renderFieldWithPreviousValue(
                 "Title *",
                 event?.title || "",
                 updateArguments.title,
                 "edit",
                 <TextInput
+                  key={`title-${inputKey}`}
                   mode="outlined"
-                  value={title}
-                  onChangeText={setTitle}
+                  defaultValue={titleRef.current}
+                  onChangeText={(t) => { titleRef.current = t; }}
                   placeholder="Enter event title"
                   style={styles.input}
                 />
@@ -198,9 +202,10 @@ export default function UpdateAgentEventModal({
                   : undefined,
                 "schedule",
                 <NumericInput
+                  key={`dur-${inputKey}`}
                   mode="outlined"
-                  value={duration}
-                  onValueChange={setDuration}
+                  value={durationRef.current}
+                  onValueChange={(t) => { durationRef.current = t; }}
                   placeholder="Enter duration in minutes"
                   style={styles.input}
                 />
@@ -212,9 +217,10 @@ export default function UpdateAgentEventModal({
                 updateArguments.location,
                 "location-on",
                 <TextInput
+                  key={`loc-${inputKey}`}
                   mode="outlined"
-                  value={location}
-                  onChangeText={setLocation}
+                  defaultValue={locationRef.current}
+                  onChangeText={(t) => { locationRef.current = t; }}
                   placeholder="Enter event location (optional)"
                   style={styles.input}
                 />
@@ -242,6 +248,7 @@ export default function UpdateAgentEventModal({
             </View>
           </Card.Content>
         </Card>
+        </KeyboardAvoidingView>
       </Modal>
     </Portal>
   );

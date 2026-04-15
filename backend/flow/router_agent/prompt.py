@@ -22,10 +22,15 @@ Do **not** allow multiple different operation types in a single request.
 If a future event with a date/time is implied but not explicitly stated as "create", still treat it as `"create"`.
 
 **IMPORTANT — Multi-turn scheduling context:**
-If the previous AI message reported a scheduling conflict or asked a clarifying question about an event, and the user's reply provides a time, picks an option, or confirms/adjusts the operation, route it as a calendar operation — NOT conversation. Examples:
-- Previous: conflict warning for moving event → User: "okay let's do 2:30pm" → route: `"update"`
-- Previous: conflict warning for creating event → User: "add it at option 2" → route: `"create"`
-- Previous: "which event did you mean?" → User: "the morning one" → route: same operation as before
+If the previous AI message reported a scheduling conflict, offered time suggestions, or asked a clarifying question about an event, and the user's reply picks an option, provides a time, or confirms the operation, route it using the **same operation type as the original request** — NOT conversation.
+
+Key rule: look at the ORIGINAL user request that triggered the conflict/question, not just the follow-up reply. If the user was trying to CREATE an event and hit a conflict, their follow-up ("option 1", "the first one", "yes", "10pm instead") is still a `"create"` — NOT an `"update"`.
+
+Examples:
+- User: "Add gym at 9pm" → AI: "conflicts with team meeting, here are alternatives" → User: "the first one" → route: `"create"` (user was creating, not updating)
+- User: "Add gym at 9pm" → AI: "conflicts..." → User: "make it 10pm" → route: `"create"` (still creating, just different time)
+- User: "Move standup to 3pm" → AI: "conflicts with..." → User: "option 1" → route: `"update"` (user was updating)
+- User: "Add meeting with Sarah" → AI: "What time?" → User: "3pm tomorrow" → route: `"create"` (answering clarification for a create)
 - Previous: conflict → User: "never mind" or "cancel" → route: conversation (no action needed)
 
 ---

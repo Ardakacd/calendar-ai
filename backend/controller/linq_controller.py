@@ -18,7 +18,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from config import settings
 from database.config import get_async_db_context_manager
 from database.models.webhook import ProcessedWebhookModel
-from flow.builder import _checkpointer
+from flow.builder import reset_thread
 from services.assistant_service import AssistantService
 from services.event_service import EventService
 from services.linq_service import HELP_TEXT, LinqService
@@ -33,6 +33,25 @@ WEBHOOK_TOLERANCE_SECONDS = 300  # reject requests older than 5 minutes
 def _calendar_event_app_url(event_id: str) -> str:
     """Custom-scheme deep link (mobile app registers scheme `calendarai`)."""
     return f"calendarai://calendar?eventId={quote(event_id, safe='')}"
+
+
+def _is_sms_synthetic_email(email: str | None) -> bool:
+    """Phone-SMS auto-created users get {digits}@sms.linqapp.com — not a mailbox they know until we show it."""
+    return bool(email and email.strip().lower().endswith("@sms.linqapp.com"))
+
+
+def _apple_id_style_handle(phone_number: str) -> bool:
+    """Linq handle is a real email (e.g. user@icloud.com), not a +E.164 phone mapped to @sms.linqapp.com."""
+    if "@" not in phone_number:
+        return False
+    return not phone_number.strip().lower().endswith("@sms.linqapp.com")
+
+
+def _welcome_for_handle(phone_number: str) -> str:
+    """Shorter app hints for Apple ID / iCloud handles; full guidance for SMS phone users."""
+    if _apple_id_style_handle(phone_number):
+        return _WELCOME_BODY + _WELCOME_APP_HINT_APPLE
+    return WELCOME_TEXT
 
 
 def _format_event_dt(iso: str, user_tz: str | None) -> str:
@@ -76,28 +95,31 @@ def _verify_signature(raw_body: bytes, timestamp: str, signature: str) -> None:
 # Background task — runs after 200 is returned to Linq
 # ---------------------------------------------------------------------------
 
-WELCOME_TEXT = (
-    "Hey! I'm your AI calendar assistant 👋\n\n"
-    "Just message me naturally to manage your schedule:\n"
-    "• \"Schedule a meeting tomorrow at 3pm\"\n"
-    "• \"Move my 2pm to Friday\"\n"
-    "• \"What do I have this week?\"\n"
-    "• \"Delete my dentist appointment\"\n\n"
-    "Type help anytime to see all commands."
+_WELCOME_BODY = (
+    "Hey! I'm Calen, your calendar assistant 👋\n\n"
+    "You can manage your entire schedule right here — no app needed. Just text me:\n\n"
+    "• \"Add team standup tomorrow at 9am\"\n"
+    "• \"What's on my calendar this week?\"\n"
+    "• \"Move my lunch to 2pm\"\n"
+    "• \"Cancel Friday's meeting\"\n\n"
+    "I'll handle conflicts, suggest better times, and send you a morning summary of your day.\n\n"
+    "Try it — send me your first event!"
 )
 
-WELCOME_TEXT_SMS = (
-    "Hey! I'm your AI calendar assistant 👋\n\n"
-    "Just message me naturally to manage your schedule:\n"
-    "• \"Schedule a meeting tomorrow at 3pm\"\n"
-    "• \"Move my 2pm to Friday\"\n"
-    "• \"What do I have this week?\"\n"
-    "• \"Delete my dentist appointment\"\n\n"
-    "Already have an account? Type:\n"
-    "link <your-email>\n"
-    "to connect this number to your existing account.\n\n"
-    "Type help anytime to see all commands."
+_WELCOME_APP_HINT = (
+    "\n\n— Want the full app too? —\n"
+    "Type link <your-email> to connect to an existing Calen account, "
+    "or set password <pw> to create one.\n"
+    "Type help for all commands."
 )
+
+_WELCOME_APP_HINT_APPLE = (
+    "\n\n— Want the full app too? —\n"
+    "Type link <your-email> to connect, or set password <pw> to set up app access.\n"
+    "Type help for all commands."
+)
+
+WELCOME_TEXT = _WELCOME_BODY + _WELCOME_APP_HINT
 
 
 async def _handle_chat_created(chat_id: str, phone_number: str, event_id: str | None) -> None:
@@ -112,8 +134,7 @@ async def _handle_chat_created(chat_id: str, phone_number: str, event_id: str | 
             if user.linq_chat_id != chat_id:
                 from models import UserUpdate
                 await linq_service.user_adapter.update_user(user.id, UserUpdate(linq_chat_id=chat_id))
-            welcome = WELCOME_TEXT_SMS if phone_number.startswith("+") else WELCOME_TEXT
-            await linq_service.send_message(chat_id, welcome)
+            await linq_service.send_message(chat_id, _welcome_for_handle(phone_number))
         except Exception as e:
             logger.error(f"Error sending welcome [{label}]: {e}", exc_info=True)
             try:
@@ -129,10 +150,6 @@ async def _handle_message_failed(message_id: str, error: str, event_id: str | No
 
 
 async def _handle_message(chat_id: str, phone_number: str, text: str, event_id: str | None) -> None:
-    if event_id and not await _mark_processed(event_id):
-        logger.info(f"Duplicate message.received ignored: event_id={event_id}")
-        return
-
     label = _handle_label(phone_number)
     reply = "Something went wrong. Please try again in a moment."
     reply_effect: str | None = None
@@ -167,17 +184,22 @@ async def _handle_message(chat_id: str, phone_number: str, text: str, event_id: 
             if lower == "help":
                 reply = HELP_TEXT
 
-            elif lower in ("start", "welcome", "hi", "hello"):
-                reply = WELCOME_TEXT_SMS if phone_number.startswith("+") else WELCOME_TEXT
+            elif lower in ("start", "welcome", "hi", "hello", "hey"):
+                reply = _welcome_for_handle(phone_number)
+
+            elif lower == "my email":
+                em = (user.email or "").strip() or "(none on file)"
+                reply = f"Your login email:\n{em}"
+                if _is_sms_synthetic_email(em):
+                    reply += "\n\nNeed a password? Send: set password <your-password>"
 
             elif lower.startswith("link "):
                 email = text.strip()[len("link "):].strip()
                 ok = await linq_svc.link_account(user.id, email, phone_number)
                 reply = (
-                    f"Linked! Your phone is now connected to {email}. "
-                    "Future messages will use that account."
+                    f"Linked! This chat is now connected to {email}."
                     if ok
-                    else f"No account found for {email}. Make sure you're using the email you registered with."
+                    else f"No account found for {email}. Check the email and try again."
                 )
 
             elif lower.startswith("set password "):
@@ -185,12 +207,12 @@ async def _handle_message(chat_id: str, phone_number: str, text: str, event_id: 
                 ok = await linq_svc.update_user_password(user.id, pwd)
                 if ok:
                     reply = (
-                        f"Password set! Log in to the app with:\n"
+                        f"Password set! You can log into the app with:\n"
                         f"Email: {user.email}\n"
-                        f"Password: (the one you just set)"
+                        f"Password: the one you just set"
                     )
                 else:
-                    reply = "Password must be at least 6 characters. Please try again."
+                    reply = "Password must be at least 6 characters. Try again."
 
             elif lower.startswith("set timezone "):
                 tz = text.strip()[len("set timezone "):]
@@ -203,8 +225,7 @@ async def _handle_message(chat_id: str, phone_number: str, text: str, event_id: 
 
             elif lower in ("reset", "clear"):
                 thread_id = str(user.id)
-                _checkpointer.storage.pop(thread_id, None)
-                _checkpointer.writes.pop(thread_id, None)
+                await reset_thread(thread_id)
                 reply = "Conversation history cleared. Starting fresh!"
 
             else:
@@ -217,7 +238,7 @@ async def _handle_message(chat_id: str, phone_number: str, text: str, event_id: 
                 )
                 reply = result.get("message") or "I couldn't process that. Please try again."
 
-                if result.get("type") == "create":
+                if result.get("type") == "create" and result.get("success") and not result.get("has_conflict"):
                     reply_effect = "confetti"
 
                 # Append formatted event list for LIST responses

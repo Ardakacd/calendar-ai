@@ -19,6 +19,6 @@ def internet_search_tool_factory() -> TavilySearchResults:
     return TavilySearchResults(
         max_results=5,
         include_answer=True,          # Tavily generates a short direct answer on top
-        include_raw_content=False,    # keeps token count low
+        include_raw_content=True,     # full page content — needed to extract exact times
         tavily_api_key=settings.TAVILY_API_KEY,
     )
