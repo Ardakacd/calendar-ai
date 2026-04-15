@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from "react";
-import { View, StyleSheet, ScrollView, TouchableOpacity } from "react-native";
+import React, { useState, useEffect, useRef, useCallback } from "react";
+import { View, StyleSheet, ScrollView, TouchableOpacity, KeyboardAvoidingView, Platform } from "react-native";
 import { Modal, Portal, Text, TextInput } from "react-native-paper";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { MaterialIcons } from "@expo/vector-icons";
@@ -23,42 +23,49 @@ interface UpdateEventModalProps {
 }
 
 export default function UpdateEventModal({ visible, event, onDismiss, onUpdate, onUpdateSeries }: UpdateEventModalProps) {
-  const [title, setTitle] = useState("");
+  const titleRef = useRef("");
+  const descriptionRef = useRef("");
+  const locationRef = useRef("");
+  const durationRef = useRef("");
   const [category, setCategory] = useState<EventCategory | undefined>(undefined);
-  const [description, setDescription] = useState("");
-  const [location, setLocation] = useState("");
-  const [duration, setDuration] = useState("");
   const [datetime, setDatetime] = useState(new Date());
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [loading, setLoading] = useState(false);
   const [scope, setScope] = useState<UpdateScope>('single');
+  // Key to force re-mount TextInputs when event changes (resets defaultValue)
+  const [inputKey, setInputKey] = useState(0);
 
   useEffect(() => {
     if (event) {
-      setTitle(event.title);
+      titleRef.current = event.title;
+      descriptionRef.current = event.description || "";
+      locationRef.current = event.location || "";
+      durationRef.current = event.duration ? event.duration.toString() : "";
       setCategory(event.category);
-      setDescription(event.description || "");
-      setLocation(event.location || "");
-      setDuration(event.duration ? event.duration.toString() : "");
       setDatetime(new Date(event.startDate));
       setScope('single');
+      setInputKey(k => k + 1);
     }
   }, [event]);
 
   const handleUpdate = async () => {
     if (!event) return;
-    const trimmedTitle = title.trim();
+    const trimmedTitle = titleRef.current.trim();
+    const trimmedDesc = descriptionRef.current.trim();
+    const trimmedLocation = locationRef.current.trim();
+    const durationStr = durationRef.current;
+
     if (!trimmedTitle) { showErrorToast("Title is required"); return; }
     if (trimmedTitle.length > 255) { showErrorToast("Title cannot be longer than 255 characters"); return; }
-    if (description.trim().length > MAX_DESCRIPTION_LENGTH) {
+    if (trimmedDesc.length > MAX_DESCRIPTION_LENGTH) {
       showErrorToast(`Notes cannot be longer than ${MAX_DESCRIPTION_LENGTH} characters`);
       return;
     }
 
     let durationMinutes: number | undefined;
-    if (duration) {
+    if (durationStr) {
       try {
-        durationMinutes = parseInt(duration);
+        durationMinutes = parseInt(durationStr);
         if (durationMinutes <= 0) { showErrorToast("Duration must be greater than 0"); return; }
       } catch {
         showErrorToast("Invalid duration format");
@@ -78,8 +85,8 @@ export default function UpdateEventModal({ visible, event, onDismiss, onUpdate, 
           from_date: scope === 'future' ? toLocalISOString(new Date(event.startDate)) : undefined,
           title: trimmedTitle,
           category,
-          description: description.trim(),
-          location: location.trim() || undefined,
+          description: trimmedDesc,
+          location: trimmedLocation || undefined,
           duration: durationMinutes,
           time_shift_minutes: timeShiftMinutes !== 0 ? timeShiftMinutes : undefined,
         };
@@ -88,8 +95,8 @@ export default function UpdateEventModal({ visible, event, onDismiss, onUpdate, 
         await onUpdate(event.id, {
           title: trimmedTitle,
           category,
-          description: description.trim(),
-          location: location.trim() || undefined,
+          description: trimmedDesc,
+          location: trimmedLocation || undefined,
           duration: durationMinutes,
           startDate: toLocalISOString(datetime),
         });
@@ -115,7 +122,10 @@ export default function UpdateEventModal({ visible, event, onDismiss, onUpdate, 
         onDismiss={onDismiss}
         contentContainerStyle={styles.overlay}
       >
-        <View style={styles.sheet}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
+          style={styles.sheet}
+        >
           {/* Header */}
           <View style={styles.header}>
             <Text style={styles.title}>Edit Event</Text>
@@ -124,7 +134,11 @@ export default function UpdateEventModal({ visible, event, onDismiss, onUpdate, 
             </TouchableOpacity>
           </View>
 
-          <ScrollView showsVerticalScrollIndicator={false} style={styles.body}>
+          <ScrollView
+            showsVerticalScrollIndicator={false}
+            style={styles.body}
+            keyboardShouldPersistTaps="handled"
+          >
             {/* Scope picker — only shown for recurring events */}
             {event?.recurrence_type && (
               <View style={styles.field}>
@@ -154,9 +168,10 @@ export default function UpdateEventModal({ visible, event, onDismiss, onUpdate, 
             <View style={styles.field}>
               <Text style={styles.label}>Title *</Text>
               <TextInput
+                key={`title-${inputKey}`}
                 mode="outlined"
-                value={title}
-                onChangeText={setTitle}
+                defaultValue={titleRef.current}
+                onChangeText={(t) => { titleRef.current = t; }}
                 placeholder="What's the event?"
                 style={styles.input}
                 outlineColor={Colors.border}
@@ -199,12 +214,14 @@ export default function UpdateEventModal({ visible, event, onDismiss, onUpdate, 
                 <Text style={styles.optional}>optional</Text>
               </View>
               <TextInput
+                key={`desc-${inputKey}`}
                 mode="outlined"
-                value={description}
-                onChangeText={setDescription}
+                defaultValue={descriptionRef.current}
+                onChangeText={(t) => { descriptionRef.current = t; }}
                 placeholder="Add notes..."
                 multiline
                 numberOfLines={3}
+                scrollEnabled={false}
                 style={[styles.input, styles.multilineInput]}
                 outlineColor={Colors.border}
                 activeOutlineColor={Colors.primary}
@@ -243,9 +260,10 @@ export default function UpdateEventModal({ visible, event, onDismiss, onUpdate, 
                 <Text style={styles.optional}>optional</Text>
               </View>
               <NumericInput
+                key={`dur-${inputKey}`}
                 mode="outlined"
-                value={duration}
-                onValueChange={setDuration}
+                value={durationRef.current}
+                onValueChange={(t) => { durationRef.current = t; }}
                 placeholder="Minutes (e.g. 30)"
                 style={styles.input}
                 outlineColor={Colors.border}
@@ -262,9 +280,10 @@ export default function UpdateEventModal({ visible, event, onDismiss, onUpdate, 
                 <Text style={styles.optional}>optional</Text>
               </View>
               <TextInput
+                key={`loc-${inputKey}`}
                 mode="outlined"
-                value={location}
-                onChangeText={setLocation}
+                defaultValue={locationRef.current}
+                onChangeText={(t) => { locationRef.current = t; }}
                 placeholder="Where?"
                 style={styles.input}
                 outlineColor={Colors.border}
@@ -291,7 +310,7 @@ export default function UpdateEventModal({ visible, event, onDismiss, onUpdate, 
               </Text>
             </TouchableOpacity>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
     </Portal>
   );

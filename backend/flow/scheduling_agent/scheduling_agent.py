@@ -24,6 +24,7 @@ from openai import OpenAIError, RateLimitError
 
 from ..state import FlowState
 from ..llm import model
+from ..trim_utils import trim_messages
 from ..mcp.calendar_tools_mcp import get_calendar_tools
 from .prompt import SCHEDULING_AGENT_SYSTEM_PROMPT, SCHEDULING_FILTER_PROMPT
 
@@ -155,12 +156,6 @@ async def scheduling_agent(state: FlowState):
     # even when a handler returns early (no-match, clarification, ambiguous)
     result.setdefault("scheduling_operation", operation)
 
-    # Mirror the last scheduling message to router_messages so the router has
-    # full conversation context on the next turn (multi-turn flows)
-    sched_msgs = result.get("scheduling_messages", [])
-    if sched_msgs and hasattr(sched_msgs[-1], "content"):
-        result["router_messages"] = [AIMessage(content=sched_msgs[-1].content)]
-
     return result
 
 
@@ -181,8 +176,74 @@ def _extract_tz(current_datetime_str: str):
 
 
 def _conversation_history(state: FlowState) -> list:
-    """Return previous scheduling_messages from state, excluding SystemMessages."""
-    return [m for m in state.get('scheduling_messages', []) if not isinstance(m, SystemMessage)]
+    """Return previous scheduling_messages, trimmed to ~2000 tokens.
+    Returns empty when the user switched to a different scheduling intent — this prevents
+    stale create/update/delete context from bleeding into an unrelated new operation."""
+    current_route = state.get('route', {}).get('route') if isinstance(state.get('route'), dict) else None
+    previous_route = state.get('previous_route')
+    if previous_route != current_route:
+        return []
+    msgs = state.get('scheduling_messages', [])
+    return trim_messages(msgs, max_tokens=2000, start_on="human", include_system=False)
+
+
+class _FreshCreateCheck(BaseModel):
+    """LLM output: is the user's message a brand-new create request or a follow-up?"""
+    is_new_request: bool = Field(
+        description="True if the message is a self-contained new event creation request "
+                    "(has its own title/time/details). False if it's a follow-up to a "
+                    "previous message (picking an option, confirming, providing a missing detail)."
+    )
+
+
+async def _is_new_create_request(text: str, history: list) -> bool:
+    """Use the LLM to decide if the user's message is a brand-new event creation
+    request or a follow-up to a previous create (conflict pick, clarification, etc).
+    """
+    # Obvious short follow-ups — skip the LLM call for efficiency
+    if len(text.strip().split()) <= 2:
+        return False
+
+    context = "\n".join(
+        f"{'User' if isinstance(m, HumanMessage) else 'Assistant'}: {m.content}"
+        for m in history[-4:] if hasattr(m, 'content') and isinstance(m.content, str)
+    )
+
+    result = await model.with_structured_output(_FreshCreateCheck).ainvoke([
+        SystemMessage(content=(
+            "Given the conversation history and the user's latest message, "
+            "determine if the message is a brand-new event creation request "
+            "(self-contained, with its own title and time) or a follow-up to "
+            "the previous conversation (picking an option, answering a question, "
+            "confirming, providing a missing detail like a time or date)."
+        )),
+        HumanMessage(content=f"Conversation history:\n{context}\n\nLatest message: {text}"),
+    ])
+    return result.is_new_request
+
+
+def _cross_turn_context(state: FlowState, max_messages: int = 4) -> list:
+    """Get recent conversational context for resolving pronouns like 'it' or 'that meeting'.
+    Prefers scheduling_messages; falls back to router_messages when scheduling history is empty
+    (e.g. after a route change like create → update)."""
+    msgs = _conversation_history(state)
+    if not msgs:
+        msgs = [m for m in state.get('router_messages', []) if not isinstance(m, SystemMessage)]
+    return msgs[-max_messages:]
+
+
+def _with_router_mirror(result: dict, state: FlowState) -> dict:
+    """Ensure the assistant's reply is visible in router_messages for multi-turn context.
+    Reads from result['scheduling_messages'] first, then falls back to state."""
+    if "router_messages" not in result:
+        sched_msgs = result.get("scheduling_messages") or state.get("scheduling_messages", [])
+        last = next(
+            (m for m in reversed(sched_msgs) if hasattr(m, "content") and m.content),
+            None,
+        )
+        if last:
+            result["router_messages"] = [AIMessage(content=last.content)]
+    return result
 
 
 async def _handle_create(state: FlowState, system_prompt: str) -> dict:
@@ -191,17 +252,30 @@ async def _handle_create(state: FlowState, system_prompt: str) -> dict:
     Includes conversation history so the LLM can resolve references like "book option 2".
     No DB calls — conflict check happens next via conflict_resolution_agent.
     """
-    # scheduling_messages: previous scheduling turns (what event was being created, conflicts seen)
-    # router_messages: full cross-agent conversation context (conflict replies, prior turns)
-    # Combine both so the LLM can resolve references like "it" or "option 2"
+    # Decide whether to include previous scheduling context.
+    # When create follows create, the old scheduling_messages can confuse the LLM
+    # into re-processing the *previous* event instead of the new one.
+    # Only drop old context when:
+    #   1. The previous turn was also a create (same route), AND
+    #   2. The user's new message is a self-contained create request (not a follow-up)
+    input_text = state.get('input_text', '')
+    prev_result = state.get('scheduling_result') or {}
     sched_history = _conversation_history(state)
+
+    # When this is a brand-new self-contained create request after a previous create,
+    # skip ALL prior history so the LLM focuses purely on the new message.
+    # Passing old context ("standup at 9am") causes the LLM to re-extract the old event
+    # instead of the new one ("lunch at noon").
+    prev_was_create = state.get('previous_route') == 'create' if isinstance(state.get('route'), dict) and state['route'].get('route') == 'create' else False
     router_history = [m for m in state.get('router_messages', []) if not isinstance(m, SystemMessage)]
-
-    # Deduplicate: keep router_history entries not already covered by sched_history content
-    sched_contents = {m.content for m in sched_history if hasattr(m, 'content')}
-    extra_router = [m for m in router_history if m.content not in sched_contents]
-
-    history = sched_history + extra_router
+    is_fresh = prev_was_create and await _is_new_create_request(input_text, router_history) and not prev_result.get('needs_clarification')
+    if is_fresh:
+        history = []
+    else:
+        # Deduplicate: keep router_history entries not already in sched_history
+        sched_contents = {m.content for m in sched_history if hasattr(m, 'content')}
+        extra_router = [m for m in router_history if m.content not in sched_contents]
+        history = sched_history + extra_router
 
     plan: CreatePlan = await model.with_structured_output(CreatePlan).ainvoke(
         [SystemMessage(content=system_prompt)]
@@ -211,7 +285,10 @@ async def _handle_create(state: FlowState, system_prompt: str) -> dict:
 
     if plan.clarification_needed:
         return {
-            "scheduling_messages": [AIMessage(content=plan.clarification_needed)],
+            "scheduling_messages": [
+                HumanMessage(content=state['input_text']),
+                AIMessage(content=plan.clarification_needed),
+            ],
             "scheduling_result": {
                 "message": plan.clarification_needed,
                 "needs_clarification": True,
@@ -227,7 +304,10 @@ async def _handle_create(state: FlowState, system_prompt: str) -> dict:
         if item.recurrence_type and not item.recurrence_count:
             msg = f"How many times would you like to repeat \"{item.title}\"? (e.g. \"10 times\", \"every week for 3 months\")"
             return {
-                "scheduling_messages": [AIMessage(content=msg)],
+                "scheduling_messages": [
+                    HumanMessage(content=state['input_text']),
+                    AIMessage(content=msg),
+                ],
                 "scheduling_result": {
                     "message": msg,
                     "needs_clarification": True,
@@ -311,7 +391,9 @@ async def _handle_update(state: FlowState, system_prompt: str, tools_map: dict) 
     list_tool = tools_map['list_event']
     model_with_tools = model.bind_tools([list_tool])
 
-    history = _conversation_history(state)
+    # Use cross-turn context: scheduling_messages if same route, router_messages as fallback
+    # so the LLM can resolve "it" / "that meeting" even after a route change (create → update)
+    history = _cross_turn_context(state)
     messages = (
         [SystemMessage(content=system_prompt)]
         + history
@@ -325,7 +407,7 @@ async def _handle_update(state: FlowState, system_prompt: str, tools_map: dict) 
     all_events = _extract_events_from_messages(messages)
 
     # Build recent conversation context so LLM can resolve pronouns like "it" or "that meeting"
-    recent_msgs = [m for m in _conversation_history(state) if not isinstance(m, SystemMessage)][-4:]
+    recent_msgs = _cross_turn_context(state)
     filter_context = "\n".join(
         f"{'User' if isinstance(m, HumanMessage) else 'Assistant'}: {m.content}"
         for m in recent_msgs if hasattr(m, 'content')
@@ -337,18 +419,20 @@ async def _handle_update(state: FlowState, system_prompt: str, tools_map: dict) 
     if not filtered_events:
         msg = "I couldn't find anything that matches. A bit more detail (title, date, or place) would help."
         return {
-            "scheduling_messages": [AIMessage(content=msg)],
+            "scheduling_messages": [
+                HumanMessage(content=state['input_text']),
+                AIMessage(content=msg),
+            ],
             "scheduling_result": {"message": msg, "success": False},
             "conflict_check_request": None,
             "conflict_check_result": None,
         }
 
     # Structured extraction of the update plan using filtered events as context.
-    # Only include the last 2 scheduling messages (enough to resolve "it"/"option 2"
-    # references) rather than full history, so older turns (e.g. a prior standup
-    # update) don't bleed in and cause the LLM to pick the wrong event.
+    # Only include the last 2 messages (enough to resolve "it"/"option 2"
+    # references) rather than full history, so older turns don't bleed in.
     filter_context = json.dumps(filtered_events, default=str, indent=2)
-    recent_history = [m for m in _conversation_history(state) if not isinstance(m, SystemMessage)][-2:]
+    recent_history = _cross_turn_context(state, max_messages=2)
     plan: UpdatePlan = await model.with_structured_output(UpdatePlan).ainvoke([
         SystemMessage(content=system_prompt),
         *recent_history,
@@ -361,7 +445,10 @@ async def _handle_update(state: FlowState, system_prompt: str, tools_map: dict) 
 
     if plan.clarification_needed:
         return {
-            "scheduling_messages": [AIMessage(content=plan.clarification_needed)],
+            "scheduling_messages": [
+                HumanMessage(content=state['input_text']),
+                AIMessage(content=plan.clarification_needed),
+            ],
             "scheduling_result": {
                 "message": plan.clarification_needed,
                 "needs_clarification": True,
@@ -374,7 +461,10 @@ async def _handle_update(state: FlowState, system_prompt: str, tools_map: dict) 
     if not plan.event_ids:
         msg = "I'm not sure which event you mean — which title or time should I change?"
         return {
-            "scheduling_messages": [AIMessage(content=msg)],
+            "scheduling_messages": [
+                HumanMessage(content=state['input_text']),
+                AIMessage(content=msg),
+            ],
             "scheduling_result": {"message": msg, "success": False},
             "conflict_check_request": None,
             "conflict_check_result": None,
@@ -384,7 +474,10 @@ async def _handle_update(state: FlowState, system_prompt: str, tools_map: dict) 
     if plan.update_scope == "future" and not plan.series_from_date:
         msg = "Which occurrence did you want to start from? Please tell me the date so I know where to begin the update."
         return {
-            "scheduling_messages": [AIMessage(content=msg)],
+            "scheduling_messages": [
+                HumanMessage(content=state['input_text']),
+                AIMessage(content=msg),
+            ],
             "scheduling_result": {"message": msg, "needs_clarification": True, "success": False},
             "conflict_check_request": None,
             "conflict_check_result": None,
@@ -436,7 +529,12 @@ async def _handle_update(state: FlowState, system_prompt: str, tools_map: dict) 
             "duration_minutes": duration_minutes,
             "exclude_event_id": plan.event_ids[0] if plan.event_ids else None,
         },
-        "scheduling_messages": [m for m in messages if not isinstance(m, SystemMessage)],
+        # Store clean H/AI pair — not the raw tool-loop messages (which contain large JSON payloads).
+        # scheduling_finalize will overwrite this with the actual result on success.
+        "scheduling_messages": [
+            HumanMessage(content=state['input_text']),
+            AIMessage(content="Understood — I'll apply the update now."),
+        ],
     }
 
 
@@ -454,9 +552,10 @@ async def _handle_delete(state: FlowState, system_prompt: str, tools_map: dict) 
     list_tool = tools_map['list_event']
     delete_tool = tools_map['delete_event']
 
+    import re
     _delete_all_keywords = {"both", "all", "every", "all of them", "each", "each one"}
     input_lower = state.get('input_text', '').lower()
-    user_wants_all = any(kw in input_lower for kw in _delete_all_keywords)
+    user_wants_all = any(re.search(r'\b' + re.escape(kw) + r'\b', input_lower) for kw in _delete_all_keywords)
 
     history_contents = " ".join(
         m.content for m in state.get('scheduling_messages', [])
@@ -472,7 +571,8 @@ async def _handle_delete(state: FlowState, system_prompt: str, tools_map: dict) 
 
     # --- Normal flow: list → filter → decide ---
     model_with_tools = model.bind_tools([list_tool])
-    history = _conversation_history(state)
+    # Use cross-turn context so pronouns like "it" resolve even after a route change
+    history = _cross_turn_context(state)
     messages = (
         [SystemMessage(content=system_prompt)]
         + history
@@ -482,7 +582,7 @@ async def _handle_delete(state: FlowState, system_prompt: str, tools_map: dict) 
 
     all_events = _extract_events_from_messages(messages)
 
-    recent_msgs = [m for m in _conversation_history(state) if not isinstance(m, SystemMessage)][-4:]
+    recent_msgs = _cross_turn_context(state)
     filter_context = "\n".join(
         f"{'User' if isinstance(m, HumanMessage) else 'Assistant'}: {m.content}"
         for m in recent_msgs if hasattr(m, 'content')
@@ -494,7 +594,10 @@ async def _handle_delete(state: FlowState, system_prompt: str, tools_map: dict) 
     if not filtered_events:
         msg = "I couldn't find any events that match."
         return {
-            "scheduling_messages": [AIMessage(content=msg)],
+            "scheduling_messages": [
+                HumanMessage(content=state['input_text']),
+                AIMessage(content=msg),
+            ],
             "scheduling_result": {"message": msg, "success": False},
             "conflict_check_request": None,
             "conflict_check_result": None,
@@ -505,7 +608,7 @@ async def _handle_delete(state: FlowState, system_prompt: str, tools_map: dict) 
     has_recurring = any(e.get('recurrence_id') for e in filtered_events)
     if has_recurring:
         events_context = json.dumps(filtered_events, default=str, indent=2)
-        recent_history = [m for m in _conversation_history(state) if not isinstance(m, SystemMessage)][-2:]
+        recent_history = _cross_turn_context(state, max_messages=2)
         delete_plan: DeletePlan = await model.with_structured_output(DeletePlan).ainvoke([
             SystemMessage(content=system_prompt),
             *recent_history,
@@ -521,7 +624,10 @@ async def _handle_delete(state: FlowState, system_prompt: str, tools_map: dict) 
 
         if delete_plan.clarification_needed:
             return {
-                "scheduling_messages": [AIMessage(content=delete_plan.clarification_needed)],
+                "scheduling_messages": [
+                    HumanMessage(content=state['input_text']),
+                    AIMessage(content=delete_plan.clarification_needed),
+                ],
                 "scheduling_result": {
                     "message": delete_plan.clarification_needed,
                     "needs_clarification": True,
@@ -538,7 +644,10 @@ async def _handle_delete(state: FlowState, system_prompt: str, tools_map: dict) 
             if delete_plan.delete_scope == "future" and not delete_plan.series_from_date:
                 msg = "Which occurrence did you want to start from? Please tell me the date so I know where to cut off."
                 return {
-                    "scheduling_messages": [AIMessage(content=msg)],
+                    "scheduling_messages": [
+                        HumanMessage(content=state['input_text']),
+                        AIMessage(content=msg),
+                    ],
                     "scheduling_result": {"message": msg, "needs_clarification": True, "candidate_events": filtered_events, "success": False},
                     "conflict_check_request": None,
                     "conflict_check_result": None,
@@ -569,7 +678,10 @@ async def _handle_delete(state: FlowState, system_prompt: str, tools_map: dict) 
         lines.append(f"{i}. {e.get('title')} — {start_fmt}")
     msg = "\n".join(lines)
     return {
-        "scheduling_messages": [AIMessage(content=msg)],
+        "scheduling_messages": [
+            HumanMessage(content=state['input_text']),
+            AIMessage(content=msg),
+        ],
         "scheduling_result": {
             "message": msg,
             "needs_clarification": True,
@@ -684,7 +796,7 @@ async def _handle_list(state: FlowState, system_prompt: str, tools_map: dict) ->
     list_tool = tools_map['list_event']
     model_with_tools = model.bind_tools([list_tool])
 
-    history = _conversation_history(state)
+    history = _cross_turn_context(state)
     messages = (
         [SystemMessage(content=system_prompt)]
         + history
@@ -703,7 +815,21 @@ async def _handle_list(state: FlowState, system_prompt: str, tools_map: dict) ->
         filtered_events = all_events
 
     if not filtered_events:
-        msg = "Nothing on your calendar matches that."
+        # Let the LLM generate a natural, context-aware response instead of
+        # a hardcoded string.  It sees the user's original question and knows
+        # no events were found for that time range.
+        no_events_msg = await model.ainvoke([
+            SystemMessage(content=(
+                "You are Calen, a friendly calendar assistant. "
+                "The user asked about their calendar and there are NO events "
+                "in the requested time range. Reply in one short, natural sentence. "
+                "If they asked about availability or free time, let them know "
+                "they're free. If they asked about a specific event, let them "
+                "know nothing is scheduled. Keep it conversational."
+            )),
+            HumanMessage(content=state['input_text']),
+        ])
+        msg = no_events_msg.content
         return {
             "scheduling_operation": "list",
             "scheduling_messages": [AIMessage(content=msg)],
@@ -714,7 +840,18 @@ async def _handle_list(state: FlowState, system_prompt: str, tools_map: dict) ->
         }
 
     count = len(filtered_events)
-    msg = f"Here's what I found — {count} event{'s' if count != 1 else ''}."
+    # Let the LLM summarize the results naturally based on the user's question.
+    titles = ", ".join(e.get("title", "Untitled") for e in filtered_events[:5])
+    found_msg = await model.ainvoke([
+        SystemMessage(content=(
+            "You are Calen, a friendly calendar assistant. "
+            f"The user asked about their calendar and you found {count} event(s): {titles}. "
+            "Reply in one short, natural sentence summarizing what's on their schedule. "
+            "Don't list full details — the events will be shown separately. Keep it conversational."
+        )),
+        HumanMessage(content=state['input_text']),
+    ])
+    msg = found_msg.content
 
     return {
         "scheduling_operation": "list",
@@ -777,9 +914,9 @@ async def scheduling_finalize(state: FlowState):
     operation = state.get('scheduling_operation')
     display_tz = _extract_tz(state.get("current_datetime", ""))
 
-    # DELETE and LIST are fully handled by scheduling_agent
+    # DELETE and LIST are fully handled by scheduling_agent — mirror their message to router_messages
     if operation in ('delete', 'list', None):
-        return {"is_success": True}
+        return _with_router_mirror({"is_success": True}, state)
 
     conflict_result = state.get('conflict_check_result', {})
     event_data = state.get('scheduling_event_data', {})
@@ -791,6 +928,7 @@ async def scheduling_finalize(state: FlowState):
         return {
             "scheduling_result": {"message": msg, "success": False},
             "scheduling_messages": [AIMessage(content=msg)],
+            "router_messages": [AIMessage(content=msg)],
             "is_success": False,
         }
 
@@ -798,12 +936,18 @@ async def scheduling_finalize(state: FlowState):
     if not conflict_result:
         # Still execute if we have event data (title/location-only update)
         if event_data:
+            # Determine effective operation from event_data shape (same logic as below)
+            eff_op = operation
+            if event_data.get('events') and not event_data.get('event_ids'):
+                eff_op = 'create'
+            elif event_data.get('event_ids') and not event_data.get('events'):
+                eff_op = 'update'
             try:
                 async with get_calendar_tools(user_id, display_tz) as mcp_tools:
                     tools_map = {t.name: t for t in mcp_tools}
-                    if operation == 'create':
+                    if eff_op == 'create':
                         return await _execute_create(event_data, tools_map, display_tz=display_tz)
-                    elif operation == 'update':
+                    elif eff_op == 'update':
                         return await _execute_update(
                             event_data, tools_map, user_id=user_id, display_tz=display_tz
                         )
@@ -813,16 +957,29 @@ async def scheduling_finalize(state: FlowState):
                 return {
                     "scheduling_result": {"message": msg, "success": False},
                     "scheduling_messages": [AIMessage(content=msg)],
+                    "router_messages": [AIMessage(content=msg)],
                     "is_success": False,
                 }
-        return {"is_success": True}
+        # Clarification path — mirror whatever scheduling_messages holds to router_messages
+        return _with_router_mirror({"is_success": True}, state)
 
     if conflict_result.get('has_conflict'):
         suggestions = conflict_result.get('suggestions', [])
         conflicting = conflict_result.get('conflicting_events', [])
 
+        # Include the event being created/updated so the conflict message carries full context
+        event_title = None
+        events_list = event_data.get('events', [])
+        if events_list:
+            event_title = events_list[0].get('title')
+        if not event_title:
+            event_title = event_data.get('update_args', {}).get('title')
+
         conflict_titles = " and ".join(f'"{e.get("title", "another event")}"' for e in conflicting) if conflicting else "another event"
-        msg = f"That time overlaps with {conflict_titles}."
+        if event_title:
+            msg = f'The time for "{event_title}" overlaps with {conflict_titles}.'
+        else:
+            msg = f"That time overlaps with {conflict_titles}."
         if suggestions:
             lines = ["\n\nHere are some open slots nearby:"]
             for i, s in enumerate(suggestions, 1):
@@ -836,6 +993,18 @@ async def scheduling_finalize(state: FlowState):
             msg += "\n".join(lines)
         else:
             msg += " I couldn't find open slots nearby — try another day or time?"
+
+        # Preserve the user's original request in scheduling_messages so the next turn
+        # knows what event was being worked on (resolves "option 1" / "it" references)
+        prior_human = next(
+            (m for m in state.get('scheduling_messages', []) if isinstance(m, HumanMessage)),
+            None,
+        )
+        sched_msgs = []
+        if prior_human:
+            sched_msgs.append(prior_human)
+        sched_msgs.append(AIMessage(content=msg))
+
         return {
             "scheduling_result": {
                 "message": msg,
@@ -843,28 +1012,33 @@ async def scheduling_finalize(state: FlowState):
                 "suggestions": suggestions,
                 "success": False,
             },
-            "scheduling_messages": [AIMessage(content=msg)],
+            "scheduling_messages": sched_msgs,
             "router_messages": [AIMessage(content=msg)],
             "is_success": True,
         }
 
     # No conflict — execute
+    # Determine the actual operation from event_data shape, not just the router label.
+    # When a create-conflict follow-up ("Option 1") gets routed as "update",
+    # the event_data still has a create shape ({"events": [...]}) — honour that.
+    effective_op = operation
+    if event_data.get('events') and not event_data.get('event_ids'):
+        effective_op = 'create'
+    elif event_data.get('event_ids') and not event_data.get('events'):
+        effective_op = 'update'
+
     try:
         async with get_calendar_tools(user_id, display_tz) as mcp_tools:
             tools_map = {t.name: t for t in mcp_tools}
-            if operation == 'create':
+            if effective_op == 'create':
                 result = await _execute_create(event_data, tools_map, display_tz=display_tz)
-            elif operation == 'update':
+            elif effective_op == 'update':
                 result = await _execute_update(
                     event_data, tools_map, user_id=user_id, display_tz=display_tz
                 )
             else:
                 return {"is_success": True}
-        # Mirror to router_messages for multi-turn context
-        sched_msgs = result.get("scheduling_messages", [])
-        if sched_msgs and hasattr(sched_msgs[-1], "content"):
-            result["router_messages"] = [AIMessage(content=sched_msgs[-1].content)]
-        return result
+        return _with_router_mirror(result, state)
     except Exception as e:
         logger.error(f"Error in scheduling_finalize ({operation}): {e}", exc_info=True)
         msg = "Something went wrong while updating your calendar. Please try again."

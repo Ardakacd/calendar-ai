@@ -18,7 +18,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from config import settings
 from database.config import get_async_db_context_manager
 from database.models.webhook import ProcessedWebhookModel
-from flow.builder import _checkpointer
+from flow.builder import reset_thread
 from services.assistant_service import AssistantService
 from services.event_service import EventService
 from services.linq_service import HELP_TEXT, LinqService
@@ -96,31 +96,27 @@ def _verify_signature(raw_body: bytes, timestamp: str, signature: str) -> None:
 # ---------------------------------------------------------------------------
 
 _WELCOME_BODY = (
-    "Hey! I'm your AI calendar assistant 👋\n\n"
-    "Just message me naturally to manage your schedule:\n"
-    "• \"Schedule a meeting tomorrow at 3pm\"\n"
-    "• \"Move my 2pm to Friday\"\n"
-    "• \"What do I have this week?\"\n"
-    "• \"Delete my dentist appointment\"\n\n"
+    "Hey! I'm Calen, your calendar assistant 👋\n\n"
+    "You can manage your entire schedule right here — no app needed. Just text me:\n\n"
+    "• \"Add team standup tomorrow at 9am\"\n"
+    "• \"What's on my calendar this week?\"\n"
+    "• \"Move my lunch to 2pm\"\n"
+    "• \"Cancel Friday's meeting\"\n\n"
+    "I'll handle conflicts, suggest better times, and send you a morning summary of your day.\n\n"
+    "Try it — send me your first event!"
 )
 
 _WELCOME_APP_HINT = (
-    "— Calendar AI app —\n"
-    "Already signed up in the app? Type:\n"
-    "link <your-email>\n"
-    "(connects this chat to that account.)\n\n"
-    "New to the app? Set a password, then log in with the same email we show you:\n"
-    "set password <your-password>\n"
-    "(After that, type my email anytime to copy your login email.)\n\n"
-    "Type help anytime to see all commands."
+    "\n\n— Want the full app too? —\n"
+    "Type link <your-email> to connect to an existing Calen account, "
+    "or set password <pw> to create one.\n"
+    "Type help for all commands."
 )
 
-# iMessage / Apple ID handles: login email is already their handle — less copy than SMS synthetic path
 _WELCOME_APP_HINT_APPLE = (
-    "— Calendar AI app —\n"
-    "Already use the app? Type: link <your-email> to connect this chat.\n"
-    "Need a password for the app? Type: set password <your-password>\n\n"
-    "Type help anytime to see all commands."
+    "\n\n— Want the full app too? —\n"
+    "Type link <your-email> to connect, or set password <pw> to set up app access.\n"
+    "Type help for all commands."
 )
 
 WELCOME_TEXT = _WELCOME_BODY + _WELCOME_APP_HINT
@@ -188,43 +184,22 @@ async def _handle_message(chat_id: str, phone_number: str, text: str, event_id: 
             if lower == "help":
                 reply = HELP_TEXT
 
-            elif lower in ("start", "welcome", "hi", "hello"):
+            elif lower in ("start", "welcome", "hi", "hello", "hey"):
                 reply = _welcome_for_handle(phone_number)
 
             elif lower == "my email":
                 em = (user.email or "").strip() or "(none on file)"
+                reply = f"Your login email:\n{em}"
                 if _is_sms_synthetic_email(em):
-                    reply = (
-                        "Your app login email (copy this into Calendar AI):\n"
-                        f"{em}\n\n"
-                        "You need a password before sign-in works. If you haven’t set one yet, send:\n"
-                        "set password <your-password>\n"
-                        "Then open the app and sign in with this email and that password.\n\n"
-                        "Already have an account under another email? Use link <that-email> instead."
-                    )
-                else:
-                    reply = (
-                        "Your app login email (copy this into Calendar AI):\n"
-                        f"{em}\n\n"
-                        "Use this email with your app password. "
-                        "If you haven’t set one yet, send: set password <your-password>\n\n"
-                        "Already have an account under a different email? Use: link <that-email>"
-                    )
+                    reply += "\n\nNeed a password? Send: set password <your-password>"
 
             elif lower.startswith("link "):
                 email = text.strip()[len("link "):].strip()
                 ok = await linq_svc.link_account(user.id, email, phone_number)
                 reply = (
-                    (
-                        f"Linked! Your phone is now connected to {email}. "
-                        "Future messages will use that account.\n\n"
-                        "Log in to the Calendar AI app with:\n"
-                        f"Email: {email}\n"
-                        "Password: the one you use for that account. "
-                        "If you haven’t set an app password yet, send: set password <your-password>"
-                    )
+                    f"Linked! This chat is now connected to {email}."
                     if ok
-                    else f"No account found for {email}. Make sure you're using the email you registered with."
+                    else f"No account found for {email}. Check the email and try again."
                 )
 
             elif lower.startswith("set password "):
@@ -232,15 +207,12 @@ async def _handle_message(chat_id: str, phone_number: str, text: str, event_id: 
                 ok = await linq_svc.update_user_password(user.id, pwd)
                 if ok:
                     reply = (
-                        "Password set! Open Calendar AI and sign in with:\n"
+                        f"Password set! You can log into the app with:\n"
                         f"Email: {user.email}\n"
-                        "Password: the one you just sent above.\n\n"
-                        "Already have an account in the app under a different email? "
-                        "Use link <that-email> next time instead — that merges this chat into your existing account.\n\n"
-                        "Need the email line again? Type: my email"
+                        f"Password: the one you just set"
                     )
                 else:
-                    reply = "Password must be at least 6 characters. Please try again."
+                    reply = "Password must be at least 6 characters. Try again."
 
             elif lower.startswith("set timezone "):
                 tz = text.strip()[len("set timezone "):]
@@ -253,8 +225,7 @@ async def _handle_message(chat_id: str, phone_number: str, text: str, event_id: 
 
             elif lower in ("reset", "clear"):
                 thread_id = str(user.id)
-                _checkpointer.storage.pop(thread_id, None)
-                _checkpointer.writes.pop(thread_id, None)
+                await reset_thread(thread_id)
                 reply = "Conversation history cleared. Starting fresh!"
 
             else:

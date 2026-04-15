@@ -101,6 +101,7 @@ const AppContent: React.FC = () => {
         <NavigationContainer ref={navigationRef} linking={linking} onReady={onNavigationReady}>
             <StatusBar style="auto"/>
             <Stack.Navigator
+                initialRouteName="Calendar"
                 screenOptions={{
                     headerStyle: {
                         backgroundColor: '#FFFFFF',
@@ -120,11 +121,12 @@ const AppContent: React.FC = () => {
                     },
                 }}
             >
-                <Stack.Screen
+                {/* Home (AI chat) screen hidden for demo — messaging is the main interface */}
+                {/* <Stack.Screen
                     name="Home"
                     component={HomeScreen}
                     options={{headerShown: false}}
-                />
+                /> */}
                 <Stack.Screen
                     name="Calendar"
                     component={CalendarScreen}

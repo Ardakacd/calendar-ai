@@ -8,6 +8,9 @@ from langchain_core.runnables import RunnableConfig
 
 logger = logging.getLogger(__name__)
 
+# Module-level compiled-graph cache — avoids rebuilding on every request.
+_compiled_flow = None
+
 
 class AssistantService:
 
@@ -20,7 +23,10 @@ class AssistantService:
 
     async def process_for_user(self, user_id: int, text: str, current_datetime: str, weekday: str, days_in_month: int):
         try:
-            flow = await FlowBuilder().create_flow()
+            global _compiled_flow
+            if _compiled_flow is None:
+                _compiled_flow = await FlowBuilder().create_flow()
+            flow = _compiled_flow
             config: RunnableConfig = {'configurable': {'thread_id': str(user_id)}}
 
             response = await flow.ainvoke({

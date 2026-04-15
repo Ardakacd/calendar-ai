@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from "react";
-import { View, StyleSheet, ScrollView, TouchableOpacity } from "react-native";
+import React, { useState, useEffect, useRef } from "react";
+import { View, StyleSheet, ScrollView, TouchableOpacity, KeyboardAvoidingView, Platform } from "react-native";
 import { Modal, Portal, Text, TextInput } from "react-native-paper";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { MaterialIcons } from "@expo/vector-icons";
@@ -38,53 +38,58 @@ export default function AddEventModal({
   mode = "add",
   defaultCalendarDayKey,
 }: AddEventModalProps) {
-  const [title, setTitle] = useState("");
+  const titleRef = useRef("");
+  const descriptionRef = useRef("");
+  const locationRef = useRef("");
+  const durationRef = useRef("");
   const [category, setCategory] = useState<EventCategory | undefined>(undefined);
-  const [description, setDescription] = useState("");
-  const [location, setLocation] = useState("");
-  const [duration, setDuration] = useState("");
   const [datetime, setDatetime] = useState(new Date());
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [inputKey, setInputKey] = useState(0);
 
   useEffect(() => {
     if (initialEvent && mode === "edit") {
-      setTitle(initialEvent.title);
+      titleRef.current = initialEvent.title;
+      descriptionRef.current = initialEvent.description || "";
+      locationRef.current = initialEvent.location || "";
+      durationRef.current = initialEvent.duration ? initialEvent.duration.toString() : "";
       setCategory(initialEvent.category);
-      setDescription(initialEvent.description || "");
-      setLocation(initialEvent.location || "");
-      setDuration(initialEvent.duration ? initialEvent.duration.toString() : "");
       setDatetime(new Date(initialEvent.startDate));
     } else {
-      setTitle("");
+      titleRef.current = "";
+      descriptionRef.current = "";
+      locationRef.current = "";
+      durationRef.current = "";
       setCategory(undefined);
-      setDescription("");
-      setLocation("");
-      setDuration("");
       setDatetime(
         defaultCalendarDayKey
           ? defaultDateTimeForCalendarDay(defaultCalendarDayKey)
           : new Date()
       );
     }
+    setInputKey(k => k + 1);
   }, [initialEvent, mode, visible, defaultCalendarDayKey]);
 
   const handleSubmit = async () => {
-    const trimmedTitle = title.trim();
+    const trimmedTitle = titleRef.current.trim();
+    const trimmedDescription = descriptionRef.current.trim();
+    const trimmedLocation = locationRef.current.trim();
+    const durationStr = durationRef.current;
+
     if (!trimmedTitle) { showErrorToast("Title is required"); return; }
     if (trimmedTitle.length > 255) { showErrorToast("Title cannot be longer than 255 characters"); return; }
-    if (description.trim().length > MAX_DESCRIPTION_LENGTH) {
+    if (trimmedDescription.length > MAX_DESCRIPTION_LENGTH) {
       showErrorToast(`Notes cannot be longer than ${MAX_DESCRIPTION_LENGTH} characters`);
       return;
     }
 
     let durationMinutes: number | undefined;
-    if (duration) {
-      durationMinutes = parseInt(duration);
+    if (durationStr) {
+      durationMinutes = parseInt(durationStr);
       if (durationMinutes <= 0) { showErrorToast("Duration must be greater than 0"); return; }
     }
 
-    const trimmedDescription = description.trim();
     const eventData: EventCreate = {
       title: trimmedTitle,
       category,
@@ -92,7 +97,7 @@ export default function AddEventModal({
         mode === "edit" && onEdit && initialEvent
           ? trimmedDescription
           : trimmedDescription || undefined,
-      location: location.trim() || undefined,
+      location: trimmedLocation || undefined,
       duration: durationMinutes,
       startDate: toLocalISOString(datetime),
     };
@@ -105,14 +110,15 @@ export default function AddEventModal({
         await onAdd(eventData);
         showSuccessToast("Event created successfully");
       }
-      setTitle("");
-      setLocation("");
-      setDuration("");
+      titleRef.current = "";
+      locationRef.current = "";
+      durationRef.current = "";
       setDatetime(
         defaultCalendarDayKey
           ? defaultDateTimeForCalendarDay(defaultCalendarDayKey)
           : new Date()
       );
+      setInputKey(k => k + 1);
       onDismiss();
     } catch (error: any) {
       showErrorToast(error.response?.data?.detail || "Event could not be created");
@@ -132,7 +138,10 @@ export default function AddEventModal({
         onDismiss={onDismiss}
         contentContainerStyle={styles.overlay}
       >
-        <View style={styles.sheet}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
+          style={styles.sheet}
+        >
           {/* Header */}
           <View style={styles.header}>
             <View style={styles.headerTitleBlock}>
@@ -150,14 +159,19 @@ export default function AddEventModal({
             </TouchableOpacity>
           </View>
 
-          <ScrollView showsVerticalScrollIndicator={false} style={styles.body}>
+          <ScrollView
+            showsVerticalScrollIndicator={false}
+            style={styles.body}
+            keyboardShouldPersistTaps="handled"
+          >
             {/* Title */}
             <View style={styles.field}>
               <Text style={styles.label}>Title *</Text>
               <TextInput
+                key={`title-${inputKey}`}
                 mode="outlined"
-                value={title}
-                onChangeText={setTitle}
+                defaultValue={titleRef.current}
+                onChangeText={(t) => { titleRef.current = t; }}
                 placeholder="What's the event?"
                 style={styles.input}
                 outlineColor={Colors.border}
@@ -200,12 +214,14 @@ export default function AddEventModal({
                 <Text style={styles.optional}>optional</Text>
               </View>
               <TextInput
+                key={`desc-${inputKey}`}
                 mode="outlined"
-                value={description}
-                onChangeText={setDescription}
+                defaultValue={descriptionRef.current}
+                onChangeText={(t) => { descriptionRef.current = t; }}
                 placeholder="Add notes..."
                 multiline
                 numberOfLines={3}
+                scrollEnabled={false}
                 style={[styles.input, styles.multilineInput]}
                 outlineColor={Colors.border}
                 activeOutlineColor={Colors.primary}
@@ -244,9 +260,10 @@ export default function AddEventModal({
                 <Text style={styles.optional}>optional</Text>
               </View>
               <NumericInput
+                key={`dur-${inputKey}`}
                 mode="outlined"
-                value={duration}
-                onValueChange={setDuration}
+                value={durationRef.current}
+                onValueChange={(t) => { durationRef.current = t; }}
                 placeholder="Minutes (e.g. 30)"
                 style={styles.input}
                 outlineColor={Colors.border}
@@ -263,9 +280,10 @@ export default function AddEventModal({
                 <Text style={styles.optional}>optional</Text>
               </View>
               <TextInput
+                key={`loc-${inputKey}`}
                 mode="outlined"
-                value={location}
-                onChangeText={setLocation}
+                defaultValue={locationRef.current}
+                onChangeText={(t) => { locationRef.current = t; }}
                 placeholder="Where?"
                 style={styles.input}
                 outlineColor={Colors.border}
@@ -292,7 +310,7 @@ export default function AddEventModal({
               </Text>
             </TouchableOpacity>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
     </Portal>
   );

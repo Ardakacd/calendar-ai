@@ -16,6 +16,7 @@ from openai import OpenAIError, RateLimitError
 
 from ..state import FlowState
 from ..llm import model
+from ..trim_utils import trim_messages
 from ..tools.search_tool import internet_search_tool_factory
 from .prompt import LEISURE_SEARCH_AGENT_PROMPT
 
@@ -41,14 +42,16 @@ async def leisure_search_agent(state: FlowState):
     model_with_tools = model.bind_tools([search_tool])
 
     # Build message list from accumulated router_messages (conversation history)
-    # Replace or prepend the system message with the leisure search prompt
-    existing_messages = list(state.get("router_messages", []))
+    # Replace or prepend the system message with the leisure search prompt.
+    # Token-aware trim: keep last ~4000 tokens of conversation history
+    existing_messages = trim_messages(
+        state.get("router_messages", []),
+        max_tokens=4000,
+        start_on="human",
+        include_system=False,
+    )
 
-    if existing_messages and isinstance(existing_messages[0], SystemMessage):
-        existing_messages[0] = SystemMessage(content=LEISURE_SEARCH_AGENT_PROMPT)
-        messages = existing_messages
-    else:
-        messages = [SystemMessage(content=LEISURE_SEARCH_AGENT_PROMPT)] + existing_messages
+    messages = [SystemMessage(content=LEISURE_SEARCH_AGENT_PROMPT)] + existing_messages
 
     # Agentic loop: LLM decides when and how many times to search
     max_iterations = 6
@@ -84,4 +87,10 @@ async def leisure_search_agent(state: FlowState):
     return {
         "router_messages": [AIMessage(content=final_content)],
         "is_success": True,
+        # Clear any stale scheduling state from prior turns
+        "scheduling_operation": None,
+        "scheduling_event_data": None,
+        "scheduling_result": None,
+        "conflict_check_request": None,
+        "conflict_check_result": None,
     }

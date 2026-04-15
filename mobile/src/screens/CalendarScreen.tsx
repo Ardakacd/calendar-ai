@@ -44,7 +44,7 @@ export default function CalendarScreen() {
     }
   }, [getEvents]);
 
-  // Deep link: fetch the specific event by ID and open it directly.
+  // Deep link: fetch the specific event by ID and navigate to its day.
   // Uses a ref to guard against double-firing (strict mode / param flicker).
   const handledDeepLinkRef = useRef<string | undefined>(undefined);
   useEffect(() => {
@@ -56,8 +56,6 @@ export default function CalendarScreen() {
       .then((ev) => {
         const key = getDateKey(ev.startDate);
         if (key) setSelectedDate(key);
-        setSelectedEvent(ev);
-        setUpdateModalVisible(true);
       })
       .catch(() => {
         showErrorToast("Event not found or no longer available");

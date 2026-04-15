@@ -6,6 +6,7 @@ from .prompt import ROUTER_AGENT_PROMPT
 from ..llm import model
 from tenacity import retry, stop_after_attempt, wait_random_exponential, retry_if_exception_type
 from openai import OpenAIError, RateLimitError
+from ..trim_utils import trim_messages
 import json
 
 retryable_exceptions = (OpenAIError, RateLimitError)
@@ -46,7 +47,19 @@ async def router_agent(state: FlowState):
     prompt_text = template.format()
 
     # Build message list locally — do not mutate state
-    existing = [m for m in state.get("router_messages", []) if not isinstance(m, SystemMessage)]
+    # Token-aware trim: keep last ~4000 tokens of conversation history
+    existing = trim_messages(
+        state.get("router_messages", []),
+        max_tokens=4000,
+        start_on="human",
+        include_system=False,
+    )
+
+    # Inject conversation summary if available (from summarization node)
+    summary = state.get("conversation_summary", "")
+    if summary:
+        prompt_text = prompt_text + f"\n\n## Previous conversation context\n{summary}"
+
     messages = [SystemMessage(content=prompt_text)] + existing
 
     response = await model.ainvoke(messages)
@@ -74,7 +87,12 @@ async def router_agent(state: FlowState):
         else:
             route_data = response.content
 
-    return {"route": route_data}
+    # Capture the OLD route as previous_route BEFORE writing the new one.
+    # Downstream nodes (scheduling_agent) use this to detect topic changes across turns.
+    old_route = state.get('route', {})
+    old_route_name = old_route.get('route') if isinstance(old_route, dict) else None
+
+    return {"route": route_data, "previous_route": old_route_name}
 
 def route_action(state: FlowState):
     if isinstance(state['route'], dict) and "route" in state['route']:
@@ -92,4 +110,13 @@ def router_message_handler(state: FlowState):
         content = route
     else:
         content = str(route) if route else "How can I help you with your calendar?"
-    return {"router_messages": [AIMessage(content=content)], "is_success": True}
+    return {
+        "router_messages": [AIMessage(content=content)],
+        "is_success": True,
+        # Clear any stale scheduling state from prior turns
+        "scheduling_operation": None,
+        "scheduling_event_data": None,
+        "scheduling_result": None,
+        "conflict_check_request": None,
+        "conflict_check_result": None,
+    }
