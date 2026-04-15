@@ -1,5 +1,5 @@
 from typing import Optional, List
-from datetime import datetime as dt, date
+from datetime import datetime as dt
 from pydantic import BaseModel, EmailStr, Field, field_validator
 
 
@@ -23,7 +23,6 @@ class UserUpdate(BaseModel):
     password: Optional[str] = Field(None, min_length=6, description="Password must be at least 6 characters long")
     phone_number: Optional[str] = None
     timezone: Optional[str] = None
-    linq_chat_id: Optional[str] = None
     push_token: Optional[str] = None
 
 class User(UserBase):
@@ -32,9 +31,7 @@ class User(UserBase):
     password: Optional[str] = None
     phone_number: Optional[str] = None
     timezone: Optional[str] = None
-    linq_chat_id: Optional[str] = None
     push_token: Optional[str] = None
-    summary_sent_date: Optional[date] = None
     created_at: Optional[str] = None
 
     class Config:

@@ -20,6 +20,7 @@ class UserModel(Base):
     password: Mapped[str] = mapped_column(String(255), nullable=False)
     phone_number: Mapped[Optional[str]] = mapped_column(String(255), nullable=True, unique=True)
     timezone: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    # Legacy columns (unused); kept so existing DBs need no migration.
     linq_chat_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
     push_token: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     summary_sent_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)

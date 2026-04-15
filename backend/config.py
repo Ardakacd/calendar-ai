@@ -52,12 +52,6 @@ class Settings(BaseSettings):
     RESEND_API_KEY: Optional[str] = Field(default=None, description="Resend email API key")
     NOTIFICATION_FROM_EMAIL: str = Field(default="onboarding@resend.dev", description="From address for notification emails")
 
-    # Linq iMessage integration
-    LINQ_API_TOKEN: Optional[str] = Field(default=None, description="Linq partner API token")
-    LINQ_SIGNING_SECRET: Optional[str] = Field(default=None, description="Linq webhook signing secret")
-    LINQ_DEFAULT_TIMEZONE: str = Field(default="America/New_York", description="Default timezone for new Linq users")
-    
-    
     # Logging settings
     LOG_LEVEL: str = Field(default="INFO", description="Logging level")
     SQL_ECHO: bool = Field(default=False, description="SQL query logging")
@@ -129,9 +123,6 @@ class Settings(BaseSettings):
         env_file = f".env.{os.getenv('ENV', 'development')}"
         case_sensitive = True
         env_file_encoding = 'utf-8'
-
-
-LINQ_API_BASE = "https://api.linqapp.com/api/partner"
 
 
 @lru_cache()
