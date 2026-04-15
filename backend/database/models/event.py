@@ -18,10 +18,18 @@ class EventModel(Base):
     event_id: Mapped[str] = mapped_column(String(36), unique=True, nullable=False, default=lambda: str(uuid.uuid4()))
 
     title: Mapped[str] = mapped_column(String(255), nullable=False)
+    category: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)  # work/personal/health/social
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     startDate: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     endDate: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=False)
     location: Mapped[Optional[str]] = mapped_column(String(255))
     
+    recurrence_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
+    recurrence_type: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)  # daily/weekly/monthly/yearly
+    rrule_string: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+
+    reminder_sent: Mapped[bool] = mapped_column(default=False, nullable=False, server_default="false")
+
     user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 

@@ -1,10 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { calendarAPI } from '../services/api';
+import { calendarAPI, type User } from '../services/api';
 import { showInfoToast } from '../common/toast/toast-message';
-
-interface User {
-  name: string;
-}
 
 interface AuthContextType {
   user: User | null;
@@ -81,6 +77,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       const response = await calendarAPI.login({ email, password });
       setUser({
         name: response.user_name,
+        email,
       });
     } catch (error) {
       throw error;
@@ -92,6 +89,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       const response = await calendarAPI.register({ name, email, password });
       setUser({
         name: response.user_name,
+        email,
       });
     } catch (error) {
       throw error;

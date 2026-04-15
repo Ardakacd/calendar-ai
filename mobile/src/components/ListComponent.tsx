@@ -1,136 +1,108 @@
 import React from "react";
 import { View, StyleSheet } from "react-native";
-import { Card, Text } from "react-native-paper";
+import { Text } from "react-native-paper";
 import { MaterialIcons } from "@expo/vector-icons";
 import { Event } from "../models/event";
 import { formatDuration, formatLocation } from "../common/formatting";
 import { formatDateWithWeekday } from "../utils/datetime/dateUtils";
+import { Colors, Radius, Shadow } from "../theme";
 
 interface ListComponentProps {
   events: Event[];
 }
 
 export default function ListComponent({ events }: ListComponentProps) {
-  // Use imported date utility function for consistent formatting
-
-  if (!events || events.length === 0) {
-    return null;
-  }
+  if (!events || events.length === 0) return null;
 
   return (
     <View style={styles.container}>
-      <View>
-        {events.map((event, index) => {
-          return (
-            <Card
-              key={event.id}
-              style={[styles.eventCard, index > 0 && styles.eventCardMargin]}
-            >
-              <Card.Content>
-                <View style={styles.eventHeader}>
-                  <View style={styles.titleContainer}>
-                    <Text style={styles.eventTitle} numberOfLines={2}>
-                      {event.title}
-                    </Text>
-                  </View>
-                </View>
-
-                <View style={styles.eventDetails}>
-                  <View style={styles.detailRow}>
-                    <MaterialIcons
-                      name="schedule"
-                      size={16}
-                      color="rgba(255, 255, 255, 0.7)"
-                    />
-                    <Text style={styles.detailText}>
-                      {formatDateWithWeekday(event.startDate)}
-                    </Text>
-                  </View>
-
-                  <View style={styles.detailRow}>
-                    <MaterialIcons
-                      name="timer"
-                      size={16}
-                      color="rgba(255, 255, 255, 0.7)"
-                    />
-                    <Text style={styles.detailText}>
-                      {formatDuration(event.duration)}
-                    </Text>
-                  </View>
-
-                  <View style={styles.detailRow}>
-                    <MaterialIcons
-                      name="location-on"
-                      size={16}
-                      color="rgba(255, 255, 255, 0.7)"
-                    />
-                    <Text style={styles.detailText} numberOfLines={1}>
-                      {formatLocation(event.location)}
-                    </Text>
-                  </View>
-                </View>
-              </Card.Content>
-            </Card>
-          );
-        })}
-      </View>
+      {events.map((event, index) => (
+        <View key={event.id} style={[styles.card, index > 0 && styles.cardMargin]}>
+          <View style={styles.accent} />
+          <View style={styles.body}>
+            <View style={styles.titleRow}>
+              <Text style={styles.title} numberOfLines={2}>
+                {event.title}
+              </Text>
+              {event.recurrence_type && (
+                <MaterialIcons name="repeat" size={14} color={Colors.primary} style={styles.repeatIcon} />
+              )}
+            </View>
+            <View style={styles.details}>
+              <View style={styles.detailRow}>
+                <MaterialIcons name="schedule" size={13} color={Colors.primary} />
+                <Text style={styles.detailText}>{formatDateWithWeekday(event.startDate)}</Text>
+              </View>
+              <View style={styles.detailRow}>
+                <MaterialIcons name="timer" size={13} color={Colors.textTertiary} />
+                <Text style={styles.detailText}>{formatDuration(event.duration)}</Text>
+              </View>
+              <View style={styles.detailRow}>
+                <MaterialIcons name="location-on" size={13} color={Colors.textTertiary} />
+                <Text style={styles.detailText} numberOfLines={1}>
+                  {formatLocation(event.location)}
+                </Text>
+              </View>
+            </View>
+          </View>
+        </View>
+      ))}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
-    marginTop: 12,
+    gap: 8,
+    marginTop: 4,
   },
-  eventCard: {
-    backgroundColor: "rgba(255, 255, 255, 0.1)",
-    borderRadius: 12,
+  card: {
+    backgroundColor: Colors.surface,
+    borderRadius: Radius.lg,
     borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.1)",
-  },
-  eventCardMargin: {
-    marginTop: 8,
-  },
-  emptyCard: {
-    backgroundColor: "rgba(255, 255, 255, 0.05)",
-    borderRadius: 12,
-    marginTop: 8,
-  },
-  emptyText: {
-    color: "rgba(255, 255, 255, 0.6)",
-    textAlign: "center",
-    fontSize: 14,
-  },
-  eventHeader: {
+    borderColor: Colors.border,
     flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "flex-start",
-    marginBottom: 12,
+    overflow: "hidden",
+    ...Shadow.sm,
   },
-  titleContainer: {
+  cardMargin: {
+    marginTop: 0,
+  },
+  accent: {
+    width: 4,
+    backgroundColor: Colors.primary,
+  },
+  body: {
     flex: 1,
+    padding: 12,
+  },
+  titleRow: {
     flexDirection: "row",
     alignItems: "flex-start",
-    marginRight: 8,
+    marginBottom: 8,
+    gap: 6,
   },
-  eventTitle: {
-    fontSize: 16,
+  title: {
+    flex: 1,
+    fontSize: 15,
     fontWeight: "600",
-    color: "white",
-    flex: 1,
+    color: Colors.textPrimary,
     lineHeight: 20,
   },
-  eventDetails: {
-    gap: 8,
+  repeatIcon: {
+    marginTop: 2,
+  },
+  details: {
+    gap: 5,
   },
   detailRow: {
     flexDirection: "row",
     alignItems: "center",
+    gap: 6,
   },
   detailText: {
-    fontSize: 14,
-    color: "rgba(255, 255, 255, 0.8)",
-    marginLeft: 8,
+    fontSize: 13,
+    color: Colors.textSecondary,
     flex: 1,
   },
 });

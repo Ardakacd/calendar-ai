@@ -84,6 +84,49 @@ export const formatTime = (dateString: string): string => {
  * Get the date key (YYYY-MM-DD) from a date string for calendar grouping
  * Uses local timezone to ensure events are grouped by the user's local date
  */
+/**
+ * Default start time when creating an event for a calendar day (YYYY-MM-DD).
+ * Same calendar day as "now" → keep current clock time; otherwise 9:00 AM local.
+ */
+export const defaultDateTimeForCalendarDay = (dayKey: string): Date => {
+  const parts = dayKey.split("-").map(Number);
+  const y = parts[0];
+  const m = parts[1];
+  const d = parts[2];
+  if (!y || !m || !d) {
+    return new Date();
+  }
+  const now = new Date();
+  const target = new Date(y, m - 1, d);
+  const isToday =
+    target.getDate() === now.getDate() &&
+    target.getMonth() === now.getMonth() &&
+    target.getFullYear() === now.getFullYear();
+  if (isToday) {
+    return new Date(y, m - 1, d, now.getHours(), now.getMinutes(), 0, 0);
+  }
+  return new Date(y, m - 1, d, 9, 0, 0, 0);
+};
+
+/** Short heading for a calendar day key, e.g. "Wed, Apr 10" */
+export const formatCalendarDayHeading = (dateKey: string): string => {
+  try {
+    const parts = dateKey.split("-").map(Number);
+    const y = parts[0];
+    const mo = parts[1];
+    const d = parts[2];
+    if (!y || !mo || !d) return dateKey;
+    const date = new Date(y, mo - 1, d);
+    return date.toLocaleDateString("en-US", {
+      weekday: "short",
+      month: "short",
+      day: "numeric",
+    });
+  } catch {
+    return dateKey;
+  }
+};
+
 export const getDateKey = (dateString: string): string => {
   try {
     const date = parseDate(dateString);

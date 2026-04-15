@@ -1,14 +1,20 @@
 import logging
 import uvicorn
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.exceptions import RequestValidationError
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from controller.event_controller import router as event_router
 from controller.transcribe_controller import router as transcribe_router
 from controller.assistant_controller import router as assistant_router
 from controller.user_controller import router as auth_router
+from controller.linq_controller import router as linq_router
 from database import init_db
 from exceptions.validation_exception_handler import validation_exception_handler
+from services.morning_summary_service import send_morning_summaries
+from services.reminder_service import send_event_reminders
+from services.webhook_cleanup_service import purge_old_webhooks
 
 logging.basicConfig(
     level=logging.INFO,
@@ -16,7 +22,22 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="Calendar AI API", version="1.0.0")
+scheduler = AsyncIOScheduler()
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    scheduler.add_job(send_morning_summaries, "cron", minute=0)
+    scheduler.add_job(send_event_reminders, "interval", minutes=5)
+    scheduler.add_job(purge_old_webhooks, "cron", hour=3, minute=0)
+    scheduler.start()
+    logger.info("APScheduler started — morning summary + reminder + webhook cleanup jobs registered")
+    yield
+    scheduler.shutdown(wait=False)
+    logger.info("APScheduler shut down")
+
+
+app = FastAPI(title="Calendar AI API", version="1.0.0", lifespan=lifespan)
 
 logger.info("Starting Calendar AI API")
 
@@ -50,6 +71,8 @@ except Exception as e:
 
 app.include_router(transcribe_router)
 app.include_router(assistant_router)
+app.include_router(linq_router)
+logger.info("Linq iMessage routes included")
 
 
 @app.get("/")

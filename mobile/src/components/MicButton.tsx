@@ -1,14 +1,10 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import {
-  View,
-  StyleSheet,
-  TouchableOpacity,
-  Animated,
-} from 'react-native';
+import { View, StyleSheet, TouchableOpacity, Animated } from 'react-native';
 import { Text } from 'react-native-paper';
 import { useAudioRecorder, RecordingPresets, requestRecordingPermissionsAsync } from 'expo-audio';
 import { MaterialIcons } from '@expo/vector-icons';
 import { showErrorToast } from '../common/toast/toast-message';
+import { Colors, Radius } from '../theme';
 
 interface MicButtonProps {
   onRecordingComplete: (audioUri: string) => void;
@@ -16,11 +12,7 @@ interface MicButtonProps {
   disabled?: boolean;
 }
 
-export default function MicButton({
-  onRecordingComplete,
-  isProcessing = false,
-  disabled = false,
-}: MicButtonProps) {
+export default function MicButton({ onRecordingComplete, isProcessing = false, disabled = false }: MicButtonProps) {
   const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
   const [isRecording, setIsRecording] = useState(false);
   const [hasPermission, setHasPermission] = useState(false);
@@ -28,7 +20,6 @@ export default function MicButton({
   const scaleAnim = useState(new Animated.Value(1))[0];
   const pulseAnim = useState(new Animated.Value(1))[0];
   const recordingTimerRef = useRef<NodeJS.Timeout | null>(null);
-
   const maxRecordingTime = 30;
 
   const stopRecording = useCallback(async () => {
@@ -36,17 +27,10 @@ export default function MicButton({
       setIsRecording(false);
       await recorder.stop();
       const uri = recorder.uri;
-
-      Animated.spring(scaleAnim, {
-        toValue: 1,
-        useNativeDriver: true,
-      }).start();
-
-      if (uri) {
-        onRecordingComplete(uri);
-      }
-    } catch (err) {
-      showErrorToast('Kayıt durdurulamadı. Lütfen tekrar deneyin.');
+      Animated.spring(scaleAnim, { toValue: 1, useNativeDriver: true }).start();
+      if (uri) onRecordingComplete(uri);
+    } catch {
+      showErrorToast('Recording could not be stopped. Please try again.');
     }
   }, [recorder, scaleAnim, onRecordingComplete]);
 
@@ -65,9 +49,7 @@ export default function MicButton({
     (async () => {
       const { granted } = await requestRecordingPermissionsAsync();
       setHasPermission(granted);
-      if (!granted) {
-        showErrorToast('Ses komutları kaydetmek için mikrofon izni gereklidir.');
-      }
+      if (!granted) showErrorToast('Microphone permission is required for voice commands.');
     })();
   }, []);
 
@@ -75,8 +57,8 @@ export default function MicButton({
     if (isRecording) {
       Animated.loop(
         Animated.sequence([
-          Animated.timing(pulseAnim, { toValue: 1.2, duration: 800, useNativeDriver: true }),
-          Animated.timing(pulseAnim, { toValue: 1, duration: 800, useNativeDriver: true }),
+          Animated.timing(pulseAnim, { toValue: 1.15, duration: 700, useNativeDriver: true }),
+          Animated.timing(pulseAnim, { toValue: 1, duration: 700, useNativeDriver: true }),
         ])
       ).start();
       recordingTimerRef.current = setInterval(updateTimer, 1000);
@@ -92,7 +74,7 @@ export default function MicButton({
 
   const startRecording = async () => {
     if (!hasPermission) {
-      showErrorToast('Ses komutları kaydetmek için mikrofon izni gereklidir.');
+      showErrorToast('Microphone permission is required for voice commands.');
       return;
     }
     try {
@@ -100,17 +82,9 @@ export default function MicButton({
       setIsRecording(true);
       setRecordingTime(0);
       Animated.spring(scaleAnim, { toValue: 0.9, useNativeDriver: true }).start();
-    } catch (err) {
-      showErrorToast('Kayıt başlatılamadı. Lütfen tekrar deneyin.');
+    } catch {
+      showErrorToast('Recording could not be started. Please try again.');
     }
-  };
-
-  const handlePressIn = () => {
-    if (!isProcessing) startRecording();
-  };
-
-  const handlePressOut = () => {
-    if (isRecording) stopRecording();
   };
 
   const formatTime = (seconds: number) => {
@@ -119,35 +93,40 @@ export default function MicButton({
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
+  const getButtonStyle = () => {
+    if (isRecording) return [styles.btn, styles.btnRecording];
+    if (isProcessing) return [styles.btn, styles.btnProcessing];
+    if (disabled) return [styles.btn, styles.btnDisabled];
+    return styles.btn;
+  };
+
+  const getIconColor = () => {
+    if (isRecording) return '#FFFFFF';
+    if (isProcessing) return Colors.surface;
+    return Colors.primary;
+  };
+
   return (
     <View style={styles.container}>
       <Animated.View style={{ transform: [{ scale: pulseAnim }] }}>
         <TouchableOpacity
-          style={[
-            styles.micButton,
-            isRecording && styles.recording,
-            isProcessing && styles.processing,
-            disabled && styles.disabled,
-          ]}
-          onPressIn={handlePressIn}
-          onPressOut={handlePressOut}
+          style={getButtonStyle()}
+          onPressIn={() => { if (!isProcessing) startRecording(); }}
+          onPressOut={() => { if (isRecording) stopRecording(); }}
           disabled={isProcessing || disabled}
           activeOpacity={0.8}
         >
           <Animated.View style={{ transform: [{ scale: scaleAnim }] }}>
             <MaterialIcons
               name={isRecording ? 'mic' : 'mic-none'}
-              size={24}
-              color={isRecording ? '#ff4444' : '#6200ee'}
+              size={22}
+              color={getIconColor()}
             />
           </Animated.View>
         </TouchableOpacity>
       </Animated.View>
-
       {isRecording && (
-        <Text style={styles.timerText}>
-          {formatTime(recordingTime)} / {formatTime(maxRecordingTime)}
-        </Text>
+        <Text style={styles.timerText}>{formatTime(recordingTime)}</Text>
       )}
     </View>
   );
@@ -158,35 +137,32 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  micButton: {
+  btn: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: 'rgba(255, 255, 255, 0.9)',
+    backgroundColor: Colors.primaryLight,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    elevation: 4,
+    borderWidth: 1,
+    borderColor: Colors.border,
   },
-  recording: {
-    backgroundColor: 'rgba(255, 68, 68, 0.9)',
+  btnRecording: {
+    backgroundColor: Colors.error,
+    borderColor: Colors.error,
   },
-  processing: {
-    backgroundColor: 'rgba(98, 0, 238, 0.6)',
+  btnProcessing: {
+    backgroundColor: Colors.primary,
+    borderColor: Colors.primary,
+    opacity: 0.7,
   },
-  disabled: {
-    opacity: 0.5,
-    backgroundColor: 'rgba(255, 255, 255, 0.3)',
+  btnDisabled: {
+    opacity: 0.4,
   },
   timerText: {
-    fontSize: 12,
-    color: 'white',
+    fontSize: 11,
+    color: Colors.textSecondary,
     fontWeight: '500',
-    textAlign: 'center',
-    minWidth: 80,
     marginTop: 4,
   },
 });

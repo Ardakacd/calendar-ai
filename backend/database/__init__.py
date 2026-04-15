@@ -10,6 +10,7 @@ This package provides:
 
 from .models.event import EventModel
 from .models.user import UserModel
+from .models.webhook import ProcessedWebhookModel
 from .config import (
     get_db,
     get_db_session,
@@ -23,6 +24,7 @@ from .config import (
 __all__ = [
     "EventModel",
     "UserModel",
+    "ProcessedWebhookModel",
     "get_db",
     "get_db_session",
     "get_async_db",

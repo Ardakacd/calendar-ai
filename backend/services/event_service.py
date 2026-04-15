@@ -5,7 +5,8 @@ from adapter.event_adapter import EventAdapter
 from exceptions import EventNotFoundError, DatabaseError, EventPermissionError
 from database.config import get_async_db
 from fastapi import Depends, HTTPException, status
-from models import EventUpdate, Event, EventCreate
+from exceptions import RecurringConflictError
+from models import EventUpdate, Event, EventCreate, SeriesUpdateRequest, SeriesUpdateResponse, SeriesDeleteResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from utils.jwt import get_user_id_from_token
 
@@ -18,29 +19,52 @@ class EventService:
 
     async def create_event(self, token: str, event_data: EventCreate) -> Event:
         """
-        Create a new event for the authenticated user with conflict checking.
-        
+        Create a new event (or the first occurrence of a recurring series) for the authenticated user.
+        For single events, no conflict checking is performed.
+        For recurring series, all occurrences are checked before any row is written (all-or-nothing);
+        a 409 is returned with per-occurrence conflict details if any slot is taken.
+        Returns only the first occurrence for recurring series.
+
         Args:
             token: JWT token for user authentication
             event_data: Event data to create
-            
+
         Returns:
-            Created event
-            
+            Created event (first occurrence for recurring series)
+
         Raises:
-            HTTPException: If user not authenticated, conflict found, or creation fails
+            HTTPException 409: If any occurrence in a recurring series conflicts with an existing event.
+            HTTPException 500: If user not authenticated or creation fails.
         """
         try:
             # Extract user_id from token
             user_id = get_user_id_from_token(token)
 
-            logger.info(f"EventService: Creating event with conflict check for user {user_id}")
-             
-            result = await self.event_adapter.create_event(user_id, event_data)
+            logger.info(f"EventService: Creating event for user {user_id}")
+
+            if event_data.recurrence and event_data.recurrence.count >= 1:
+                rec = event_data.recurrence
+                events = await self.event_adapter.create_recurring_events(
+                    user_id, event_data, rec.type, rec.count,
+                    interval=rec.interval,
+                    byweekday=rec.byweekday,
+                    bysetpos=rec.bysetpos,
+                )
+                result = events[0]
+            else:
+                result = await self.event_adapter.create_event(user_id, event_data)
 
             logger.info(f"EventService: Event created successfully for user {user_id}")
             return result
 
+        except RecurringConflictError as e:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail={
+                    "message": str(e),
+                    "conflicts": e.conflicts,
+                },
+            )
         except HTTPException:
             raise
         except Exception as e:
@@ -204,18 +228,18 @@ class EventService:
 
     async def update_event(self, token: str, event_id: str, event_data: EventUpdate) -> Dict[str, Any]:
         """
-        Update an existing event with conflict checking.
-        
+        Update a single event by event_id. No conflict checking is performed.
+
         Args:
             token: JWT token for user authentication
             event_id: Event ID to update
             event_data: Updated event data
-            
+
         Returns:
             Updated event
-            
+
         Raises:
-            HTTPException: If user not authenticated, event not found, not authorized, or conflict found
+            HTTPException: If user not authenticated, event not found, or not authorized
         """
         try:
             # Extract user_id from token
@@ -424,6 +448,122 @@ class EventService:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="An error occurred. Please try again later."
+            )
+
+
+    async def update_series(
+        self, token: str, recurrence_id: str, request: SeriesUpdateRequest
+    ) -> SeriesUpdateResponse:
+        """
+        Update all or future occurrences in a recurring series.
+
+        Raises:
+            HTTPException 400: Invalid scope or missing from_date for 'future' scope.
+            HTTPException 404: No matching occurrences found (series not found or not owned).
+        """
+        try:
+            if request.scope not in ("all", "future"):
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="scope must be 'all' or 'future'",
+                )
+            if request.scope == "future" and request.from_date is None:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="from_date is required when scope is 'future'",
+                )
+
+            user_id = get_user_id_from_token(token)
+            from_date = request.from_date if request.scope == "future" else None
+            time_shift = timedelta(minutes=request.time_shift_minutes) if request.time_shift_minutes else None
+
+            event_update = EventUpdate(
+                title=request.title,
+                category=request.category,
+                description=request.description,
+                location=request.location,
+                duration=request.duration,
+            )
+
+            updated = await self.event_adapter.update_by_recurrence_id(
+                recurrence_id, user_id, event_update,
+                from_date=from_date,
+                time_shift=time_shift,
+            )
+
+            if not updated:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="No occurrences found for this series, or you are not authorized",
+                )
+
+            scope_label = "future occurrences" if request.scope == "future" else f"all {len(updated)} occurrences"
+            return SeriesUpdateResponse(
+                updated_count=len(updated),
+                recurrence_id=recurrence_id,
+                scope=request.scope,
+                message=f"Updated {scope_label} in the series.",
+            )
+
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"EventService: Error updating series {recurrence_id}: {e}", exc_info=True)
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Series could not be updated. Please try again later.",
+            )
+
+    async def delete_series(
+        self, token: str, recurrence_id: str, scope: str, from_date: Optional[datetime]
+    ) -> SeriesDeleteResponse:
+        """
+        Delete all or future occurrences in a recurring series.
+
+        Raises:
+            HTTPException 400: Invalid scope or missing from_date for 'future' scope.
+            HTTPException 404: No matching occurrences found.
+        """
+        try:
+            if scope not in ("all", "future"):
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="scope must be 'all' or 'future'",
+                )
+            if scope == "future" and from_date is None:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="from_date is required when scope is 'future'",
+                )
+
+            user_id = get_user_id_from_token(token)
+            resolved_from_date = from_date if scope == "future" else None
+
+            deleted = await self.event_adapter.delete_by_recurrence_id(
+                recurrence_id, user_id, from_date=resolved_from_date
+            )
+
+            if deleted == 0:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="No occurrences found for this series, or you are not authorized",
+                )
+
+            scope_label = "future occurrences" if scope == "future" else f"all {deleted} occurrences"
+            return SeriesDeleteResponse(
+                deleted_count=deleted,
+                recurrence_id=recurrence_id,
+                scope=scope,
+                message=f"Deleted {scope_label} in the series.",
+            )
+
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"EventService: Error deleting series {recurrence_id}: {e}", exc_info=True)
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Series could not be deleted. Please try again later.",
             )
 
 

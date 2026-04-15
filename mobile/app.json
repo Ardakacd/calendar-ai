@@ -2,6 +2,7 @@
   "expo": {
     "name": "Calendar AI",
     "slug": "calendar-ai",
+    "scheme": "calendarai",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -16,9 +17,12 @@
     ],
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.calendarai.app",
+      "bundleIdentifier": "com.ardaka.calendarai",
       "infoPlist": {
-        "NSMicrophoneUsageDescription": "This app needs access to microphone to record voice commands for calendar management."
+        "NSMicrophoneUsageDescription": "This app needs access to microphone to record voice commands for calendar management.",
+        "UIBackgroundModes": [
+          "remote-notification"
+        ]
       }
     },
     "android": {
@@ -27,8 +31,14 @@
         "backgroundColor": "#FFFFFF"
       },
       "permissions": [
-        "android.permission.RECORD_AUDIO"
-      ]
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS",
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK",
+        "android.permission.RECEIVE_BOOT_COMPLETED",
+        "android.permission.VIBRATE"
+      ],
+      "package": "com.ardaka.calendarai"
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -40,7 +50,22 @@
           "microphonePermission": "Allow Calendar AI to access your microphone to record voice commands."
         }
       ],
-      "expo-localization"
-    ]
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/icon.png",
+          "color": "#6366F1",
+          "sounds": []
+        }
+      ],
+      "expo-localization",
+      "./plugins/withExpoModulesCoreSwiftVersion"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "12da7286-bb7c-4e1e-b0d7-500cf1ba15b2"
+      }
+    },
+    "owner": "ardaka"
   }
 }

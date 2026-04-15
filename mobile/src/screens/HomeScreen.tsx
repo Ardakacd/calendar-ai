@@ -10,7 +10,6 @@ import {
   Alert,
 } from "react-native";
 import { Text, Avatar, IconButton } from "react-native-paper";
-import { LinearGradient } from "expo-linear-gradient";
 import { useNavigation } from "@react-navigation/native";
 import MicButton from "../components/MicButton";
 import ListComponent from "../components/ListComponent";
@@ -18,34 +17,28 @@ import ConflictComponent, { ConflictSuggestion } from "../components/ConflictCom
 import { useCalendarAPI } from "../services/api";
 import { useAuth } from "../contexts/AuthContext";
 import { Event } from "../models/event";
+import { Colors, Radius, Shadow } from "../theme";
 
-// Animated thinking dots component
 const ThinkingDots = () => {
-  const [dots, setDots] = useState("");
-
+  const [count, setCount] = useState(1);
   useEffect(() => {
-    const interval = setInterval(() => {
-      setDots((prev) => {
-        if (prev === "...") return "";
-        if (prev === "..") return "...";
-        if (prev === ".") return "..";
-        return ".";
-      });
-    }, 500);
-
+    const interval = setInterval(() => setCount((c) => (c === 3 ? 1 : c + 1)), 450);
     return () => clearInterval(interval);
   }, []);
-
   return (
-    <Text
-      style={{
-        fontSize: 16,
-        lineHeight: 22,
-        color: "rgba(255, 255, 255, 0.9)",
-      }}
-    >
-      {dots}
-    </Text>
+    <View style={{ flexDirection: "row", alignItems: "center", gap: 5, paddingVertical: 4 }}>
+      {[1, 2, 3].map((i) => (
+        <View
+          key={i}
+          style={{
+            width: 8,
+            height: 8,
+            borderRadius: 4,
+            backgroundColor: i <= count ? Colors.primary : Colors.border,
+          }}
+        />
+      ))}
+    </View>
   );
 };
 
@@ -65,7 +58,7 @@ export default function HomeScreen() {
     {
       id: Date.now().toString(),
       type: "ai",
-      content: "Hello, I am your AI calendar assistant. How can I help you?",
+      content: "Hello! I'm your AI calendar assistant. How can I help you today?",
       timestamp: new Date(),
     },
   ]);
@@ -150,13 +143,11 @@ export default function HomeScreen() {
 
   const handleSendMessage = async () => {
     if (!inputText.trim()) return;
-
     const userMessage = inputText.trim();
     addMessage("user", userMessage);
     setInputText("");
     scrollToBottom();
     await handleProcessText(userMessage);
-
     setTimeout(() => {
       inputRef.current?.focus();
     }, 100);
@@ -166,22 +157,17 @@ export default function HomeScreen() {
     setIsThinking(true);
     try {
       const response = await processText(text);
-
       const message =
-        typeof response === "string"
-          ? response
-          : response?.message || "Done.";
-
+        typeof response === "string" ? response : response?.message || "Done.";
       const events: Event[] | undefined =
         response?.events?.length > 0 && !response?.needs_clarification
           ? response.events
           : undefined;
       const hasConflict: boolean = response?.has_conflict === true;
       const suggestions: ConflictSuggestion[] = response?.suggestions ?? [];
-
       addMessage("ai", message, events, hasConflict, suggestions);
       scrollToBottom();
-    } catch (error) {
+    } catch {
       addMessage("ai", "Sorry, I couldn't process your command. Please try again.");
       scrollToBottom();
     } finally {
@@ -197,7 +183,7 @@ export default function HomeScreen() {
       addMessage("user", userMessage);
       scrollToBottom();
       await handleProcessText(userMessage);
-    } catch (error) {
+    } catch {
       addMessage("ai", "Sorry, I couldn't process your voice command. Please try again.");
       scrollToBottom();
     } finally {
@@ -207,39 +193,25 @@ export default function HomeScreen() {
 
   const renderMessage = (message: ChatMessage) => {
     const isUser = message.type === "user";
-
     return (
       <View
         key={message.id}
-        style={[
-          styles.messageContainer,
-          isUser ? styles.userMessage : styles.aiMessage,
-        ]}
+        style={[styles.messageRow, isUser ? styles.messageRowUser : styles.messageRowAi]}
       >
         {message.events && message.events.length > 0 ? (
-          <View style={styles.eventsContainer}>
+          <View style={styles.fullWidthMessage}>
             <ListComponent events={message.events} />
           </View>
         ) : message.hasConflict ? (
-          <View style={[styles.messageBubble, styles.aiBubble, styles.eventsContainer]}>
+          <View style={[styles.aiBubble, styles.fullWidthMessage]}>
             <ConflictComponent
               conflictMessage={message.content}
               suggestions={message.suggestions ?? []}
             />
           </View>
         ) : (
-          <View
-            style={[
-              styles.messageBubble,
-              isUser ? styles.userBubble : styles.aiBubble,
-            ]}
-          >
-            <Text
-              style={[
-                styles.messageText,
-                isUser ? styles.userMessageText : styles.aiMessageText,
-              ]}
-            >
+          <View style={[styles.bubble, isUser ? styles.userBubble : styles.aiBubble]}>
+            <Text style={[styles.messageText, isUser ? styles.userText : styles.aiText]}>
               {message.content}
             </Text>
           </View>
@@ -248,217 +220,241 @@ export default function HomeScreen() {
     );
   };
 
+  const initials = user?.name?.charAt(0)?.toUpperCase() || "U";
+
   return (
-    <LinearGradient colors={["#667eea", "#764ba2"]} style={styles.container}>
+    <View style={styles.container}>
+      {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity
-          onPress={() => navigation.navigate("Profile" as never)}
-        >
+        <TouchableOpacity onPress={() => navigation.navigate("Profile" as never)}>
           <View style={styles.userInfo}>
-            <Avatar.Text
-              size={40}
-              label={user?.name?.charAt(0)?.toUpperCase() || "U"}
-              style={styles.avatar}
-            />
-            <View style={styles.userText}>
+            <Avatar.Text size={38} label={initials} style={styles.avatar} labelStyle={styles.avatarLabel} />
+            <View>
+              <Text style={styles.greeting}>Good day,</Text>
               <Text style={styles.userName}>{user?.name || "User"}</Text>
             </View>
           </View>
         </TouchableOpacity>
-        <IconButton
-          icon="trash-can-outline"
-          iconColor="white"
-          size={24}
-          onPress={handleDeleteAllEvents}
-          style={styles.logoutButton}
-        />
-        <IconButton
-          icon="delete-sweep"
-          iconColor="white"
-          size={24}
-          onPress={handleClearMemory}
-          style={styles.logoutButton}
-        />
-        <IconButton
-          icon="calendar"
-          iconColor="white"
-          size={24}
-          onPress={() => navigation.navigate("Calendar" as never)}
-          style={styles.logoutButton}
-        />
+        <View style={styles.headerActions}>
+          <IconButton
+            icon="trash-can-outline"
+            iconColor={Colors.textSecondary}
+            size={20}
+            onPress={handleDeleteAllEvents}
+            style={styles.headerBtn}
+          />
+          <IconButton
+            icon="delete-sweep"
+            iconColor={Colors.textSecondary}
+            size={20}
+            onPress={handleClearMemory}
+            style={styles.headerBtn}
+          />
+          <IconButton
+            icon="calendar-month-outline"
+            iconColor={Colors.primary}
+            size={20}
+            onPress={() => navigation.navigate("Calendar" as never)}
+            style={[styles.headerBtn, styles.headerBtnPrimary]}
+          />
+        </View>
       </View>
 
+      {/* Chat */}
       <KeyboardAvoidingView
-        style={styles.chatContainer}
+        style={styles.chatWrapper}
         behavior={Platform.OS === "ios" ? "padding" : "height"}
       >
         <ScrollView
           ref={scrollViewRef}
-          style={styles.messagesContainer}
+          style={styles.messagesList}
           contentContainerStyle={styles.messagesContent}
           showsVerticalScrollIndicator={false}
         >
           {messages.map(renderMessage)}
           {isThinking && (
-            <View style={[styles.messageContainer, styles.aiMessage]}>
-              <View style={[styles.messageBubble, styles.aiBubble]}>
+            <View style={[styles.messageRow, styles.messageRowAi]}>
+              <View style={styles.aiBubble}>
                 <ThinkingDots />
               </View>
             </View>
           )}
         </ScrollView>
 
-        <View style={styles.inputContainer}>
+        {/* Input bar */}
+        <View style={styles.inputBar}>
           <TextInput
+            ref={inputRef}
             value={inputText}
             onChangeText={setInputText}
-            placeholder="Write your command..."
-            placeholderTextColor="rgba(255, 255, 255, 0.6)"
+            placeholder="Message your assistant..."
+            placeholderTextColor={Colors.textTertiary}
             onSubmitEditing={handleSendMessage}
             returnKeyType="send"
-            style={styles.textInput}
-            contextMenuHidden={false}
-            selectTextOnFocus={false}
+            style={styles.input}
             autoCorrect={false}
             autoCapitalize="none"
-            ref={inputRef}
           />
-          <View>
-            {inputText.trim() ? (
-              <IconButton
-                icon="send"
-                iconColor="white"
-                size={20}
-                onPress={handleSendMessage}
-                style={styles.sendButton}
-              />
-            ) : (
-              <MicButton
-                onRecordingComplete={handleVoiceCommand}
-                isProcessing={isProcessing}
-              />
-            )}
-          </View>
+          {inputText.trim() ? (
+            <TouchableOpacity onPress={handleSendMessage} style={styles.sendBtn}>
+              <Text style={styles.sendBtnText}>↑</Text>
+            </TouchableOpacity>
+          ) : (
+            <MicButton onRecordingComplete={handleVoiceCommand} isProcessing={isProcessing} />
+          )}
         </View>
       </KeyboardAvoidingView>
-    </LinearGradient>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    backgroundColor: Colors.surface,
   },
+  // Header
   header: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
     paddingHorizontal: 20,
-    paddingTop: 80,
-    paddingBottom: 20,
+    paddingTop: 60,
+    paddingBottom: 16,
+    backgroundColor: Colors.surface,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border,
+    ...Shadow.sm,
   },
   userInfo: {
     flexDirection: "row",
     alignItems: "center",
-    flex: 1,
+    gap: 12,
   },
   avatar: {
-    backgroundColor: "rgba(255, 255, 255, 0.2)",
-    marginRight: 12,
+    backgroundColor: Colors.primary,
   },
-  userText: {
-    flex: 1,
+  avatarLabel: {
+    color: Colors.surface,
+    fontWeight: "700",
+  },
+  greeting: {
+    fontSize: 12,
+    color: Colors.textTertiary,
+    fontWeight: "400",
   },
   userName: {
     fontSize: 16,
-    fontWeight: "bold",
-    color: "white",
+    fontWeight: "600",
+    color: Colors.textPrimary,
   },
-  logoutButton: {
-    backgroundColor: "rgba(255, 255, 255, 0.1)",
-    marginLeft: 10,
+  headerActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
   },
-  chatContainer: {
+  headerBtn: {
+    backgroundColor: Colors.borderLight,
+    borderRadius: Radius.md,
+    margin: 0,
+    width: 36,
+    height: 36,
+  },
+  headerBtnPrimary: {
+    backgroundColor: Colors.primaryLight,
+  },
+  // Chat
+  chatWrapper: {
     flex: 1,
-    borderTopWidth: 3,
-    borderTopColor: "rgba(255, 255, 255, 0.1)",
-    paddingTop: 12,
+    backgroundColor: Colors.background,
   },
-  messagesContainer: {
+  messagesList: {
     flex: 1,
   },
   messagesContent: {
-    paddingHorizontal: 8,
-    paddingBottom: 20,
-  },
-  inputContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 20,
-    paddingTop: 20,
-    paddingBottom: 32,
-    backgroundColor: "rgba(255, 255, 255, 0.1)",
-    borderTopWidth: 1,
-    borderTopColor: "rgba(255, 255, 255, 0.1)",
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    paddingBottom: 16,
     gap: 8,
   },
-  textInput: {
+  messageRow: {
+    flexDirection: "row",
+    marginVertical: 2,
+  },
+  messageRowUser: {
+    justifyContent: "flex-end",
+  },
+  messageRowAi: {
+    justifyContent: "flex-start",
+  },
+  fullWidthMessage: {
     flex: 1,
-    backgroundColor: "rgba(255, 255, 255, 0.15)",
-    borderBottomLeftRadius: 18,
-    borderBottomRightRadius: 18,
-    borderTopLeftRadius: 18,
-    borderTopRightRadius: 18,
-    paddingHorizontal: 12,
-    paddingVertical: 12,
-    fontSize: 14,
-    color: "white",
-    borderWidth: 0,
-    borderColor: "transparent",
   },
-  sendButton: {
-    backgroundColor: "rgba(255, 255, 255, 0.2)",
-    borderRadius: 20,
-    width: 40,
-    height: 40,
-    margin: 0,
-    padding: 0,
-  },
-  messageContainer: {
-    marginVertical: 8,
-    paddingHorizontal: 8,
-  },
-  eventsContainer: {
-    alignSelf: "stretch",
-  },
-  userMessage: {
-    alignItems: "flex-end",
-  },
-  aiMessage: {
-    alignItems: "flex-start",
-  },
-  messageBubble: {
-    maxWidth: "90%",
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderRadius: 20,
+  bubble: {
+    maxWidth: "80%",
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: Radius.xl,
   },
   userBubble: {
-    backgroundColor: "#667eea",
+    backgroundColor: Colors.primary,
     borderBottomRightRadius: 4,
   },
   aiBubble: {
-    backgroundColor: "rgba(255, 255, 255, 0.15)",
+    backgroundColor: Colors.surface,
+    borderWidth: 1,
+    borderColor: Colors.border,
     borderBottomLeftRadius: 4,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: Radius.xl,
+    ...Shadow.sm,
   },
   messageText: {
-    fontSize: 16,
+    fontSize: 15,
     lineHeight: 22,
   },
-  userMessageText: {
-    color: "white",
+  userText: {
+    color: Colors.surface,
   },
-  aiMessageText: {
-    color: "rgba(255, 255, 255, 0.9)",
+  aiText: {
+    color: Colors.textPrimary,
+  },
+  // Input bar
+  inputBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 36,
+    backgroundColor: Colors.surface,
+    borderTopWidth: 1,
+    borderTopColor: Colors.border,
+    gap: 10,
+  },
+  input: {
+    flex: 1,
+    backgroundColor: Colors.background,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: Radius.full,
+    paddingHorizontal: 18,
+    paddingVertical: 11,
+    fontSize: 15,
+    color: Colors.textPrimary,
+  },
+  sendBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: Colors.primary,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  sendBtnText: {
+    color: Colors.surface,
+    fontSize: 18,
+    fontWeight: "700",
+    marginTop: -2,
   },
 });

@@ -2,8 +2,12 @@ import logging
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from models import UserLogin, Token, RefreshTokenRequest, UserRegister, PasswordChangeRequest
+from pydantic import BaseModel
+from models import UserLogin, Token, RefreshTokenRequest, UserRegister, PasswordChangeRequest, UserUpdate
 from services.user_service import UserService, get_user_service
+from database.config import get_async_db_context_manager
+from adapter.user_adapter import UserAdapter
+from utils.jwt import get_user_id_from_token
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -165,3 +169,26 @@ async def change_password(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Internal server error"
         )
+
+
+class PushTokenRequest(BaseModel):
+    push_token: str
+
+
+@router.patch("/push-token", status_code=200)
+async def update_push_token(
+    body: PushTokenRequest,
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+):
+    """Register or update the Expo push token for the authenticated user."""
+    try:
+        user_id = get_user_id_from_token(credentials.credentials)
+        async with get_async_db_context_manager() as db:
+            adapter = UserAdapter(db)
+            await adapter.update_user(user_id, UserUpdate(push_token=body.push_token))
+        return {"message": "Push token updated"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating push token: {e}", exc_info=True)
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Internal server error")

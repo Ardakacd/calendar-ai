@@ -47,11 +47,37 @@ When you retrieve events via `list_event`, filter the results based on **explici
 - Do NOT call any tool — just reason from the user's message
 - Do NOT create the event in the database yourself
 
+**Recurring event fields:**
+| User says | recurrence_type | recurrence_interval | recurrence_byweekday | recurrence_bysetpos |
+|---|---|---|---|---|
+| every week for 10 weeks | weekly | 1 | — | — |
+| every other week for 6 times | weekly | 2 | — | — |
+| every weekday for 4 weeks | daily | 1 | MO,TU,WE,TH,FR | — |
+| every Mon/Wed/Fri for 8 weeks | weekly | 1 | MO,WE,FR | — |
+| every first Monday for 3 months | monthly | 1 | MO | 1 |
+| every last Friday for 6 months | monthly | 1 | FR | -1 |
+| every 3 months for a year | monthly | 3 | — | — |
+| every year for 5 years | yearly | 1 | — | — |
+
+- `recurrence_count` = total number of occurrences to create
+  - For `byweekday` patterns, count = total individual sessions (e.g. "every Mon/Wed/Fri for 8 weeks" → count=24, not 8)
+  - For "every weekday for 4 weeks" → count=20
+- `recurrence_byweekday` is only needed when the pattern differs from the base startDate's weekday
+- **NEVER expand a recurring request into multiple individual `CreateEventItem` entries. One item with `recurrence_type` + `recurrence_count` is always correct — the system generates all occurrences from that.**
+
 ### UPDATE
 - Use `list_event` to fetch events in the date range the user refers to
 - From the fetched events, identify the specific event(s) to update using keyword matching
 - If multiple events match and it is ambiguous which one to update, ask the user to clarify
 - Do NOT call `update_event` yourself — just identify which event and what to change
+- **Recurring events**: if the matched event has a `recurrence_id`, determine the update scope:
+  - `"single"` — user refers to just one occurrence ("this week's standup", "tomorrow's gym")
+  - `"all"` — user wants every occurrence changed ("all my standups", "every gym session", "the whole series")
+  - `"future"` — user wants this and future occurrences changed ("from next week", "going forward", "from now on")
+  - If the scope is ambiguous for a recurring event, set `clarification_needed` and ask: "Do you want to update just this occurrence, or all occurrences in the series?"
+  - Set `recurrence_id` to the event's recurrence_id when scope is `"all"` or `"future"` — **REQUIRED for series updates**
+  - Set `series_from_date` to the occurrence's startDate when scope is `"future"` — **REQUIRED for future-scope updates; omitting it updates ALL occurrences instead**
+  - Set `existing_startDate` to the current startDate of the target occurrence — **REQUIRED whenever the user changes the time; omitting it silently skips the time shift**
 
 ### DELETE
 - Use `list_event` to fetch events in the date range the user refers to
@@ -59,6 +85,12 @@ When you retrieve events via `list_event`, filter the results based on **explici
 - If exactly one event matches: call `delete_event` to delete it
 - If multiple ambiguous events match: list them clearly and ask the user which one to delete
 - If no events match: tell the user no matching event was found
+- **Recurring events**: when the matched event has a `recurrence_id`, determine the delete scope:
+  - `"single"` — user refers to one occurrence ("cancel tomorrow's standup", "remove this week's gym")
+  - `"all"` — user wants the entire series gone ("cancel all my standups", "remove every gym session", "delete the whole series", "get rid of my recurring meetings")
+  - `"future"` — user wants this and all future occurrences removed ("cancel my standups from next week", "stop the recurring gym sessions going forward")
+  - If scope is ambiguous, set `clarification_needed`: "Did you want to cancel just this occurrence, or the entire series?"
+  - "Cancel all events tomorrow" is NOT a series delete — it means delete all of tomorrow's events individually
 
 ### LIST
 - Use `list_event` to fetch events in the date range the user refers to
@@ -92,14 +124,16 @@ Rules:
 
 User message: {user_message}
 
-Return a JSON array of the matching events. Copy ALL field values EXACTLY as they appear in the input — do NOT invent or modify any IDs. Each object must have:
+Return a JSON array of the matching events. Copy ALL field values EXACTLY as they appear in the input — do NOT invent or modify any IDs or dates. Each object must have:
 {{
   "event_id": "<copy event_id exactly from input>",
   "title": "<copy exactly>",
   "startDate": "<copy exactly>",
   "endDate": "<copy exactly>",
   "duration": <copy exactly>,
-  "location": "<copy exactly>"
+  "location": "<copy exactly or null>",
+  "recurrence_id": "<copy exactly or null>",
+  "recurrence_type": "<copy exactly or null>"
 }}
 
 Return only valid JSON. No explanation.

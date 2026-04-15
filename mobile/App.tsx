@@ -1,12 +1,14 @@
-import React, { useState } from 'react';
-import {NavigationContainer} from '@react-navigation/native';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import {NavigationContainer, createNavigationContainerRef} from '@react-navigation/native';
 import {createStackNavigator} from '@react-navigation/stack';
 import {Provider as PaperProvider} from 'react-native-paper';
 import {StatusBar} from 'expo-status-bar';
 import {GestureHandlerRootView} from 'react-native-gesture-handler';
 import {ActivityIndicator, StyleSheet, View} from 'react-native';
+import * as ExpoLinking from 'expo-linking';
 
 import {AuthProvider, useAuth} from './src/contexts/AuthContext';
+import { registerForPushNotifications } from './src/services/notifications';
 import LoginScreen from './src/screens/LoginScreen';
 import HomeScreen from './src/screens/HomeScreen';
 import CalendarScreen from './src/screens/CalendarScreen';
@@ -14,14 +16,60 @@ import SignupScreen from './src/screens/SignupScreen';
 import ProfileScreen from './src/screens/ProfileScreen';
 import Toast from 'react-native-toast-message';
 import {toastConfig} from './src/common/toast/ToastConfig';
+import {linking} from './src/navigation/linking';
+import {savePendingRouteFromUrl, consumePendingRoute} from './src/navigation/pendingDeepLink';
+import type { RootStackParamList } from './src/navigation/types';
 import 'intl';
 import 'intl/locale-data/jsonp/en';
 
-const Stack = createStackNavigator();
+export type { RootStackParamList };
+
+const Stack = createStackNavigator<RootStackParamList>();
+
+export const navigationRef = createNavigationContainerRef<RootStackParamList>();
+
+function flushPendingDeepLink() {
+  consumePendingRoute().then((pending) => {
+    if (!pending || !navigationRef.isReady()) return;
+    if (pending.screen === "Calendar") {
+      navigationRef.navigate("Calendar", pending.params);
+    } else {
+      navigationRef.navigate("Profile");
+    }
+  });
+}
 
 const AppContent: React.FC = () => {
     const {isAuthenticated, isLoading} = useAuth();
     const [showSignup, setShowSignup] = useState(false);
+    const initialUrlHandled = useRef(false);
+
+    useEffect(() => {
+        if (isAuthenticated) {
+            registerForPushNotifications();
+        }
+    }, [isAuthenticated]);
+
+    // While logged out: remember open-in-app URL so we navigate after sign-in
+    useEffect(() => {
+        if (isLoading || isAuthenticated) return;
+        const capture = (url: string | null) => {
+            if (url) savePendingRouteFromUrl(url);
+        };
+        if (!initialUrlHandled.current) {
+            initialUrlHandled.current = true;
+            ExpoLinking.getInitialURL().then(capture);
+        }
+        const sub = ExpoLinking.addEventListener('url', ({url}) => capture(url));
+        return () => sub.remove();
+    }, [isLoading, isAuthenticated]);
+
+    // After login, navigate to pending route once the stack is ready
+    useEffect(() => {
+        if (!isAuthenticated || isLoading) return;
+        const t = setTimeout(() => flushPendingDeepLink(), 100);
+        return () => clearTimeout(t);
+    }, [isAuthenticated, isLoading]);
 
     if (isLoading) {
         return (
@@ -46,19 +94,30 @@ const AppContent: React.FC = () => {
     }
 
     // If authenticated, show main app with navigation
+    const onNavigationReady = useCallback(() => {
+        flushPendingDeepLink();
+    }, []);
+
     return (
-        <NavigationContainer>
+        <NavigationContainer ref={navigationRef} linking={linking} onReady={onNavigationReady}>
             <StatusBar style="auto"/>
             <Stack.Navigator
                 screenOptions={{
                     headerStyle: {
-                        backgroundColor: '#667eea',
+                        backgroundColor: '#FFFFFF',
                         elevation: 0,
-                        shadowOpacity: 0,
+                        shadowColor: '#000',
+                        shadowOffset: { width: 0, height: 1 },
+                        shadowOpacity: 0.06,
+                        shadowRadius: 4,
+                        borderBottomWidth: 1,
+                        borderBottomColor: '#E5E7EB',
                     },
-                    headerTintColor: '#fff',
+                    headerTintColor: '#6366F1',
                     headerTitleStyle: {
-                        fontWeight: 'bold',
+                        fontWeight: '600',
+                        color: '#111827',
+                        fontSize: 17,
                     },
                 }}
             >
@@ -100,6 +159,6 @@ const styles = StyleSheet.create({
         flex: 1,
         justifyContent: 'center',
         alignItems: 'center',
-        backgroundColor: '#f5f5f5',
+        backgroundColor: '#FFFFFF',
     },
 }); 

@@ -15,7 +15,7 @@ Flow per operation:
 import logging
 import json
 from typing import Optional, List
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone, tzinfo
 from langchain_core.messages import SystemMessage, AIMessage, HumanMessage, ToolMessage
 from langchain_core.prompts import PromptTemplate
 from pydantic import BaseModel, Field
@@ -42,6 +42,13 @@ class CreateEventItem(BaseModel):
     duration: Optional[int] = Field(None, description="Duration in minutes; calculated from endDate if not stated")
     endDate: Optional[datetime] = Field(None, description="Event end time if explicitly provided by the user")
     location: Optional[str] = Field(None, description="Event location if mentioned")
+    description: Optional[str] = Field(None, description="Additional notes or description if mentioned")
+    category: Optional[str] = Field(None, description="Event category. Must be one of: 'work', 'personal', 'health', 'social'. Auto-infer from context — e.g. 'doctor appointment' → 'health', 'team meeting' → 'work', 'birthday party' → 'social', 'workout' → 'health', 'lunch with friend' → 'social'.")
+    recurrence_type: Optional[str] = Field(None, description="Recurrence frequency: 'daily', 'weekly', 'monthly', or 'yearly'. Only set when the user explicitly asks for a recurring event.")
+    recurrence_count: Optional[int] = Field(None, description="Number of occurrences. Required when recurrence_type is set. e.g. 'every week for 10 weeks' → recurrence_count=10")
+    recurrence_interval: Optional[int] = Field(None, description="Repeat every N periods. Default 1. Use 2 for bi-weekly ('every other week'), 3 for every 3 months, etc.")
+    recurrence_byweekday: Optional[str] = Field(None, description="Comma-separated weekday codes. 'MO,TU,WE,TH,FR' for every weekday; 'MO,WE,FR' for Mon/Wed/Fri; 'MO' for weekly on Mondays only.")
+    recurrence_bysetpos: Optional[int] = Field(None, description="Positional selector within the period. 1=first, 2=second, -1=last. Combined with byweekday: freq=monthly, byweekday=MO, bysetpos=1 → first Monday of each month.")
 
 
 class CreatePlan(BaseModel):
@@ -51,17 +58,49 @@ class CreatePlan(BaseModel):
     )
 
 
+class DeletePlan(BaseModel):
+    delete_scope: str = Field(
+        description="'single' = one specific occurrence, 'all' = entire series, 'future' = this and all future occurrences. Use 'single' for non-recurring events."
+    )
+    recurrence_id: Optional[str] = Field(
+        None,
+        description="The recurrence_id of the series. NEVER invent, shorten, or paraphrase — copy the full UUID exactly as it appears in the recurrence_id field of the list results. Required when delete_scope is 'all' or 'future'."
+    )
+    series_from_date: Optional[str] = Field(
+        None,
+        description="ISO 8601 datetime string. For 'future' scope: the startDate of the earliest occurrence to delete. All occurrences on or after this date will be removed. REQUIRED when delete_scope is 'future' — omitting it deletes the entire series instead."
+    )
+    clarification_needed: Optional[str] = Field(
+        None,
+        description="Set this if the scope is ambiguous for a recurring event and you need to ask the user whether they mean just this occurrence or the whole series."
+    )
+
+
 class UpdatePlan(BaseModel):
-    event_ids: List[str] = Field(description="UUIDs of the event(s) to update, taken from list results")
+    event_ids: List[str] = Field(description="UUIDs of the event(s) to update, taken from list results. NEVER invent or guess a UUID — copy exactly from the event_id field in the list results.")
     new_title: Optional[str] = Field(None, description="New title if the user wants to change it")
     new_startDate: Optional[datetime] = Field(None, description="New start time if the user wants to change it")
     new_duration: Optional[int] = Field(None, description="New duration in minutes if the user wants to change it")
     new_location: Optional[str] = Field(None, description="New location if the user wants to change it")
+    new_description: Optional[str] = Field(None, description="New notes/description if the user wants to change it")
+    new_category: Optional[str] = Field(None, description="New category if the user wants to change it: 'work', 'personal', 'health', or 'social'")
     existing_startDate: Optional[datetime] = Field(
-        None, description="Current start time of the target event(s), from list results"
+        None, description="Current start time of the target event(s), from list results. REQUIRED when the user is changing the time — omitting this silently skips the time shift."
     )
     existing_endDate: Optional[datetime] = Field(
         None, description="Current end time of the target event(s), from list results"
+    )
+    update_scope: Optional[str] = Field(
+        None,
+        description="For recurring events only. 'single' = only this occurrence, 'all' = every occurrence in the series, 'future' = this and all future occurrences. Leave None for non-recurring events."
+    )
+    recurrence_id: Optional[str] = Field(
+        None,
+        description="The recurrence_id of the series. NEVER invent, shorten, or paraphrase — copy the full UUID exactly as it appears in the recurrence_id field of the list results. Required when update_scope is 'all' or 'future'."
+    )
+    series_from_date: Optional[datetime] = Field(
+        None,
+        description="For 'future' scope: the startDate of the occurrence the user is referring to. All occurrences on or after this date will be updated. REQUIRED when update_scope is 'future' — omitting this updates ALL occurrences instead."
     )
     clarification_needed: Optional[str] = Field(
         None, description="Set this if multiple events match ambiguously or information is unclear"
@@ -183,6 +222,22 @@ async def _handle_create(state: FlowState, system_prompt: str) -> dict:
             "scheduling_event_data": None,
         }
 
+    # Guard: recurrence_type without recurrence_count — ask before silently creating 1 event
+    for item in plan.events:
+        if item.recurrence_type and not item.recurrence_count:
+            msg = f"How many times would you like to repeat \"{item.title}\"? (e.g. \"10 times\", \"every week for 3 months\")"
+            return {
+                "scheduling_messages": [AIMessage(content=msg)],
+                "scheduling_result": {
+                    "message": msg,
+                    "needs_clarification": True,
+                    "success": False,
+                },
+                "conflict_check_request": None,
+                "conflict_check_result": None,
+                "scheduling_event_data": None,
+            }
+
     # Resolve endDate and duration for each event
     events_data = []
     for item in plan.events:
@@ -203,23 +258,42 @@ async def _handle_create(state: FlowState, system_prompt: str) -> dict:
             "endDate": end.isoformat(),
             "duration_minutes": duration,
             "location": item.location,
+            "description": item.description,
+            "category": item.category,
+            "recurrence_type": item.recurrence_type,
+            "recurrence_count": item.recurrence_count,
+            "recurrence_interval": item.recurrence_interval,
+            "recurrence_byweekday": item.recurrence_byweekday,
+            "recurrence_bysetpos": item.recurrence_bysetpos,
         })
 
-    # Use the first event's time for the conflict check
+    # Recurring series: skip the single-slot pre-check — the adapter loop checks every
+    # occurrence at commit time and raises RecurringConflictError with full details.
+    # Running a pre-check on slot 1 only would produce a misleading "no conflict" message
+    # when a later slot actually conflicts.
+    has_recurrence = any(e.get("recurrence_type") for e in events_data)
     first = events_data[0]
+    conflict_check_request = None if has_recurrence else {
+        "startDate": first["startDate"],
+        "endDate": first["endDate"],
+        "duration_minutes": first["duration_minutes"],
+    }
+
+    titles_fmt = ", ".join(f"“{e['title']}”" for e in events_data)
+    if has_recurrence:
+        ack = f"Got it — I’ll set up {titles_fmt} as recurring on your calendar."
+    else:
+        ack = f"Got it — adding {titles_fmt}. Checking the time for conflicts…"
+
     return {
         "scheduling_operation": "create",
         "scheduling_event_data": {"events": events_data},
-        "conflict_check_request": {
-            "startDate": first["startDate"],
-            "endDate": first["endDate"],
-            "duration_minutes": first["duration_minutes"],
-        },
+        "conflict_check_request": conflict_check_request,
         "conflict_check_result": None,
         # Store the user request + AI ack so next-turn history resolves "it" / "option 2"
         "scheduling_messages": [
             HumanMessage(content=state['input_text']),
-            AIMessage(content=f"Understood. Creating {', '.join(repr(e['title']) for e in events_data)}. Checking for conflicts..."),
+            AIMessage(content=ack),
         ],
     }
 
@@ -261,7 +335,7 @@ async def _handle_update(state: FlowState, system_prompt: str, tools_map: dict) 
     filtered_events = await _filter_events(all_events, state['input_text'], intent="find the event to update", context=filter_context)
 
     if not filtered_events:
-        msg = "I couldn't find any events matching your request. Could you provide more details?"
+        msg = "I couldn’t find anything that matches. A bit more detail (title, date, or place) would help."
         return {
             "scheduling_messages": [AIMessage(content=msg)],
             "scheduling_result": {"message": msg, "success": False},
@@ -298,10 +372,20 @@ async def _handle_update(state: FlowState, system_prompt: str, tools_map: dict) 
         }
 
     if not plan.event_ids:
-        msg = "I couldn't identify which event to update. Could you be more specific?"
+        msg = "I’m not sure which event you mean — which title or time should I change?"
         return {
             "scheduling_messages": [AIMessage(content=msg)],
             "scheduling_result": {"message": msg, "success": False},
+            "conflict_check_request": None,
+            "conflict_check_result": None,
+        }
+
+    # Guard: future-scope series update without series_from_date would silently update all occurrences
+    if plan.update_scope == "future" and not plan.series_from_date:
+        msg = "Which occurrence did you want to start from? Please tell me the date so I know where to begin the update."
+        return {
+            "scheduling_messages": [AIMessage(content=msg)],
+            "scheduling_result": {"message": msg, "needs_clarification": True, "success": False},
             "conflict_check_request": None,
             "conflict_check_result": None,
         }
@@ -321,6 +405,11 @@ async def _handle_update(state: FlowState, system_prompt: str, tools_map: dict) 
     if check_start and check_end:
         duration_minutes = int((check_end - check_start).total_seconds() / 60)
 
+    # Compute time_shift for series updates that change start time
+    time_shift_seconds = None
+    if plan.update_scope in ("all", "future") and plan.new_startDate and plan.existing_startDate:
+        time_shift_seconds = int((plan.new_startDate - plan.existing_startDate).total_seconds())
+
     return {
         "scheduling_operation": "update",
         "conflict_check_result": None,
@@ -331,7 +420,15 @@ async def _handle_update(state: FlowState, system_prompt: str, tools_map: dict) 
                 "startDate": plan.new_startDate.isoformat() if plan.new_startDate else None,
                 "duration": plan.new_duration,
                 "location": plan.new_location,
+                "description": plan.new_description,
+                "category": plan.new_category,
             },
+            "series_update": plan.update_scope in ("all", "future"),
+            "update_scope": plan.update_scope,
+            "recurrence_id": plan.recurrence_id,
+            "series_from_date": plan.series_from_date.isoformat() if plan.series_from_date else None,
+            "time_shift_seconds": time_shift_seconds,
+            "existing_startDate": plan.existing_startDate.isoformat() if plan.existing_startDate else None,
         },
         "conflict_check_request": {
             "startDate": check_start.isoformat() if check_start else None,
@@ -353,6 +450,7 @@ async def _handle_delete(state: FlowState, system_prompt: str, tools_map: dict) 
     Phase 2: Keyword-filter, then delete if unambiguous or ask user.
     Conversation history is included for multi-turn context.
     """
+    display_tz = _extract_tz(state.get("current_datetime", ""))
     list_tool = tools_map['list_event']
     delete_tool = tools_map['delete_event']
 
@@ -370,7 +468,7 @@ async def _handle_delete(state: FlowState, system_prompt: str, tools_map: dict) 
     # and use the candidate_events stored from that turn so we delete exactly the right events.
     stored_candidates = state.get('scheduling_result', {}).get('candidate_events', [])
     if user_wants_all and already_asked and stored_candidates:
-        return await _delete_events(stored_candidates, delete_tool)
+        return await _delete_events(stored_candidates, delete_tool, display_tz=display_tz)
 
     # --- Normal flow: list → filter → decide ---
     model_with_tools = model.bind_tools([list_tool])
@@ -394,7 +492,7 @@ async def _handle_delete(state: FlowState, system_prompt: str, tools_map: dict) 
     )
 
     if not filtered_events:
-        msg = "I couldn't find any events matching your request."
+        msg = "I couldn’t find any events that match."
         return {
             "scheduling_messages": [AIMessage(content=msg)],
             "scheduling_result": {"message": msg, "success": False},
@@ -403,22 +501,71 @@ async def _handle_delete(state: FlowState, system_prompt: str, tools_map: dict) 
             "is_success": True,
         }
 
+    # If any filtered event is recurring, ask the LLM to determine delete scope.
+    has_recurring = any(e.get('recurrence_id') for e in filtered_events)
+    if has_recurring:
+        events_context = json.dumps(filtered_events, default=str, indent=2)
+        recent_history = [m for m in _conversation_history(state) if not isinstance(m, SystemMessage)][-2:]
+        delete_plan: DeletePlan = await model.with_structured_output(DeletePlan).ainvoke([
+            SystemMessage(content=system_prompt),
+            *recent_history,
+            HumanMessage(content=(
+                f"User request: \"{state['input_text']}\"\n\n"
+                f"Matching events found:\n{events_context}\n\n"
+                "Determine the delete scope. If the event is recurring and the user clearly wants "
+                "the whole series or future occurrences deleted, set delete_scope accordingly. "
+                "If it's ambiguous whether they mean just this occurrence or the whole series, "
+                "set clarification_needed and ask."
+            )),
+        ])
+
+        if delete_plan.clarification_needed:
+            return {
+                "scheduling_messages": [AIMessage(content=delete_plan.clarification_needed)],
+                "scheduling_result": {
+                    "message": delete_plan.clarification_needed,
+                    "needs_clarification": True,
+                    "candidate_events": filtered_events,
+                    "success": False,
+                },
+                "conflict_check_request": None,
+                "conflict_check_result": None,
+                "is_success": True,
+            }
+
+        if delete_plan.delete_scope in ("all", "future") and delete_plan.recurrence_id:
+            # Guard: future scope requires a from_date — without it we'd delete the entire series
+            if delete_plan.delete_scope == "future" and not delete_plan.series_from_date:
+                msg = "Which occurrence did you want to start from? Please tell me the date so I know where to cut off."
+                return {
+                    "scheduling_messages": [AIMessage(content=msg)],
+                    "scheduling_result": {"message": msg, "needs_clarification": True, "candidate_events": filtered_events, "success": False},
+                    "conflict_check_request": None,
+                    "conflict_check_result": None,
+                    "is_success": True,
+                }
+            from_date = None
+            if delete_plan.delete_scope == "future" and delete_plan.series_from_date:
+                try:
+                    from_date = datetime.fromisoformat(delete_plan.series_from_date)
+                except Exception:
+                    pass
+            series_title = filtered_events[0].get('title', '') if filtered_events else ''
+            return await _delete_series(delete_plan.recurrence_id, state['user_id'], from_date, title=series_title)
+
+    # Non-recurring path (or recurring single-occurrence): delete matched event(s) by ID
     if len(filtered_events) == 1:
-        return await _delete_events(filtered_events, delete_tool)
+        return await _delete_events(filtered_events, delete_tool, display_tz=display_tz)
 
     # Multiple matches — if user already said "both/all" in this same message, delete all
     if user_wants_all:
-        return await _delete_events(filtered_events, delete_tool)
+        return await _delete_events(filtered_events, delete_tool, display_tz=display_tz)
 
     # Ask the user which one
     lines = ["Multiple events match your request. Which one did you mean?\n"]
     for i, e in enumerate(filtered_events, 1):
-        start = e.get('startDate', '')
-        try:
-            dt = datetime.fromisoformat(start)
-            start_fmt = dt.strftime("%a %b %-d, %-I:%M %p")
-        except Exception:
-            start_fmt = start
+        start_iso = _event_start_iso(e) or ""
+        start_fmt = _format_suggestion_dt(start_iso, display_tz) if start_iso else "?"
         lines.append(f"{i}. {e.get('title')} — {start_fmt}")
     msg = "\n".join(lines)
     return {
@@ -435,7 +582,9 @@ async def _handle_delete(state: FlowState, system_prompt: str, tools_map: dict) 
     }
 
 
-async def _delete_events(events: list, delete_tool) -> dict:
+async def _delete_events(
+    events: list, delete_tool, display_tz: Optional[tzinfo] = None
+) -> dict:
     """Execute delete for one or more events and return a result dict."""
     deleted_events = []
     failed_titles = []
@@ -464,13 +613,25 @@ async def _delete_events(events: list, delete_tool) -> dict:
         }
 
     if deleted_events and not failed_titles:
-        titles = ", ".join(f"'{e.get('title')}'" for e in deleted_events)
-        msg = f"Deleted {titles}." if len(deleted_events) == 1 else f"Deleted {len(deleted_events)} events: {titles}."
+        if len(deleted_events) == 1:
+            ev0 = deleted_events[0]
+            t0 = _event_start_iso(ev0)
+            when = f" ({_format_suggestion_dt(t0, display_tz)})" if t0 else ""
+            msg = f"Done — removed “{ev0.get('title')}”{when} from your calendar."
+        elif len(deleted_events) == 2:
+            ev0, ev1 = deleted_events[0], deleted_events[1]
+            w0 = f" ({_format_suggestion_dt(_event_start_iso(ev0), display_tz)})" if _event_start_iso(ev0) else ""
+            w1 = f" ({_format_suggestion_dt(_event_start_iso(ev1), display_tz)})" if _event_start_iso(ev1) else ""
+            msg = (
+                f"Done — removed “{ev0.get('title')}”{w0} and “{ev1.get('title')}”{w1} from your calendar."
+            )
+        else:
+            msg = f"Done — removed {len(deleted_events)} events from your calendar."
     elif deleted_events:
-        titles = ", ".join(f"'{e.get('title')}'" for e in deleted_events)
-        msg = f"Deleted {titles}, but could not delete: {', '.join(failed_titles)}."
+        removed = " and ".join(f"'{e.get('title')}'" for e in deleted_events) if len(deleted_events) <= 2 else f"{len(deleted_events)} events"
+        msg = f"Removed {removed}, but couldn't remove: {', '.join(failed_titles)}."
     else:
-        msg = "Could not delete the events. Please try again."
+        msg = "Couldn't remove the event — it may no longer exist or you may not have permission."
 
     return {
         "scheduling_operation": "delete",
@@ -479,6 +640,35 @@ async def _delete_events(events: list, delete_tool) -> dict:
         "conflict_check_request": None,
         "conflict_check_result": None,
         "is_success": bool(deleted_events),
+    }
+
+
+async def _delete_series(recurrence_id: str, user_id: int, from_date=None, title: str = "") -> dict:
+    """Delete an entire recurring series (or all future occurrences) directly via the adapter."""
+    from database.config import get_async_db_context_manager
+    from adapter.event_adapter import EventAdapter
+    display = f"“{title}”" if title else "this series"
+    try:
+        async with get_async_db_context_manager() as db:
+            adapter = EventAdapter(db)
+            deleted = await adapter.delete_by_recurrence_id(recurrence_id, user_id, from_date=from_date)
+        n = deleted
+        if from_date:
+            msg = f"Done — removed {n} upcoming occurrence{'s' if n != 1 else ''} of {display}."
+        else:
+            msg = f"Done — removed {display} and all {n} occurrence{'s' if n != 1 else ''} in the series."
+    except Exception as e:
+        logger.error(f"Error deleting series {recurrence_id}: {e}", exc_info=True)
+        msg = "Something went wrong removing the series. Please try again."
+        deleted = 0
+
+    return {
+        "scheduling_operation": "delete",
+        "scheduling_messages": [AIMessage(content=msg)],
+        "scheduling_result": {"message": msg, "success": bool(deleted)},
+        "conflict_check_request": None,
+        "conflict_check_result": None,
+        "is_success": bool(deleted),
     }
 
 
@@ -513,7 +703,7 @@ async def _handle_list(state: FlowState, system_prompt: str, tools_map: dict) ->
         filtered_events = all_events
 
     if not filtered_events:
-        msg = "No events found for your request."
+        msg = "Nothing on your calendar matches that."
         return {
             "scheduling_operation": "list",
             "scheduling_messages": [AIMessage(content=msg)],
@@ -524,7 +714,7 @@ async def _handle_list(state: FlowState, system_prompt: str, tools_map: dict) ->
         }
 
     count = len(filtered_events)
-    msg = f"Found {count} event{'s' if count != 1 else ''}."
+    msg = f"Here’s what I found — {count} event{'s' if count != 1 else ''}."
 
     return {
         "scheduling_operation": "list",
@@ -540,12 +730,23 @@ async def _handle_list(state: FlowState, system_prompt: str, tools_map: dict) ->
 # Scheduling finalize node
 # ---------------------------------------------------------------------------
 
-def _format_suggestion_dt(iso: str | None) -> str:
-    """Format an ISO datetime string as 'Mon Mar 28, 6:30 PM'."""
-    if not iso:
+def _format_suggestion_dt(
+    iso: str | datetime | None,
+    display_tz: Optional[tzinfo] = None,
+) -> str:
+    """Format a datetime for display as 'Mon Mar 28, 6:30 PM' in the user's local zone when display_tz is set."""
+    if iso is None:
         return "?"
     try:
-        dt = datetime.fromisoformat(iso)
+        if isinstance(iso, datetime):
+            dt = iso
+        else:
+            s = iso.replace("Z", "+00:00") if isinstance(iso, str) else iso
+            dt = datetime.fromisoformat(s)
+        if display_tz is not None:
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            dt = dt.astimezone(display_tz)
         day = str(dt.day)
         hour = dt.hour % 12 or 12
         minute = dt.strftime("%M")
@@ -554,7 +755,16 @@ def _format_suggestion_dt(iso: str | None) -> str:
         weekday = dt.strftime("%a")
         return f"{weekday} {month} {day}, {hour}:{minute} {ampm}"
     except Exception:
-        return iso
+        return iso if isinstance(iso, str) else "?"
+
+
+def _event_start_iso(ev: dict) -> str | None:
+    s = ev.get("startDate")
+    if s is None:
+        return None
+    if isinstance(s, datetime):
+        return s.isoformat()
+    return str(s)
 
 
 async def scheduling_finalize(state: FlowState):
@@ -565,6 +775,7 @@ async def scheduling_finalize(state: FlowState):
     For DELETE and LIST, scheduling_agent already handled everything — this is a pass-through.
     """
     operation = state.get('scheduling_operation')
+    display_tz = _extract_tz(state.get("current_datetime", ""))
 
     # DELETE and LIST are fully handled by scheduling_agent
     if operation in ('delete', 'list', None):
@@ -576,7 +787,7 @@ async def scheduling_finalize(state: FlowState):
 
     # Conflict check failed (e.g. rate limit) — do not execute, ask user to retry
     if conflict_result and conflict_result.get('check_failed'):
-        msg = "I couldn't verify your calendar for conflicts right now. Please try again in a moment."
+        msg = "I couldn’t check your calendar for conflicts just now. Try again in a moment."
         return {
             "scheduling_result": {"message": msg, "success": False},
             "scheduling_messages": [AIMessage(content=msg)],
@@ -588,16 +799,17 @@ async def scheduling_finalize(state: FlowState):
         # Still execute if we have event data (title/location-only update)
         if event_data:
             try:
-                user_tz = _extract_tz(state.get('current_datetime', ''))
-                async with get_calendar_tools(user_id, user_tz) as mcp_tools:
+                async with get_calendar_tools(user_id, display_tz) as mcp_tools:
                     tools_map = {t.name: t for t in mcp_tools}
                     if operation == 'create':
-                        return await _execute_create(event_data, tools_map)
+                        return await _execute_create(event_data, tools_map, display_tz=display_tz)
                     elif operation == 'update':
-                        return await _execute_update(event_data, tools_map)
+                        return await _execute_update(
+                            event_data, tools_map, user_id=user_id, display_tz=display_tz
+                        )
             except Exception as e:
                 logger.error(f"Error in scheduling_finalize ({operation}): {e}", exc_info=True)
-                msg = f"Something went wrong: {str(e)}"
+                msg = "Something went wrong while updating your calendar. Please try again."
                 return {
                     "scheduling_result": {"message": msg, "success": False},
                     "scheduling_messages": [AIMessage(content=msg)],
@@ -609,18 +821,18 @@ async def scheduling_finalize(state: FlowState):
         suggestions = conflict_result.get('suggestions', [])
         conflicting = conflict_result.get('conflicting_events', [])
 
-        # Build a clean human-readable message from structured data
-        conflict_titles = ", ".join(f"'{e.get('title', 'Untitled')}'" for e in conflicting)
-        msg = f"There's a scheduling conflict with {conflict_titles}."
+        conflict_titles = " and ".join(f"“{e.get('title', 'another event')}”" for e in conflicting) if conflicting else "another event"
+        msg = f"That time overlaps with {conflict_titles}."
         if suggestions:
-            lines = ["\n\nAvailable alternative times:"]
+            lines = ["\n\nHere are some open slots nearby:"]
             for i, s in enumerate(suggestions, 1):
-                start = _format_suggestion_dt(s.get('startDate'))
-                end = _format_suggestion_dt(s.get('endDate'))
+                start = _format_suggestion_dt(s.get('startDate'), display_tz)
+                end = _format_suggestion_dt(s.get('endDate'), display_tz)
                 lines.append(f"  {i}. {start} – {end}")
+            lines.append("\nPick one of these, or tell me another time you’d like.")
             msg += "\n".join(lines)
         else:
-            msg += " No alternative times were found nearby."
+            msg += " I couldn’t find open slots nearby — try another day or time?"
         return {
             "scheduling_result": {
                 "message": msg,
@@ -635,13 +847,14 @@ async def scheduling_finalize(state: FlowState):
 
     # No conflict — execute
     try:
-        user_tz = _extract_tz(state.get('current_datetime', ''))
-        async with get_calendar_tools(user_id, user_tz) as mcp_tools:
+        async with get_calendar_tools(user_id, display_tz) as mcp_tools:
             tools_map = {t.name: t for t in mcp_tools}
             if operation == 'create':
-                result = await _execute_create(event_data, tools_map)
+                result = await _execute_create(event_data, tools_map, display_tz=display_tz)
             elif operation == 'update':
-                result = await _execute_update(event_data, tools_map)
+                result = await _execute_update(
+                    event_data, tools_map, user_id=user_id, display_tz=display_tz
+                )
             else:
                 return {"is_success": True}
         # Mirror to router_messages for multi-turn context
@@ -651,7 +864,7 @@ async def scheduling_finalize(state: FlowState):
         return result
     except Exception as e:
         logger.error(f"Error in scheduling_finalize ({operation}): {e}", exc_info=True)
-        msg = f"Something went wrong while executing the operation: {str(e)}"
+        msg = "Something went wrong while updating your calendar. Please try again."
         return {
             "scheduling_result": {"message": msg, "success": False},
             "scheduling_messages": [AIMessage(content=msg)],
@@ -660,7 +873,7 @@ async def scheduling_finalize(state: FlowState):
         }
 
 
-async def _execute_create(event_data: dict, tools_map: dict) -> dict:
+async def _execute_create(event_data: dict, tools_map: dict, display_tz: Optional[tzinfo] = None) -> dict:
     create_tool = tools_map['create_event']
     events_to_create = event_data.get("events", [])
     created = []
@@ -673,14 +886,65 @@ async def _execute_create(event_data: dict, tools_map: dict) -> dict:
             args["endDate"] = ev['endDate']
         if ev.get('location'):
             args["location"] = ev['location']
+        if ev.get('description'):
+            args["description"] = ev['description']
+        if ev.get('category'):
+            args["category"] = ev['category']
+        if ev.get('recurrence_type') and ev.get('recurrence_count'):
+            args["recurrence_type"] = ev['recurrence_type']
+            args["recurrence_count"] = ev['recurrence_count']
+        if ev.get('recurrence_interval'):
+            args["recurrence_interval"] = ev['recurrence_interval']
+        if ev.get('recurrence_byweekday'):
+            args["recurrence_byweekday"] = ev['recurrence_byweekday']
+        if ev.get('recurrence_bysetpos') is not None:
+            args["recurrence_bysetpos"] = ev['recurrence_bysetpos']
         result = _parse_mcp_result(await create_tool.ainvoke(args))
+        if result.get("has_recurring_conflict"):
+            conflicts = result.get("conflicts", [])
+            title = ev.get('title', 'the event')
+            n = len(conflicts)
+            lines = [
+                f"Couldn’t add “{title}” — {n} proposed time{'s' if n != 1 else ''} overlap something already on your calendar:"
+            ]
+            for c in conflicts:
+                start_fmt = _format_suggestion_dt(c.get("startDate"), display_tz)
+                lines.append(
+                    f"  • Occurrence {c['index'] + 1} ({start_fmt}) — overlaps with “{c['conflicting_title']}”"
+                )
+            lines.append("\nNothing was added. Want to try different times?")
+            msg = "\n".join(lines)
+            return {
+                "scheduling_result": {"message": msg, "has_conflict": True, "success": False},
+                "scheduling_messages": [AIMessage(content=msg)],
+                "is_success": False,
+            }
         created.append(result)
 
     if len(created) == 1:
-        msg = f"'{created[0].get('title', '')}' has been added to your calendar for {created[0].get('startDate', '')}."
+        r = created[0]
+        n = r.get('occurrences_created', 0)
+        title = r.get('title', '')
+        start_fmt = _format_suggestion_dt(r.get('startDate', ''), display_tz)
+        if n:
+            freq = r.get('recurrence_type', '')
+            freq_label = f"{freq} " if freq else ""
+            occ_label = f"{n} {freq_label}occurrence{'s' if n != 1 else ''}"
+            msg = f"Done — “{title}” is on your calendar ({occ_label}), starting {start_fmt}."
+        else:
+            msg = f"Done — “{title}” is on your calendar for {start_fmt}."
     else:
-        titles = ", ".join(f"'{e.get('title', '')}'" for e in created)
-        msg = f"{len(created)} events have been added to your calendar: {titles}."
+        lines = [f"Done — added {len(created)} events:"]
+        for e in created:
+            start_fmt = _format_suggestion_dt(e.get('startDate', ''), display_tz)
+            n = e.get('occurrences_created', 0)
+            if n:
+                freq = e.get('recurrence_type', '')
+                freq_label = f"{freq} " if freq else ""
+                lines.append(f"  • “{e.get('title', '')}” — {n} {freq_label}occurrence{'s' if n != 1 else ''} from {start_fmt}")
+            else:
+                lines.append(f"  • “{e.get('title', '')}” — {start_fmt}")
+        msg = "\n".join(lines)
 
     return {
         "scheduling_result": {"message": msg, "events": created, "success": True},
@@ -689,7 +953,13 @@ async def _execute_create(event_data: dict, tools_map: dict) -> dict:
     }
 
 
-async def _execute_update(event_data: dict, tools_map: dict) -> dict:
+async def _execute_update(
+    event_data: dict, tools_map: dict, user_id: int = 0, display_tz: Optional[tzinfo] = None
+) -> dict:
+    # Series update — bypass MCP and go directly to the adapter
+    if event_data.get("series_update") and event_data.get("recurrence_id"):
+        return await _execute_series_update(event_data, user_id, display_tz=display_tz)
+
     update_tool = tools_map['update_event']
     event_ids = event_data.get("event_ids", [])
     update_args = event_data.get("update_args", {})
@@ -705,7 +975,7 @@ async def _execute_update(event_data: dict, tools_map: dict) -> dict:
             updated.append(result['event'])
 
     if not updated:
-        msg = "Could not update the event. It may not exist or you may not have permission."
+        msg = "Couldn’t update that event — it may have been removed, or you may not have access."
         return {
             "scheduling_result": {"message": msg, "success": False},
             "scheduling_messages": [AIMessage(content=msg)],
@@ -714,12 +984,124 @@ async def _execute_update(event_data: dict, tools_map: dict) -> dict:
 
     if len(updated) == 1:
         ev = updated[0]
-        msg = f"'{ev.get('title')}' has been updated."
+        update_args = event_data.get("update_args", {})
+        new_start_iso = update_args.get("startDate")
+        existing_start_iso = event_data.get("existing_startDate")
+
+        if new_start_iso and existing_start_iso:
+            old_fmt = _format_suggestion_dt(existing_start_iso, display_tz)
+            new_fmt = _format_suggestion_dt(new_start_iso, display_tz)
+            msg = f"Done — \"{ev.get('title')}\" moved from {old_fmt} → {new_fmt}."
+        elif new_start_iso:
+            msg = f"Done — \"{ev.get('title')}\" is updated, now at {_format_suggestion_dt(new_start_iso, display_tz)}."
+        else:
+            parts = []
+            if update_args.get("title"):
+                parts.append(f"renamed to \"{update_args['title']}\"")
+            if update_args.get("location"):
+                parts.append(f"location → {update_args['location']}")
+            if update_args.get("duration"):
+                h, m = divmod(update_args["duration"], 60)
+                dur_str = f"{h}h {m}m" if h and m else (f"{h}h" if h else f"{m}m")
+                parts.append(f"duration → {dur_str}")
+            msg = (
+                f"Done — \"{ev.get('title')}\": {', '.join(parts)}."
+                if parts
+                else f"Done — \"{ev.get('title')}\" is updated."
+            )
     else:
-        msg = f"{len(updated)} events have been updated."
+        titles = (
+            " and ".join(f'"{e.get("title")}"' for e in updated)
+            if len(updated) == 2
+            else f"{len(updated)} events"
+        )
+        msg = f"Done — {titles} updated."
 
     return {
         "scheduling_result": {"message": msg, "events": updated, "success": True},
+        "scheduling_messages": [AIMessage(content=msg)],
+        "is_success": True,
+    }
+
+
+async def _execute_series_update(
+    event_data: dict, user_id: int, display_tz: Optional[tzinfo] = None
+) -> dict:
+    """Update an entire recurring series (or future occurrences) directly via the adapter."""
+    from database.config import get_async_db_context_manager
+    from adapter.event_adapter import EventAdapter
+    from models import EventUpdate
+
+    recurrence_id = event_data["recurrence_id"]
+    update_args = event_data.get("update_args", {})
+    update_scope = event_data.get("update_scope", "all")
+    time_shift_seconds = event_data.get("time_shift_seconds")
+    series_from_date_str = event_data.get("series_from_date")
+
+    from_date = None
+    if update_scope == "future" and series_from_date_str:
+        try:
+            from_date = datetime.fromisoformat(series_from_date_str)
+        except Exception:
+            pass
+
+    time_shift = timedelta(seconds=time_shift_seconds) if time_shift_seconds else None
+
+    event_update = EventUpdate(
+        title=update_args.get("title"),
+        location=update_args.get("location"),
+        description=update_args.get("description"),
+        category=update_args.get("category"),
+        duration=update_args.get("duration"),
+        # startDate handled via time_shift, not direct assignment
+    )
+
+    try:
+        async with get_async_db_context_manager() as db:
+            adapter = EventAdapter(db)
+            updated = await adapter.update_by_recurrence_id(
+                recurrence_id, user_id, event_update,
+                from_date=from_date,
+                time_shift=time_shift,
+            )
+    except Exception as e:
+        logger.error(f"Error updating series {recurrence_id}: {e}", exc_info=True)
+        msg = "Something went wrong updating the series. Please try again."
+        return {
+            "scheduling_result": {"message": msg, "success": False},
+            "scheduling_messages": [AIMessage(content=msg)],
+            "is_success": False,
+        }
+
+    if not updated:
+        msg = "Couldn’t find that series — it may have been removed already."
+        return {
+            "scheduling_result": {"message": msg, "success": False},
+            "scheduling_messages": [AIMessage(content=msg)],
+            "is_success": False,
+        }
+
+    title = updated[0].title if updated else ""
+    n = len(updated)
+
+    time_detail = ""
+    existing_start_iso = event_data.get("existing_startDate")
+    if time_shift_seconds and existing_start_iso:
+        try:
+            old_dt = datetime.fromisoformat(existing_start_iso)
+            new_dt = old_dt + timedelta(seconds=time_shift_seconds)
+            old_fmt = _format_suggestion_dt(old_dt.isoformat(), display_tz)
+            new_fmt = _format_suggestion_dt(new_dt.isoformat(), display_tz)
+            time_detail = f" — moved from {old_fmt} → {new_fmt}"
+        except Exception:
+            pass
+
+    if update_scope == "future":
+        msg = f"Done — {n} upcoming occurrence{'s' if n != 1 else ''} of \"{title}\" updated{time_detail}."
+    else:
+        msg = f"Done — all {n} occurrence{'s' if n != 1 else ''} of \"{title}\" updated{time_detail}."
+    return {
+        "scheduling_result": {"message": msg, "success": True},
         "scheduling_messages": [AIMessage(content=msg)],
         "is_success": True,
     }

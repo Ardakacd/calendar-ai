@@ -32,6 +32,8 @@ class UpdateEventInput(BaseModel):
         description="New duration in minutes. If provided along with startDate, endDate will be calculated. If only duration is provided, it will be added to the existing startDate."
     )
     location: Optional[str] = Field(None, description="New location for the event")
+    description: Optional[str] = Field(None, description="New notes or description for the event")
+    category: Optional[str] = Field(None, description="New category: 'work', 'personal', 'health', or 'social'")
 
     class Config:
         json_schema_extra = {
@@ -50,11 +52,15 @@ def _event_to_dict(event: Event) -> dict:
     return {
         "event_id": event.id,
         "title": event.title,
+        "category": event.category,
+        "description": event.description,
         "startDate": event.startDate.isoformat() if event.startDate else None,
         "endDate": event.endDate.isoformat() if event.endDate else None,
         "location": event.location,
         "user_id": event.user_id,
-        "duration": event.duration
+        "duration": event.duration,
+        "recurrence_id": event.recurrence_id,
+        "recurrence_type": event.recurrence_type,
     }
 
 
@@ -64,7 +70,9 @@ async def update_event_impl(
     title: Optional[str] = None,
     startDate: Optional[datetime] = None,
     duration: Optional[int] = None,
-    location: Optional[str] = None
+    location: Optional[str] = None,
+    description: Optional[str] = None,
+    category: Optional[str] = None,
 ) -> dict:
     """
     Update a calendar event.
@@ -87,7 +95,7 @@ async def update_event_impl(
         Exception: If event update fails
     """
     # Check if at least one field is being updated
-    if all(field is None for field in [title, startDate, duration, location]):
+    if all(field is None for field in [title, startDate, duration, location, description, category]):
         raise ValueError("At least one field (title, startDate, duration, or location) must be provided for update")
     
     logger.info(f"Updating event {event_id} for user {user_id}")
@@ -96,9 +104,11 @@ async def update_event_impl(
         # Create EventUpdate model
         event_update = EventUpdate(
             title=title,
+            category=category,
+            description=description,
             startDate=startDate,
             duration=duration,
-            location=location
+            location=location,
         )
         
         # Use adapter to update event
@@ -147,7 +157,9 @@ def update_event_tool_factory(user_id: int) -> StructuredTool:
         title: Optional[str] = None,
         startDate: Optional[datetime] = None,
         duration: Optional[int] = None,
-        location: Optional[str] = None
+        location: Optional[str] = None,
+        description: Optional[str] = None,
+        category: Optional[str] = None,
     ) -> dict:
         """Update event with user_id injected."""
         return await update_event_impl(
@@ -156,7 +168,9 @@ def update_event_tool_factory(user_id: int) -> StructuredTool:
             title=title,
             startDate=startDate,
             duration=duration,
-            location=location
+            location=location,
+            description=description,
+            category=category,
         )
     
     return StructuredTool.from_function(

@@ -41,6 +41,9 @@ dist/
 .env.staging
 .env.production
 
+# Local AI assistant / editor notes
+.claude/
+
 # Python
 __pycache__/
 *.py[cod]
