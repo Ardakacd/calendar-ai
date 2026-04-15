@@ -90,7 +90,6 @@ export default function AddEventModal({
       if (durationMinutes <= 0) { showErrorToast("Duration must be greater than 0"); return; }
     }
 
-    const trimmedDescription = description.trim();
     const eventData: EventCreate = {
       title: trimmedTitle,
       category,
